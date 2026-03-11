@@ -20,6 +20,7 @@ Generate a skill file that orchestrates the full Stage B distillation pipeline: 
 - `git` with push access to create branches
 - `sqlite3` CLI for vault INSERT operations
 - Linear MCP server (for evidence collection — gracefully degrade if unavailable)
+- git-memento (optional — gracefully degrade if unavailable. memento 노트 없이도 나머지 증거로 정제 수행)
 
 ### Allowed Tools
 - All tools available to the three pipeline sub-skills
@@ -40,9 +41,10 @@ No explicit input. The orchestrator self-discovers work:
 | Artifact | Format | Consumer |
 |----------|--------|----------|
 | vault.db updates | SQLite INSERTs into `entries`, `entry_domains`, `evidence`, `curation_queue` | knowledge-gate CLI (runtime) |
+| Batch report file | `.knowledge/reports/batch-YYYY-MM-DD.md` (항상 생성, 승격 0건이어도) | Human reviewer, Git diff 보장 |
 | Report PR | Markdown PR description with structured tables | Human reviewer |
 | Label transitions | `knowledge:pending` → `knowledge:collected` or `knowledge:insufficient` | Pipeline state tracking |
-| Git branch + commit | `knowledge/batch-YYYY-MM-DD` branch with vault.db changes | Git history |
+| Git branch + commit | `knowledge/batch-YYYY-MM-DD` branch with vault.db changes + report file | Git history |
 
 ## Behavioral Requirements
 
@@ -103,7 +105,7 @@ For each candidate with `verdict == "pass"`, construct a JSON array and pipe to 
 ```bash
 echo '[
   {
-    "id": "<generated-uuid>",
+    "id": "<kebab-case-slug-from-title>",
     "type": "fact|anti-pattern",
     "title": "...",
     "claim": "...",
@@ -121,21 +123,25 @@ Notes:
 - `_pipeline-insert` handles entries, entry_domains, evidence, curation_queue INSERTs in a single transaction
 - FTS5 table (`entries_fts`) is updated automatically by triggers defined in the schema
 - Domains not in `domain_registry` are auto-created by `_pipeline-insert`
-- Generate entry `id` as UUID, `curation_queue.id` as `cq-{entry_id}-{timestamp}`
+- Generate entry `id` as kebab-case slug (title 기반, 3-5 단어). 충돌(UNIQUE constraint) 시 숫자 접미사 부여 (예: `payment-service-object-2`). `curation_queue.id`는 `cq-{entry_id}-{timestamp}` 형식
 
 ### Step 6: Domain Health Report
 
 Run `knowledge-gate domain-report` and capture output. Include highlights in the report PR.
 
-### Step 7: Commit and Push
+### Step 7: Generate Batch Report File and Commit
+
+Generate `.knowledge/reports/batch-YYYY-MM-DD.md` with the same content as the Report PR body (Step 8). This file is **always** created, even when 0 candidates are accepted, to guarantee a git diff for the Report PR.
 
 ```
-git add .knowledge/vault.db
+mkdir -p .knowledge/reports
+# Write report content to .knowledge/reports/batch-YYYY-MM-DD.md
+git add .knowledge/vault.db .knowledge/reports/
 git commit -m "knowledge: batch YYYY-MM-DD — N entries added"
 git push -u origin knowledge/batch-YYYY-MM-DD
 ```
 
-If no candidates were accepted (all rejected or 0 extracted), still commit if label changes were made.
+The batch report file ensures a commit diff always exists, making Report PR creation unconditional.
 
 ### Step 8: Create Report PR
 
@@ -221,7 +227,7 @@ Verify:
 | vault.db INSERT fails (constraint violation) | Log error, skip that candidate. Record in report as "INSERT failed". |
 | `git push` fails | Retry once. If still fails, output manual instructions and abort. |
 | `gh pr create` fails | Output the report body to stdout so it's not lost. Log error. |
-| All candidates rejected | Still create report PR (shows what was evaluated). |
+| All candidates rejected | Still create report PR (shows what was evaluated). Batch report file (`.knowledge/reports/`) guarantees diff. |
 | Domain not in registry | Create via `knowledge-gate domain-add` with auto-generated description. |
 | Branch already exists | Checkout existing branch (supports re-runs). |
 
@@ -268,7 +274,7 @@ Verify:
 
 - MUST NOT auto-merge the report PR — human review is the intervention point
 - MUST NOT modify existing vault entries — INSERT only (append-only principle, design-implementation.md §5.1)
-- MUST NOT skip the report PR even when all candidates are rejected (transparency)
+- MUST NOT skip the report PR even when all candidates are rejected (transparency). `.knowledge/reports/batch-YYYY-MM-DD.md` 파일이 항상 생성되어 diff를 기술적으로 보장한다
 - MUST process PRs in `mergedAt` order (oldest first)
 - MUST handle partial failures gracefully — one PR's failure should not block others
 - MUST create new domains via CLI when `applies_to.domains` references unknown domains

@@ -5,10 +5,10 @@
 
 ## 설계 원칙
 
-- **벤더 중립**: 에이전트 런타임 커맨드(§1, §2)는 `sqlite3`(사전 설치)만 사용. 파이프라인/관리 커맨드(§1.5, §3, §4)는 `jq`를 추가로 요구한다 (JSON 처리용, 별도 설치 필요)
-- **컨텍스트 관문 강제**: 에이전트는 `.knowledge/vault.db`를 직접 `Read`할 수 없다 (바이너리). knowledge-gate CLI만이 유일한 접근 경로 ([설계 구현 §4.1](./design-implementation.md#41-저장-위치-및-형식) 참조)
+- **벤더 중립 지향(런타임) / Claude-first(배포)**: 에이전트 런타임 커맨드(§1, §2)는 `sqlite3`(사전 설치)만 사용하여 벤더 중립을 유지한다. 파이프라인/관리 커맨드(§1.5, §3, §4)는 `jq`를 추가로 요구한다 (JSON 처리용, 별도 설치 필요). 배포는 Claude Code Plugin으로 제공하되, CLI 자체는 어떤 에이전트에서든 실행 가능
+- **컨텍스트 관문 (convention-based)**: 에이전트는 `.knowledge/vault.db`를 직접 `Read`할 수 없다 (바이너리 포맷의 부수적 격리). knowledge-gate CLI만이 유일한 접근 경로이며, 이 규약을 convention-based access prohibition으로 유지한다 ([설계 구현 §4.1](./design-implementation.md#41-저장-위치-및-형식) 참조)
 - **도메인 경로 매칭**: 파일 경로를 `domain_paths`로 도메인에 해소한 후, 해당 도메인의 entries를 조회
-- **Miss handling**: 매칭 결과가 없으면 추론하지 않고 질문 프로토콜을 즉시 발동 ([설계 구현 §7.3](./design-implementation.md#73-질문-프로토콜))
+- **Soft miss 원칙**: 매칭 결과가 없을 때, 비구조적 수정(버그 수정, 로컬 리팩토링 등)은 기존 코드 구조를 유지하며 정상 진행한다. 구조적 변경(새 모듈, 아키텍처 변경, 패턴 도입 등)에 한해 질문 프로토콜을 발동한다 ([설계 구현 §7.2](./design-implementation.md#72-soft-miss-원칙))
 - **규격화된 DB 조작**: LLM이 판단하고, CLI가 DB를 조작한다. 직접 SQL 실행 금지.
 
 ---
@@ -45,7 +45,7 @@ esc() { echo "${1//\'/\'\'}"; }
 knowledge-gate query-paths <filepath>
 ```
 
-**동작:** filepath의 모든 상위 디렉토리 prefix를 생성 → `domain_paths.pattern`과 매칭 → 해당 도메인의 entries 반환
+**동작:** filepath의 모든 상위 디렉토리 prefix를 생성 → `domain_paths.pattern`과 매칭 → 해당 도메인의 entries 반환. 전역 도메인(pattern = `*`)은 모든 경로에 자동 포함된다.
 
 ```bash
 query_by_path() {
@@ -64,6 +64,8 @@ query_by_path() {
     ), matched_domains AS (
       SELECT dp.domain FROM domain_paths dp
       JOIN filepath_prefixes fp ON fp.prefix = dp.pattern
+      UNION
+      SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '*'
     )
     SELECT DISTINCT e.id, e.type, e.claim, e.alternative, e.considerations
     FROM entries e
@@ -163,7 +165,10 @@ list_entries() {
 
 ## 1.5. 지식 적재 커맨드
 
-항목 추가를 위한 인터페이스. 수동 적재(Phase 1)와 정제 파이프라인 적재 모두에서 사용한다.
+항목 추가를 위한 인터페이스. 두 가지 경로가 있다:
+
+- **`add`**: 인간이 수동으로 항목을 추가하는 커맨드. 필수 필드 검증 후 vault.db에 INSERT. title 기반 kebab-case slug를 ID로 생성한다.
+- **`_pipeline-insert`**: 정제 파이프라인(`batch-refine`) 전용 내부 커맨드. JSON stdin으로 후보 데이터를 일괄 INSERT. 외부 사용 금지.
 
 ### add
 
@@ -181,13 +186,20 @@ knowledge-gate add --type <fact|anti-pattern> --title <title> --claim <claim> --
    - `considerations`가 비어있으면 거부 (R5)
 3. 도메인 존재 확인: `domain_registry`에 없는 도메인이면 에러 (신규 도메인은 `domain-add`로 먼저 등록)
 4. `--evidence` 미지정 시 WARNING 출력 (evidence 없이도 INSERT는 진행되지만, 추적 가능성이 떨어짐을 경고)
-5. UUID 자동 생성 → `entries` + `entry_domains` + `evidence`를 **단일 트랜잭션**(BEGIN/COMMIT)으로 INSERT
+5. title 기반 kebab-case slug 생성(3-5 단어, LLM 또는 CLI가 생성) → `entries` + `entry_domains` + `evidence`를 **단일 트랜잭션**(BEGIN/COMMIT)으로 INSERT
 6. FTS5 트리거가 자동으로 검색 인덱스 갱신
 
 ```bash
 add_entry() {
   local id type title claim body alt considerations
-  id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  # title 기반 kebab-case slug 생성 (3-5 단어). 충돌 시 -2, -3 등 숫자 접미사 부여
+  id="$(echo "$2" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 ]//g' | tr ' ' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-60)"
+  # slug 충돌 해소: UNIQUE constraint 위반 시 숫자 접미사 추가
+  local base_id="$id" suffix=2
+  while sqlite3 "$VAULT" "SELECT 1 FROM entries WHERE id='$(esc "$id")'" | grep -q 1; do
+    id="${base_id}-${suffix}"
+    suffix=$((suffix + 1))
+  done
   type="$1"; title="$(esc "$2")"; claim="$(esc "$3")"; body="$(esc "$4")"
   alt="$(esc "$5")"; considerations="$(esc "$6")"
   shift 6
@@ -250,7 +262,7 @@ echo '<json>' | knowledge-gate _pipeline-insert
 ```json
 [
   {
-    "id": "uuid",
+    "id": "kebab-case-slug-from-title",
     "type": "fact|anti-pattern",
     "title": "...",
     "claim": "...",
@@ -459,7 +471,12 @@ domain_resolve_path() {
     JOIN domain_registry dr ON dr.domain = dp.domain
     JOIN filepath_prefixes fp ON fp.prefix = dp.pattern
     WHERE dr.status = 'active'
-    ORDER BY dp.domain;
+    UNION
+    SELECT DISTINCT dp.domain, dr.description, dp.pattern AS matched_pattern
+    FROM domain_paths dp
+    JOIN domain_registry dr ON dr.domain = dp.domain
+    WHERE dp.pattern = '*' AND dr.status = 'active'
+    ORDER BY domain;
   "
 }
 ```
@@ -467,8 +484,9 @@ domain_resolve_path() {
 **예시:**
 ```bash
 $ knowledge-gate domain-resolve-path src/api/auth/login.ts
-[{"domain":"auth","description":"인증/인가","matched_pattern":"src/api/auth/"},
- {"domain":"api","description":"REST API 레이어","matched_pattern":"src/api/"}]
+[{"domain":"api","description":"REST API 레이어","matched_pattern":"src/api/"},
+ {"domain":"auth","description":"인증/인가","matched_pattern":"src/api/auth/"},
+ {"domain":"global-conventions","description":"프로젝트 전역 규칙","matched_pattern":"*"}]
 ```
 
 ---

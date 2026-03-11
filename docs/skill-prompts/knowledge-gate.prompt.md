@@ -36,7 +36,7 @@ Configuration context needed at generation time:
 |-------|--------|----------|
 | Agent type | User specification (Claude Code, Cursor, etc.) | Yes |
 | Config file path | User specification (CLAUDE.md, .cursorrules, etc.) | Yes |
-| knowledge-gate CLI path | Default: `bin/knowledge-gate` or user override | Yes |
+| knowledge-gate CLI path | Default: `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate` (Plugin 환경). Non-plugin: `bin/knowledge-gate` or user override | Yes |
 
 ## Output Contract
 
@@ -93,7 +93,9 @@ The skill MUST instruct the agent to:
 2. **Respect MUST/MUST-NOT claims**: Treat vault entries as team-verified constraints
 3. **Report conflicts**: If planned changes contradict a vault entry, surface the conflict to the user before proceeding
 4. **Handle empty results**: No vault entries for a path/domain is fine — proceed normally
-5. **Trigger question protocol on scope gaps**: If the vault doesn't cover the current domain but the agent suspects domain-specific rules may exist, ask the user (design-implementation.md §7.2-7.3)
+5. **Soft miss — proceed or ask based on change scope**: If vault returns no results:
+   - **Non-structural changes** (bug fixes, local refactoring): Proceed normally, preserving existing code structure
+   - **Structural changes** (new modules, architecture changes, pattern introductions): Trigger question protocol (design-implementation.md §7.2-7.3)
 
 ### Step 4: Generate Question Protocol Template
 
@@ -139,9 +141,9 @@ Instruct the agent on how to present vault query results:
 
 Before modifying files, consult team-verified knowledge:
 
-- Single file: `bin/knowledge-gate query-paths "path/to/file"`
+- Single file: `knowledge-gate query-paths "path/to/file"`
 - Multiple files: resolve domains first with `domain-resolve-path`, then `query-domain`
-- Topic search: `bin/knowledge-gate search "keyword"`
+- Topic search: `knowledge-gate search "keyword"`
 
 Treat returned MUST/MUST-NOT claims as team constraints.
 If your planned changes conflict with a vault entry, surface the conflict before proceeding.
@@ -171,7 +173,7 @@ Agent is about to modify `app/services/payments/charge.rb`:
 - Skill template: cli.md §5
 - Question protocol: design-implementation.md §7.3
 - Agent runtime behavior: design-implementation.md §7.1-7.5
-- Context gate enforcement: design-implementation.md §4.1
+- Context gate (convention-based access prohibition): design-implementation.md §4.1
 
 ## Constraints
 

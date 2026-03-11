@@ -93,7 +93,8 @@ The `body` field MUST follow this structure (design-implementation.md §4.3):
 1. For each file in the Evidence Bundle's root-level `changed_files` array:
    - Run `knowledge-gate domain-resolve-path "<filepath>"`
    - Collect all matched domains
-2. If no domains match any file, note this — the candidate's `applies_to.domains` will be proposed as new domains (for the orchestrator to handle via `domain-add`)
+   > **Note:** `domain-resolve-path` 결과에는 전역 도메인(`pattern = '*'`)이 자동 포함된다. 전역 도메인은 도메인 목록에서 제외하지 않으며, 프로젝트 전역 규칙의 적용 범위로 활용한다.
+2. If no domains match any file (전역 도메인 외에 매칭이 없는 경우), note this — the candidate's `applies_to.domains` will be proposed as new domains (for the orchestrator to handle via `domain-add`)
 3. Deduplicate the domain list
 
 ### Step 2: Fetch Existing Vault Entries
@@ -123,10 +124,14 @@ Read through the Evidence Bundle holistically. Look for:
 
 For each potential candidate, verify:
 
-1. **Confirmed decision**: The evidence shows team agreement, not just one person's opinion
+1. **Confirmed decision**: The evidence shows **explicit** team agreement, not just one person's opinion. If no explicit agreement is visible in code review comments, Linear discussions, or PR descriptions, do NOT extract as Fact — regardless of how reasonable the approach appears.
    - PR approved with relevant comments → agreement signal
    - Linear issue with multiple participants reaching conclusion → agreement signal
    - Single developer's commit with no review → weak signal, skip unless post-incident fix
+   - Implicit consensus (e.g., "no one objected") → NOT sufficient. Require explicit agreement.
+
+   > **설계 근거 — 보수적 추출 원칙:** "명시적 텍스트 합의만 인정"은 의도적으로 좁은 기준이다. False positive(잘못된 지식이 금고에 진입)의 비용이 false negative(유효한 지식을 놓침)의 비용보다 구조적으로 크기 때문이다. 잘못 진입한 항목은 에이전트의 행동을 잘못된 방향으로 유도하고 발견이 어렵지만, 놓친 지식은 다음 정제 사이클에서 재추출할 수 있다. "놓칠 수 있다"는 FOMO보다 "잘못 넣는다"는 리스크가 이 시스템에서 항상 더 크다.
+
 2. **Not already known**: Compare against existing vault entries from Step 2
    - If semantically identical entry exists → skip (not a candidate)
    - If related but different entry exists → set `conflict_check` to that entry's ID
@@ -154,7 +159,7 @@ For each validated extraction:
 6. Build `evidence` array citing specific sources:
    - `{ "type": "pr", "ref": "#1234" }`
    - `{ "type": "linear", "ref": "LIN-456" }`
-   - `{ "type": "memento", "ref": "a1b2c3d" }`
+   - `{ "type": "memento", "ref": "a1b2c3d" }` — memento 노트가 없는 것은 정상이다 (git-memento는 optional 의존성). memento 부재 시 다른 증거 타입으로 충분하다.
 7. For anti-patterns: write `alternative` describing what to do instead
 8. Write `considerations` — the caveats, edge cases, or conditions. NEVER leave empty.
    - Even if no obvious caveats: "None identified from current evidence. Re-evaluate if [condition]."
@@ -255,6 +260,7 @@ This is normal. Not every PR produces knowledge.
 ## Constraints
 
 - MUST NOT extract hypotheses, experiments, or unconfirmed opinions as knowledge
+- MUST NOT infer agreement from silence or approval-without-comment. Only explicit textual agreement counts.
 - MUST NOT create candidates with empty `considerations`
 - MUST NOT create anti-pattern candidates without `alternative`
 - MUST NOT duplicate existing vault entries (check via `knowledge-gate`)

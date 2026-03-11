@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Knowledge Distillery — A system that delivers only verified knowledge to AI coding agents.
-3-layer architecture with structural air gap.
+3-layer architecture with convention-based air gap (operational isolation).
 
 - Design documents in `docs/`.
 
@@ -12,7 +12,7 @@ This repository does NOT use Knowledge Distillery — it creates a tool/framewor
 
 - MUST-NOT: Do not apply evidence collection workflows, hooks, skills, etc. directly to this repository
 - MUST: All implementation artifacts must be built in a form deployable/applicable to other projects
-- Delivery format: Claude Code Plugin (Skill + CLI + schema를 하나의 plugin으로 배포)
+- Delivery format: Claude Code Plugin (Skill + CLI + schema를 하나의 plugin으로 배포). 배포는 Claude-first, 런타임 CLI(`knowledge-gate`)는 벤더 중립(`sqlite3` 기반)
 
 ## Implementation Philosophy
 
