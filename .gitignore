@@ -85,3 +85,6 @@ temp/
 *.bak
 *.tmp
 *.orig
+
+# ===== Claude =====
+.claude/settings.local.json
