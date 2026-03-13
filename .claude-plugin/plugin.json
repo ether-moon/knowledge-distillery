@@ -1,0 +1,18 @@
+{
+  "name": "knowledge-distillery",
+  "version": "0.1.0",
+  "description": "A knowledge distillation system that delivers only verified knowledge to AI coding agents. 3-layer architecture with convention-based air gap.",
+  "skills": [
+    "skills/init",
+    "skills/knowledge-gate",
+    "skills/memento-summary",
+    "skills/mark-evidence",
+    "skills/collect-evidence",
+    "skills/extract-candidates",
+    "skills/quality-gate",
+    "skills/batch-refine"
+  ],
+  "scripts": [
+    "scripts/knowledge-gate"
+  ]
+}
