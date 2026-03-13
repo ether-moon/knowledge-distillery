@@ -72,6 +72,7 @@ For each pending PR, spawn a subagent that executes the three pipeline steps seq
 1. **`/collect-evidence`** → Evidence Bundle
    - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, skip to next PR
 2. **`/extract-candidates`** → Candidate array
+   - Runs in the same subagent context, so the Evidence Bundle and any selectively fetched PR diff context from `/collect-evidence` remain available in-memory
    - If empty array → record PR as "0 candidates", continue
 3. **`/quality-gate`** → Verdict array
 
@@ -128,6 +129,7 @@ Notes:
 ### Step 6: Domain Health Report
 
 Run `knowledge-gate domain-report` and capture output. Include highlights in the report PR.
+Additionally, inspect the processed batch PRs' `changed_files` lists and call out repeated path prefixes that still resolve to no domain. This uncovered-pattern check belongs in the batch report logic, not in the CLI.
 
 ### Step 7: Generate Batch Report File and Commit
 
@@ -206,6 +208,7 @@ Verify:
 ### Domain Changes
 {New domains added, if any}
 {domain-report highlights}
+{Repeated unmapped path prefixes observed across this batch, if any}
 
 ### Source PR Details
 {For each processed PR:}
