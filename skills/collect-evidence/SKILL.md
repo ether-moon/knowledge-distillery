@@ -12,25 +12,26 @@ description: "Collects the actual content of all evidence sources identified in 
 
 ## Prerequisites
 
-- `gh` CLI authenticated with repo scope
-- `git` with access to `refs/notes/commits` and `refs/notes/memento-full-audit`
+- GitHub MCP server configured with `pull_requests,issues,labels` toolsets
+- `git` with access to `refs/notes/commits`
 - Linear MCP server (graceful degradation — but triggers `insufficient` if Linear IDs exist)
 
 ## Allowed Tools
 
-- `gh pr view`, `gh pr diff`, `gh api` — PR data and review comments
+- GitHub MCP (read-only by behavioral contract) — PR data and review comments
 - Linear MCP — issue details and comments (read-only)
 - `git log`, `git show`, `git notes show` — commit and memento data
 - `Bash`, `Read`, `Glob`, `Grep`
 - No file writes. No vault.db access. No `knowledge-gate` CLI.
+- MUST NOT create, modify, or delete any GitHub resources (comments, labels, PRs). Read operations only.
 
 ## Input
 
 | Field | Source | Format |
 |-------|--------|--------|
 | PR number | Passed by orchestrator | Integer |
-| Repository | Derived via `gh repo view --json nameWithOwner -q .nameWithOwner` if not provided | `owner/repo` |
-| Manifest JSON | Parsed from PR comment (between `EVIDENCE_BUNDLE_MANIFEST_START`/`END` delimiters) | JSON per `evidence-manifest.spec.md` |
+| Repository | Derived via GitHub MCP if not provided | `owner/repo` |
+| Manifest JSON | Parsed from PR comment (between `EVIDENCE_BUNDLE_MANIFEST_START`/`END` delimiters) | JSON per [evidence-manifest.spec.md](../mark-evidence/reference/evidence-manifest.spec.md) |
 
 ## Output
 
@@ -44,8 +45,8 @@ Follow these steps in exact order.
 
 Fetch all PR comments and locate the Manifest:
 
-```bash
-gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate
+```
+Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
 ```
 
 1. Find the comment whose body contains `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`
@@ -93,35 +94,35 @@ Carry forward from the parsed Manifest into the Evidence Bundle's root-level fie
 Then collect PR content:
 
 1. **Title and body:**
-   ```bash
-   gh pr view {pr_number} --json title,body
+   ```
+   Use GitHub MCP to fetch PR #{pr_number} title and body.
    ```
 
-2. **Full PR diff:**
-   ```bash
-   gh pr diff {pr_number}
+2. **Changed file list:**
+   The full PR diff is on-demand evidence — `extract-candidates` fetches specific file diffs selectively. At this stage, collect only the list of changed files:
    ```
-   If the diff exceeds 100KB, truncate it and add a note: `"[TRUNCATED — diff exceeded 100KB]"`. A truncated diff is still sufficient.
+   Use GitHub MCP to fetch the list of changed files in PR #{pr_number}. Extract relative file paths.
+   ```
+   Store as `changed_files` in the Evidence Bundle. If the Manifest already contains `pr.changed_files`, verify and use that; otherwise populate from this query.
+
+   > **Note for downstream:** `extract-candidates` can selectively fetch specific file diffs as needed using GitHub MCP or `git diff`.
 
 3. **Commits:**
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/commits --paginate
    ```
-   Extract each commit's SHA (short, 7 chars) and full message.
+   Use GitHub MCP to list all commits in PR #{pr_number}. Extract each commit's SHA (short, 7 chars) and full message.
+   ```
 
 4. **Review comments (inline on diff):**
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --paginate
    ```
-   Extract: `author` (login), `body`, `path`, `line` (or `original_line`).
+   Use GitHub MCP to list all review comments (inline on diff) for PR #{pr_number}. Extract: author (login), body, path, line (or original_line).
+   ```
 
 5. **Issue-level comments:**
-   ```bash
-   gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate
    ```
-   Include all comments EXCEPT the Manifest comment itself (filter out any comment containing `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`).
+   Use GitHub MCP to list all issue-level comments on PR #{pr_number}. Include all comments EXCEPT the Manifest comment itself.
+   ```
 
-If the PR diff is unavailable (API error, not a failure in truncation), record `"diff": null` and mark this in the sufficiency assessment.
+Note: The full PR diff is not pre-collected. The changed file list is sufficient for this step.
 
 ### Step 3: Collect Linear Evidence (Required when IDs exist)
 
@@ -132,6 +133,7 @@ For each entry in `identifiers.linear`:
    - `description` (full body)
    - `comments` — array of `{ author, body, created_at }`
    - `labels` — array of label names
+   - `status_changes` — status transition history (e.g., `[{ "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }]`). Use Linear MCP `getIssueHistory` or extract from issue activity/audit log. If the API does not expose a dedicated history endpoint, reconstruct transitions from issue comments or activity entries where status changes are logged.
 2. If Linear MCP is unavailable or the specific issue is not found:
    - Record the ID in `sufficiency.missing` as `"linear:{id}"`
    - This triggers an `insufficient` verdict
@@ -156,7 +158,6 @@ Ensure notes refs are available before collecting:
 
 ```bash
 git fetch origin refs/notes/commits:refs/notes/commits 2>/dev/null || true
-git fetch origin refs/notes/memento-full-audit:refs/notes/memento-full-audit 2>/dev/null || true
 ```
 
 For each entry in `identifiers.memento` where `has_notes` is `true`:
@@ -167,13 +168,7 @@ For each entry in `identifiers.memento` where `has_notes` is `true`:
    ```
    If successful, store the output as `summary`.
 
-2. **Full audit notes (optional):**
-   ```bash
-   git notes --ref=refs/notes/memento-full-audit show {sha}
-   ```
-   If successful, store the output as `full_audit`. If not available, set `full_audit` to `null`.
-
-3. If `git notes show` fails for a commit, skip that entry silently.
+2. If `git notes show` fails for a commit, skip that entry silently.
 
 Missing memento notes do NOT trigger `insufficient`.
 
@@ -182,10 +177,9 @@ Missing memento notes do NOT trigger `insufficient`.
 For each entry in `identifiers.greptile`:
 
 1. Fetch PR comments from the Greptile bot:
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --paginate
    ```
-   Filter for comments by users whose login contains "greptile" (case-insensitive).
+   Use GitHub MCP to list all review comments for PR #{pr_number}. Filter for comments by users whose login contains "greptile" (case-insensitive).
+   ```
 
 2. Also check issue-level comments for Greptile bot comments.
 
@@ -199,12 +193,11 @@ Evaluate evidence completeness using these rules:
 
 | Condition | Verdict |
 |-----------|---------|
-| PR diff retrieved (even truncated) AND commit messages present | Required baseline met |
+| Changed file list present AND commit messages present | Required baseline met |
 | `identifiers.linear` is non-empty AND all Linear issues retrieved | Required condition met |
 | `identifiers.linear` is non-empty AND any Linear issue NOT retrieved | `insufficient` |
 | `identifiers.linear` is empty (no Linear IDs in Manifest) | No Linear requirement |
 | All optional sources (Slack, memento, Greptile) missing but required baseline met | `sufficient` |
-| PR diff unavailable (null) | `insufficient` |
 | No Manifest found | `insufficient` |
 
 **Composing the sufficiency object:**
@@ -227,7 +220,7 @@ If `insufficient`:
 }
 ```
 
-Even when `insufficient`, return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., labeling `knowledge:insufficient`).
+Even when `insufficient`, return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., keeping the PR in `knowledge:pending` for a later retry).
 
 ## Evidence Bundle Structure
 
@@ -243,7 +236,6 @@ The final Evidence Bundle must follow this structure:
     "pr": {
       "title": "PR title text",
       "body": "PR body markdown",
-      "diff": "full PR diff text (or truncated with note)",
       "commits": [
         { "sha": "a1b2c3d", "message": "Full commit message" }
       ],
@@ -262,7 +254,10 @@ The final Evidence Bundle must follow this structure:
         "comments": [
           { "author": "person", "body": "comment text", "created_at": "ISO 8601" }
         ],
-        "labels": ["decision", "bug"]
+        "labels": ["decision", "bug"],
+        "status_changes": [
+          { "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }
+        ]
       }
     ],
     "slack": [
@@ -275,8 +270,7 @@ The final Evidence Bundle must follow this structure:
     "memento": [
       {
         "sha": "a1b2c3d",
-        "summary": "git notes content from refs/notes/commits",
-        "full_audit": "git notes content from refs/notes/memento-full-audit or null"
+        "summary": "git notes content from refs/notes/commits"
       }
     ],
     "greptile": [
@@ -306,8 +300,7 @@ The final Evidence Bundle must follow this structure:
 | Linear issue deleted/moved/not found | Record `"linear:{id}"` in `missing`. `insufficient` for this PR. |
 | Slack content unretrievable | Set `retrieved: false` for that entry. Continue — optional source. |
 | `git notes show` fails | Skip that memento entry. Continue — optional source. |
-| PR diff too large (>100KB) | Truncate diff with note. Still `sufficient`. |
-| PR diff API error | Set `diff: null`. `insufficient`. |
+| Changed file list unavailable | Use `pr.changed_files` from Manifest as fallback. |
 | GitHub API rate limit | Report failure to orchestrator. Orchestrator retries in next batch. |
 
 ## Constraints

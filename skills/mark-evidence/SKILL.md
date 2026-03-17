@@ -12,13 +12,13 @@ description: "Extracts evidence identifiers from a merged PR and posts an Eviden
 
 ## Prerequisites
 
-- `gh` CLI authenticated with repo scope
+- GitHub MCP server configured with `pull_requests,issues,labels` toolsets
 - `git` with access to `refs/notes/commits` (memento notes)
 - Linear MCP server (optional — graceful degradation if unavailable)
 
 ## Allowed Tools
 
-Use ONLY: `gh`, `git`, Linear MCP (read-only), `Bash`, `Read`, `Glob`, `Grep`.
+Use ONLY: GitHub MCP (read + write), `git`, Linear MCP (read-only), `Bash`, `Read`, `Glob`, `Grep`.
 Do NOT use any other tools. Do NOT write files. Do NOT access vault.db or `knowledge-gate` CLI.
 
 ## Input
@@ -26,14 +26,14 @@ Do NOT use any other tools. Do NOT write files. Do NOT access vault.db or `knowl
 | Field | Source | Format |
 |-------|--------|--------|
 | PR number | GitHub Actions event context or manual argument | Integer |
-| Repository | GitHub Actions context or derived via `gh repo view --json nameWithOwner -q .nameWithOwner` | `owner/repo` |
-| Merge SHA | GitHub Actions context or derived via `gh pr view <pr_number> --json mergeCommit -q .mergeCommit.oid` | Hex string |
+| Repository | GitHub Actions context or derived via GitHub MCP | `owner/repo` |
+| Merge SHA | GitHub Actions context or derived via GitHub MCP | Hex string |
 
 ## Output
 
 | Artifact | Format | Consumer |
 |----------|--------|----------|
-| PR comment | Evidence Bundle Manifest (per `evidence-manifest.spec.md`) | `/knowledge-distillery:collect-evidence` |
+| PR comment | Evidence Bundle Manifest (per [evidence-manifest.spec.md](reference/evidence-manifest.spec.md)) | `/knowledge-distillery:collect-evidence` |
 | PR label | `knowledge:pending` added | `/knowledge-distillery:batch-refine` (discovery) |
 
 ## Execution Steps
@@ -42,16 +42,31 @@ Follow these steps in exact order. Do not skip steps. Do not reorder.
 
 ### Step 1: Idempotency Check
 
-```bash
-gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate -q '.[].body'
+```
+Use GitHub MCP to list all issue-level comments on PR #{pr_number}. Extract each comment's body text.
 ```
 
-Scan all comment bodies. If ANY comment contains the delimiter `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`, stop immediately and report success — this PR has already been processed. Do not post a duplicate comment. Do not modify labels.
+Scan all comment bodies for the delimiter `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`.
+
+**If Manifest comment exists:**
+
+1. Check if the `knowledge:pending` label is present on the PR:
+   ```
+   Use GitHub MCP to get PR #{pr_number} labels. Check if `knowledge:pending` is present.
+   ```
+2. If the label is missing (partial failure on a previous run) — re-add it:
+   ```
+   Use GitHub MCP to add the `knowledge:pending` label to PR #{pr_number}.
+   ```
+   Then exit with success.
+3. If the label is already present — exit with success. Do not post a duplicate comment. Do not modify labels.
+
+**If no Manifest comment exists** — proceed to Step 2.
 
 ### Step 2: Gather PR Metadata
 
-```bash
-gh pr view {pr_number} --json title,body,commits,files,baseRefName,mergeCommit
+```
+Use GitHub MCP to fetch PR #{pr_number} metadata: title, body, commits (with SHAs and messages), changed files, base branch, and merge commit SHA.
 ```
 
 Extract from the response:
@@ -72,17 +87,27 @@ Apply the regex pattern `/\b([A-Z]+-\d+)\b/g` to these sources, in order:
 
 Deduplicate by ID, keeping the first `source` encountered for each unique ID.
 
-### Step 4: Discover Slack Links from Linear Issues
+### Step 4: Discover Slack Links
+
+Slack links can appear in two independent sources: PR text and Linear issues. Collect from both.
+
+**4a. Extract Slack links from PR body and comments (independent of Linear):**
+
+1. Scan the PR body (from Step 2) for Slack permalink URLs matching the pattern: `https://*.slack.com/archives/*/p*`
+2. Record each discovered URL with `source: "pr_body"`
+3. Also scan PR issue-level comments for the same pattern; record those with `source: "pr_comment"`
+
+**4b. Extract Slack links from Linear issues (requires Linear MCP):**
 
 For each Linear issue ID found in Step 3:
 
 1. Query the Linear MCP for issue details (description/body and comments)
 2. Scan the issue body and all comments for Slack permalink URLs matching the pattern: `https://*.slack.com/archives/*/p*`
 3. Record each discovered URL with `source: "linear_issue"`
-4. Also scan the PR body for Slack permalink URLs; record those with `source: "pr_body"`
-5. Deduplicate by URL
 
-**Graceful degradation:** If Linear MCP is unavailable (connection error, timeout, not configured), skip this entire step. The `slack` array remains empty or contains only URLs found in the PR body. This is NOT a failure — log a warning and continue.
+**Graceful degradation:** If Linear MCP is unavailable (connection error, timeout, not configured), skip Step 4b only. Slack links from Step 4a are still collected. This is NOT a failure — log a warning and continue.
+
+**4c. Deduplicate** all collected Slack URLs by URL, keeping the first `source` encountered.
 
 ### Step 5: Check git-memento Notes
 
@@ -95,7 +120,7 @@ git fetch origin refs/notes/commits:refs/notes/commits 2>/dev/null || true
 Then, for each commit SHA in the PR (from Step 2):
 
 ```bash
-git notes show {sha}
+git notes --ref=refs/notes/commits show {sha}
 ```
 
 - If the command succeeds (exit code 0), record: `{ "sha": "{short_sha_7chars}", "has_notes": true }`
@@ -103,14 +128,14 @@ git notes show {sha}
 
 ### Step 6: Check Greptile Reviews
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --paginate -q '[.[] | select(.user.login | test("greptile"; "i"))] | length'
+```
+Use GitHub MCP to list all review comments (inline on diff) for PR #{pr_number}. Filter for comments by users whose login contains "greptile" (case-insensitive). Count the matching comments.
 ```
 
 Also check issue comments:
 
-```bash
-gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate
+```
+Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
 ```
 
 Look for comments from users whose login contains "greptile" (case-insensitive).
@@ -187,20 +212,20 @@ If any validation fails, fix the data before posting. Do not post an invalid Man
 
 Ensure the label exists:
 
-```bash
-gh label create "knowledge:pending" --description "PR awaiting knowledge distillation" --color "FBCA04" 2>/dev/null || true
+```
+Use GitHub MCP to ensure the label `knowledge:pending` exists on the repository (description: "PR awaiting knowledge distillation", color: "FBCA04"). If it already exists, continue without error.
 ```
 
 Post the Manifest as a PR comment:
 
-```bash
-gh pr comment {pr_number} --body "{full_manifest_content}"
+```
+Use GitHub MCP to post a comment on PR #{pr_number} with the full Manifest content as the comment body.
 ```
 
 Add the `knowledge:pending` label:
 
-```bash
-gh pr edit {pr_number} --add-label "knowledge:pending"
+```
+Use GitHub MCP to add the `knowledge:pending` label to PR #{pr_number}.
 ```
 
 ## Error Handling

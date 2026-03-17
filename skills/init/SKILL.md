@@ -27,10 +27,10 @@ mkdir -p .knowledge
 
 If `.knowledge/vault.db` already exists, skip this step (idempotent).
 
-If it does not exist, initialize from the plugin's schema:
+If it does not exist, initialize it through the bundled CLI:
 
 ```bash
-sqlite3 .knowledge/vault.db < ${CLAUDE_PLUGIN_ROOT}/schema/vault.sql
+${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate init-db .knowledge/vault.db
 ```
 
 Verify: `sqlite3 .knowledge/vault.db "PRAGMA user_version;"` should return `1`.
@@ -68,6 +68,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
       - name: Write dynamic MCP config
         run: |
           cat > .mcp.json << 'MCPEOF'
@@ -78,8 +85,7 @@ jobs:
                 "url": "https://api.githubcopilot.com/mcp/",
                 "headers": {
                   "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
-                  "X-MCP-Toolsets": "pull_requests",
-                  "X-MCP-Readonly": "true"
+                  "X-MCP-Toolsets": "pull_requests,issues,labels"
                 }
               },
               "linear": {
@@ -94,14 +100,14 @@ jobs:
           }
           MCPEOF
 
-      - uses: anthropics/claude-code-action@beta
+      - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
             Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
             and add 'knowledge:pending' label.
-          claude_args: "--allowedTools mcp__github__*,mcp__linear__*,Bash(gh:*),Bash(git:*),Read,Glob,Grep"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(git:*),Read,Glob,Grep"
 ```
 
 #### `.github/workflows/batch-refine.yml`
@@ -126,6 +132,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
       - name: Write dynamic MCP config
         run: |
           cat > .mcp.json << 'MCPEOF'
@@ -136,7 +149,7 @@ jobs:
                 "url": "https://api.githubcopilot.com/mcp/",
                 "headers": {
                   "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
-                  "X-MCP-Toolsets": "pull_requests"
+                  "X-MCP-Toolsets": "pull_requests,issues,labels"
                 }
               },
               "linear": {
@@ -151,19 +164,18 @@ jobs:
           }
           MCPEOF
 
-      - uses: anthropics/claude-code-action@beta
+      - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             Use skill /knowledge-distillery:batch-refine.
-            Find all PRs with 'knowledge:pending' or 'knowledge:insufficient' label,
+            Find all PRs with 'knowledge:pending' label,
             collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
             insert into vault.db via knowledge-gate _pipeline-insert.
             On success: update label to 'knowledge:collected'.
-            On insufficient evidence: update label to 'knowledge:insufficient' (will be retried next run).
-            On abandoned (3+ failed attempts): update label to 'knowledge:abandoned'.
+            On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
-          claude_args: "--allowedTools mcp__github__*,mcp__linear__*,Bash(gh:*),Bash(sqlite3:*),Bash(git:*),Read,Write,Glob,Grep"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(sqlite3:*,git:*),Read,Write,Glob,Grep"
 ```
 
 ### Step 4: Update CLAUDE.md
@@ -192,7 +204,17 @@ If `.gitignore` does not exist, create it. Check if `.knowledge/` related entrie
 
 Note: `.knowledge/vault.db` and `.knowledge/reports/` are intentionally NOT gitignored — they are committed to the repository. Only temporary working files are ignored.
 
-### Step 6: Output Summary
+### Step 6: Run Self-Check
+
+After all files are created or updated, verify the repository state through the bundled CLI:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor
+```
+
+This command must succeed. If any check fails, stop and report the failing items instead of claiming initialization is complete.
+
+### Step 7: Output Summary
 
 Print a summary of all created/updated files:
 
@@ -204,6 +226,7 @@ Knowledge Distillery initialized:
   [created|exists] .github/workflows/batch-refine.yml
   [updated|exists] CLAUDE.md (Knowledge Vault section)
   [updated|exists] .gitignore
+  [passed] knowledge-gate doctor
 
 Next steps:
   1. Add ANTHROPIC_API_KEY to your repository secrets
@@ -214,8 +237,9 @@ Next steps:
 
 ## Constraints
 
-- All files are read from the plugin package (`${CLAUDE_PLUGIN_ROOT}/schema/vault.sql`), NOT from ad hoc text
+- Vault initialization must go through the bundled CLI command so schema asset lookup stays inside the plugin package
 - Idempotent: safe to run multiple times without duplication
 - Does NOT modify existing vault.db data
 - Does NOT overwrite existing workflow files
 - Does NOT remove existing CLAUDE.md content
+- Final repository validation must go through `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor`

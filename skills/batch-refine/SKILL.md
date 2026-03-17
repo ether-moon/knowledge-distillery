@@ -12,24 +12,24 @@ description: "Orchestrates the Stage B distillation pipeline: discovers merged P
 
 ## Prerequisites
 
-- `gh` CLI authenticated with repo scope + PR write permissions
+- GitHub MCP server configured with `pull_requests,issues,labels` toolsets
 - `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate` CLI available
 - `.knowledge/vault.db` accessible
 - `sqlite3` CLI available
 - `jq` CLI available
 - `git` with push access
 - Linear MCP server (graceful degradation if unavailable)
+- git-memento (optional — gracefully degrade if unavailable)
 
 ## Execution Steps
 
 ### Step 1: Discover Pending PRs
 
-```bash
-gh pr list --label "knowledge:pending" --state merged --json number,title,mergedAt
-gh pr list --label "knowledge:insufficient" --state merged --json number,title,mergedAt
+```
+Use GitHub MCP to list all merged PRs with the `knowledge:pending` label (fields: number, title, mergedAt).
 ```
 
-Merge both lists, deduplicate by PR number, sort by `mergedAt` ascending (oldest first).
+Sort by `mergedAt` ascending (oldest first).
 
 **If no results:** Log "No pending PRs" and exit 0. Do NOT create a branch, commit, or PR.
 
@@ -64,16 +64,9 @@ Collect from each subagent:
 
 For PRs where collect-evidence returned `insufficient`:
 
-1. Check current labels:
-   - If PR already has `knowledge:insufficient` (2nd failure → SLA exceeded):
-     ```bash
-     gh pr edit {number} --remove-label "knowledge:insufficient" --add-label "knowledge:abandoned"
-     ```
-   - If PR has `knowledge:pending` (1st failure):
-     ```bash
-     gh pr edit {number} --remove-label "knowledge:pending" --add-label "knowledge:insufficient"
-     ```
+1. Keep the PR labeled `knowledge:pending`
 2. Record in report under "Insufficient Evidence" section
+3. Retry on a later batch run after more evidence accumulates
 
 ### Step 5: Vault INSERT — Accepted Candidates
 
@@ -95,18 +88,28 @@ The JSON format for `_pipeline-insert`:
     "body": "...",
     "alternative": "...|null",
     "considerations": "...",
-    "domains": ["domain-a", "domain-b"],
+    "applies_to": {
+      "domains": ["domain-a", "domain-b"]
+    },
     "evidence": [{"type": "pr", "ref": "#1234"}],
-    "curation": [{"related_id": "existing-id", "reason": "conflict description"}]
+    "curation": [{"related_id": "existing-id", "reason": "conflict description"}],
+    "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}]
   }
 ]
 ```
 
+**Entry ID generation rules:**
+- Format: kebab-case slug, 3-5 words describing the knowledge entry
+- On UNIQUE constraint collision, append numeric suffix (e.g., `payment-service-object-2`)
+- `curation_queue.id` format: `cq-{entry_id}-{timestamp}`
+
 Notes:
 - `_pipeline-insert` handles entries, entry_domains, evidence, curation_queue in a single transaction
+- Every accepted candidate passed to `_pipeline-insert` MUST include at least one evidence item
 - FTS5 triggers auto-update the search index
 - Unknown domains are auto-created by `_pipeline-insert`
 - Map quality-gate `curation_queue_entry` to the `curation` field when present
+- Preserve `_proposed_domain` annotations from extract-candidates in the JSON passed to `_pipeline-insert`. Suggested patterns must already satisfy the CLI path-pattern contract (`*` or directory prefix ending with `/`).
 
 ### Step 6: Domain Health Report
 
@@ -116,6 +119,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-report
 
 Capture output for inclusion in the report PR.
 Also review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping. This "uncovered pattern" check is performed at the skill/report level, not by the CLI.
+Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up based on the report.
 
 ### Step 7: Generate Batch Report File and Commit
 
@@ -131,11 +135,12 @@ git push -u origin knowledge/batch-YYYY-MM-DD
 
 ### Step 8: Create Report PR
 
-```bash
-gh pr create \
-  --title "knowledge: batch YYYY-MM-DD — N entries added" \
-  --label "knowledge:batch" \
-  --body "<report body>"
+```
+Use GitHub MCP to create a PR:
+  - title: "knowledge: batch YYYY-MM-DD — N entries added"
+  - body: <report body content per the Report PR Format section below>
+  - base: main (or master)
+  - head: knowledge/batch-YYYY-MM-DD
 ```
 
 **MUST NOT auto-merge the report PR.** Human review is the intervention point.
@@ -144,20 +149,15 @@ gh pr create \
 
 **After** Report PR creation (to prevent orphaned label state):
 
-```bash
-gh pr edit {number} --remove-label "knowledge:pending" --add-label "knowledge:collected"
 ```
-
-For PRs that had `knowledge:insufficient` and were successfully processed:
-```bash
-gh pr edit {number} --remove-label "knowledge:insufficient" --add-label "knowledge:collected"
+Use GitHub MCP to remove the `knowledge:pending` label and add the `knowledge:collected` label to PR #{number}.
 ```
 
 ### Step 10: Cleanup Verification
 
 Verify:
-- All processed PRs have `knowledge:collected`, `knowledge:insufficient`, or `knowledge:abandoned` label
-- No PR retains `knowledge:pending` after processing
+- All successfully processed PRs have `knowledge:collected` label
+- PRs with insufficient evidence remain `knowledge:pending`
 - `sqlite3 .knowledge/vault.db "SELECT count(*) FROM entries"` succeeds
 - Report PR exists and is open
 
@@ -198,15 +198,16 @@ Verify:
 {If empty: "No conflicts detected."}
 
 ### Domain Changes
-{New domains added during this batch, if any}
+{New domains auto-created during this batch, if any}
 {domain-report highlights from Step 6}
 {Repeated unmapped path prefixes observed across this batch, if any}
+{Manual follow-up suggestions for domain merge/split/path cleanup, if any}
 
 ### Source PR Details
 {For each processed PR:}
 - #{pr_number} "{title}": {outcome summary}
 
-### Insufficient Evidence (Next Cycle Retry)
+### Insufficient Evidence (Remains Pending)
 {For each insufficient PR:}
 - #{pr_number} "{title}": {missing sources}
 
@@ -221,7 +222,7 @@ Verify:
 | Subagent fails | Skip that PR. Record error in report. Continue with remaining. |
 | vault.db INSERT fails | Log error, skip that candidate. Record as "INSERT failed" in report. |
 | `git push` fails | Retry once. If still fails, output manual instructions and abort. |
-| `gh pr create` fails | Output report body to stdout so it's not lost. Log error. |
+| GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. |
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
 | Branch already exists | Checkout existing branch (supports re-runs). |
 

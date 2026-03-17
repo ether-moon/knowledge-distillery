@@ -2,13 +2,53 @@
 # scripts/knowledge-gate — Knowledge Vault interface
 set -euo pipefail
 
-# Vault path resolution: env override, then adopting project's .knowledge/vault.db
-VAULT="${KNOWLEDGE_VAULT_PATH:-${PWD}/.knowledge/vault.db}"
+resolve_vault_path() {
+  if [ -n "${KNOWLEDGE_VAULT_PATH:-}" ]; then
+    echo "${KNOWLEDGE_VAULT_PATH}"
+    return
+  fi
 
-if [ ! -f "$VAULT" ]; then
-  echo "Knowledge vault not found at $VAULT" >&2
-  exit 1
-fi
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$repo_root" ]; then
+    echo "${repo_root}/.knowledge/vault.db"
+    return
+  fi
+
+  local dir="$PWD"
+  while [ "$dir" != "/" ]; do
+    if [ -f "${dir}/.knowledge/vault.db" ]; then
+      echo "${dir}/.knowledge/vault.db"
+      return
+    fi
+    dir="$(dirname "$dir")"
+  done
+
+  echo "${PWD}/.knowledge/vault.db"
+}
+
+resolve_repo_root() {
+  git rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$PWD"
+}
+
+# Resolve plugin root for bundled assets
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCHEMA_PATH="${PLUGIN_ROOT}/schema/vault.sql"
+
+VAULT="$(resolve_vault_path)"
+CMD="${1:-help}"
+shift || true
+
+case "$CMD" in
+  help|--help|-h|init-db|doctor) ;;
+  *)
+    if [ ! -f "$VAULT" ]; then
+      echo "Knowledge vault not found at $VAULT" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 # Common utility: single-quote escaping
 esc() { echo "${1//\'/\'\'}"; }
@@ -16,9 +56,58 @@ esc() { echo "${1//\'/\'\'}"; }
 # JSON query wrapper: sqlite3 -json returns empty string on 0 rows; this returns []
 sql_json() { local result; result=$(sqlite3 -json "$VAULT" "$1"); echo "${result:-[]}"; }
 
-# Resolve plugin root for migration scripts
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RESERVED_ENTRY_IDS=""
+
+id_reserved() {
+  printf '%s' "$RESERVED_ENTRY_IDS" | grep -Fxq -- "$1"
+}
+
+reserve_id() {
+  RESERVED_ENTRY_IDS="${RESERVED_ENTRY_IDS}$1"$'\n'
+}
+
+make_unique_entry_id() {
+  local base_id="$1"
+  local candidate="$base_id"
+  local suffix=2
+
+  while sqlite3 "$VAULT" "SELECT 1 FROM entries WHERE id='$(esc "$candidate")' LIMIT 1;" | grep -q 1 || id_reserved "$candidate"; do
+    candidate="${base_id}-${suffix}"
+    suffix=$((suffix + 1))
+  done
+
+  echo "$candidate"
+}
+
+list_migration_files() {
+  local migration_dir="$1"
+  find "$migration_dir" -maxdepth 1 -type f -name '*.sql' -print 2>/dev/null \
+    | while IFS= read -r f; do
+        local version
+        version=$(basename "$f" .sql | grep -oE '^[0-9]+')
+        [ -n "$version" ] || continue
+        printf '%010d|%s\n' "$((10#$version))" "$f"
+      done \
+    | sort \
+    | cut -d'|' -f2-
+}
+
+init_db() {
+  local target="${1:-$VAULT}"
+
+  if [ -e "$target" ]; then
+    echo "ERROR: Knowledge vault already exists at $target" >&2
+    return 1
+  fi
+  if [ ! -f "$SCHEMA_PATH" ]; then
+    echo "ERROR: Bundled schema not found at $SCHEMA_PATH" >&2
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  sqlite3 "$target" < "$SCHEMA_PATH"
+  echo "Initialized knowledge vault at $target"
+}
 
 # ============================================================
 # 1. Knowledge Query Commands (Agent Runtime)
@@ -80,9 +169,19 @@ search_entries() {
 get_entry() {
   local item_id
   item_id="$(esc "$1")"
-  sql_json "
-    SELECT * FROM entries WHERE id = '${item_id}';
-  "
+
+  # If jq is available, return enriched JSON with domains and evidence
+  if command -v jq &>/dev/null; then
+    local entry domains evidence
+    entry=$(sql_json "SELECT * FROM entries WHERE id = '${item_id}';")
+    domains=$(sql_json "SELECT domain FROM entry_domains WHERE entry_id = '${item_id}';")
+    evidence=$(sql_json "SELECT type, ref FROM evidence WHERE entry_id = '${item_id}';")
+
+    echo "$entry" | jq --argjson domains "$domains" --argjson evidence "$evidence" \
+      'if length == 0 then [] else [.[0] + {domains: ($domains | map(.domain)), evidence: $evidence}] end'
+  else
+    sql_json "SELECT * FROM entries WHERE id = '${item_id}';"
+  fi
 }
 
 list_entries() {
@@ -231,12 +330,14 @@ domain_split() {
     WHERE ed.domain = '${source}';
 
     DELETE FROM entry_domains WHERE domain = '${source}';
+
     DELETE FROM domain_paths WHERE domain = '${source}';
+
     UPDATE domain_registry SET status = 'deprecated' WHERE domain = '${source}';
     COMMIT;
   "
   echo "Split: $1 -> $2, $4"
-  echo "[ACTION REQUIRED] Set path mappings for the new domains:"
+  echo "Path patterns from '$1' have been removed. Set mappings for the new domains explicitly:"
   echo "  knowledge-gate domain-paths-set '$2' <patterns...>"
   echo "  knowledge-gate domain-paths-set '$4' <patterns...>"
 }
@@ -269,6 +370,14 @@ domain_deprecate() {
   echo "Deprecated domain: $1"
 }
 
+validate_pattern() {
+  local pattern="$1"
+  if [ "$pattern" = "*" ]; then return 0; fi
+  if [[ "$pattern" == */ ]]; then return 0; fi
+  echo "ERROR: Invalid pattern '${pattern}'. Must end with '/' (directory prefix) or be '*' (global)." >&2
+  return 1
+}
+
 domain_paths_set() {
   local raw_domain="$1"
   local domain sql
@@ -276,6 +385,7 @@ domain_paths_set() {
   shift
   sql="PRAGMA foreign_keys = ON; BEGIN; DELETE FROM domain_paths WHERE domain = '${domain}';"
   for pattern in "$@"; do
+    validate_pattern "$pattern" || return 1
     local esc_pattern
     esc_pattern="$(esc "$pattern")"
     sql="${sql} INSERT INTO domain_paths(domain, pattern) VALUES ('${domain}', '${esc_pattern}');"
@@ -286,6 +396,7 @@ domain_paths_set() {
 }
 
 domain_paths_add() {
+  validate_pattern "$2" || return 1
   local domain pattern
   domain="$(esc "$1")"
   pattern="$(esc "$2")"
@@ -346,6 +457,19 @@ add_entry() {
     echo "ERROR: --considerations is required (use 'No special considerations' if none)" >&2
     return 1
   fi
+
+  # Validate domains exist
+  IFS=',' read -ra domain_check_arr <<< "$domains"
+  for d in "${domain_check_arr[@]}"; do
+    local trimmed_d
+    trimmed_d="$(echo "$d" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    local exists
+    exists=$(sqlite3 "$VAULT" "SELECT COUNT(*) FROM domain_registry WHERE domain='$(esc "$trimmed_d")' AND status='active';")
+    if [ "$exists" -eq 0 ]; then
+      echo "ERROR: Domain '${trimmed_d}' does not exist or is not active. Use 'domain-add' first." >&2
+      return 1
+    fi
+  done
 
   # Generate kebab-case slug from title
   local id
@@ -419,14 +543,48 @@ pipeline_insert() {
   for ((i=0; i<count; i++)); do
     local item
     item=$(echo "$json" | jq ".[$i]")
-    local id type title claim body alt considerations
+    local raw_id id type title claim body alt considerations domains_json
     id=$(echo "$item" | jq -r '.id' | sed "s/'/''/g")
+    raw_id="$id"
     type=$(echo "$item" | jq -r '.type' | sed "s/'/''/g")
     title=$(echo "$item" | jq -r '.title' | sed "s/'/''/g")
     claim=$(echo "$item" | jq -r '.claim' | sed "s/'/''/g")
     body=$(echo "$item" | jq -r '.body' | sed "s/'/''/g")
     alt=$(echo "$item" | jq -r '.alternative // empty' | sed "s/'/''/g")
     considerations=$(echo "$item" | jq -r '.considerations' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed "s/'/''/g")
+    domains_json=$(echo "$item" | jq -c '.applies_to.domains // .domains // []')
+    local ev_count
+    ev_count=$(echo "$item" | jq '.evidence // [] | length')
+
+    # Count domains early for validation
+    local domain_count
+    domain_count=$(echo "$domains_json" | jq 'length')
+
+    # Required field validation
+    if [ -z "$id" ] || [ "$id" = "null" ]; then
+      echo "ERROR: entry at index $i has empty 'id'" >&2; return 1
+    fi
+    if [ -z "$type" ] || [ "$type" = "null" ]; then
+      echo "ERROR: entry '${id}' has empty 'type'" >&2; return 1
+    fi
+    if [ "$type" != "fact" ] && [ "$type" != "anti-pattern" ]; then
+      echo "ERROR: entry '${id}' has invalid type '${type}' (must be 'fact' or 'anti-pattern')" >&2; return 1
+    fi
+    if [ -z "$title" ] || [ "$title" = "null" ]; then
+      echo "ERROR: entry '${id}' has empty 'title'" >&2; return 1
+    fi
+    if [ -z "$claim" ] || [ "$claim" = "null" ]; then
+      echo "ERROR: entry '${id}' has empty 'claim'" >&2; return 1
+    fi
+    if [ -z "$body" ] || [ "$body" = "null" ]; then
+      echo "ERROR: entry '${id}' has empty 'body'" >&2; return 1
+    fi
+    if [ "$domain_count" -eq 0 ]; then
+      echo "ERROR: entry '${id}' has no domains" >&2; return 1
+    fi
+    if [ "$ev_count" -eq 0 ]; then
+      echo "ERROR: entry '${id}' has no evidence" >&2; return 1
+    fi
 
     # R3: anti-pattern requires alternative
     if [ "$type" = "anti-pattern" ] && [ -z "$alt" ]; then
@@ -440,27 +598,50 @@ pipeline_insert() {
       return 1
     fi
 
+    id="$(make_unique_entry_id "$raw_id")"
+    reserve_id "$id"
+
     sql="${sql}
     INSERT INTO entries (id, type, status, title, claim, body, alternative, considerations, created_at, updated_at)
     VALUES ('${id}', '${type}', 'active', '${title}', '${claim}', '${body}',
             $([ -n "$alt" ] && echo "'${alt}'" || echo "NULL"), '${considerations}',
             datetime('now'), datetime('now'));"
 
-    # domains — auto-create if missing
-    local domain_count
-    domain_count=$(echo "$item" | jq '.domains | length')
+    # domains — auto-create if missing, consume _proposed_domain if available
     for ((j=0; j<domain_count; j++)); do
       local domain
-      domain=$(echo "$item" | jq -r ".domains[$j]" | sed "s/'/''/g")
+      domain=$(echo "$domains_json" | jq -r ".[$j]" | sed "s/'/''/g")
+
+      # Check if this domain has a proposed definition in _proposed_domain
+      local proposed_desc="auto-created by pipeline"
+      local pd_match
+      pd_match=$(echo "$item" | jq -c "._proposed_domain // [] | map(select(.name == \"$(echo "$domain" | sed 's/"/\\"/g')\")) | .[0] // empty")
+      if [ -n "$pd_match" ]; then
+        proposed_desc=$(echo "$pd_match" | jq -r '.description // "auto-created by pipeline"' | sed "s/'/''/g")
+      fi
+
       sql="${sql}
       INSERT OR IGNORE INTO domain_registry(domain, description, status)
-      VALUES ('${domain}', 'auto-created by pipeline', 'active');
+      VALUES ('${domain}', '${proposed_desc}', 'active');"
+
+      # Insert suggested patterns from _proposed_domain if any
+      if [ -n "$pd_match" ]; then
+        local sp_count
+        sp_count=$(echo "$pd_match" | jq '.suggested_patterns // [] | length')
+        for ((k=0; k<sp_count; k++)); do
+          local sp
+          sp=$(echo "$pd_match" | jq -r ".suggested_patterns[$k]" | sed "s/'/''/g")
+          validate_pattern "$sp" || return 1
+          sql="${sql}
+          INSERT OR IGNORE INTO domain_paths(domain, pattern) VALUES ('${domain}', '${sp}');"
+        done
+      fi
+
+      sql="${sql}
       INSERT INTO entry_domains(entry_id, domain) VALUES ('${id}', '${domain}');"
     done
 
     # evidence
-    local ev_count
-    ev_count=$(echo "$item" | jq '.evidence // [] | length')
     for ((j=0; j<ev_count; j++)); do
       local ev_type ev_ref
       ev_type=$(echo "$item" | jq -r ".evidence[$j].type" | sed "s/'/''/g")
@@ -492,6 +673,97 @@ pipeline_insert() {
 # 5. Report + Utility Commands
 # ============================================================
 
+doctor() {
+  local repo_root
+  repo_root="$(resolve_repo_root)"
+  local pass_count=0 fail_count=0
+
+  pass() {
+    pass_count=$((pass_count + 1))
+    echo "PASS  $1"
+  }
+
+  fail() {
+    fail_count=$((fail_count + 1))
+    echo "FAIL  $1"
+  }
+
+  echo "=== Knowledge Distillery Doctor ==="
+  echo "Repository root: ${repo_root}"
+  echo "Expected vault: ${VAULT}"
+  echo ""
+
+  if git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    pass "Git repository detected"
+  else
+    fail "Not inside a Git repository"
+  fi
+
+  if [ -f "$VAULT" ]; then
+    pass "Vault exists"
+
+    local schema_version
+    schema_version="$(sqlite3 "$VAULT" "PRAGMA user_version;" 2>/dev/null || true)"
+    if [[ "$schema_version" =~ ^[0-9]+$ ]] && [ "$schema_version" -ge 1 ]; then
+      pass "Vault schema version is ${schema_version}"
+    else
+      fail "Vault schema version is invalid"
+    fi
+
+    local core_tables
+    core_tables="$(sqlite3 "$VAULT" "
+      SELECT COUNT(*)
+      FROM sqlite_master
+      WHERE type='table'
+        AND name IN ('entries', 'entry_domains', 'domain_registry', 'domain_paths', 'evidence');
+    " 2>/dev/null || true)"
+    if [ "$core_tables" = "5" ]; then
+      pass "Vault core tables are present"
+    else
+      fail "Vault core tables are incomplete"
+    fi
+  else
+    fail "Vault is missing"
+  fi
+
+  if [ -d "${repo_root}/.knowledge/reports" ]; then
+    pass ".knowledge/reports exists"
+  else
+    fail ".knowledge/reports is missing"
+  fi
+
+  if [ -f "${repo_root}/.github/workflows/mark-evidence.yml" ]; then
+    pass "mark-evidence workflow exists"
+  else
+    fail "mark-evidence workflow is missing"
+  fi
+
+  if [ -f "${repo_root}/.github/workflows/batch-refine.yml" ]; then
+    pass "batch-refine workflow exists"
+  else
+    fail "batch-refine workflow is missing"
+  fi
+
+  if [ -f "${repo_root}/CLAUDE.md" ] && grep -Fq "## Knowledge Vault" "${repo_root}/CLAUDE.md"; then
+    pass "CLAUDE.md contains the Knowledge Vault section"
+  else
+    fail "CLAUDE.md is missing the Knowledge Vault section"
+  fi
+
+  if [ -f "${repo_root}/.gitignore" ] && grep -Fq ".knowledge/tmp/" "${repo_root}/.gitignore"; then
+    pass ".gitignore contains .knowledge/tmp/"
+  else
+    fail ".gitignore is missing .knowledge/tmp/"
+  fi
+
+  echo ""
+  echo "Summary: ${pass_count} passed, ${fail_count} failed"
+
+  if [ "$fail_count" -gt 0 ]; then
+    return 1
+  fi
+}
+
 domain_report() {
   local active_count deprecated_count
   active_count=$(sqlite3 "$VAULT" "SELECT COUNT(*) FROM domain_registry WHERE status='active';")
@@ -503,7 +775,21 @@ domain_report() {
   echo "  [!] SPLIT CANDIDATES (entries > 15):"
   local split
   split=$(sqlite3 "$VAULT" "
-    SELECT dr.domain, sub.cnt
+    SELECT
+      dr.domain,
+      sub.cnt,
+      COALESCE((SELECT group_concat(dp.pattern, ', ')
+                FROM domain_paths dp
+                WHERE dp.domain = dr.domain), ''),
+      COALESCE((SELECT group_concat(claim, ' || ')
+                FROM (
+                  SELECT e.claim
+                  FROM entry_domains ed2
+                  JOIN entries e ON e.id = ed2.entry_id
+                  WHERE ed2.domain = dr.domain AND e.status = 'active'
+                  ORDER BY e.updated_at DESC, e.created_at DESC, e.id
+                  LIMIT 2
+                )), '')
     FROM domain_registry dr
     JOIN (
       SELECT ed.domain, COUNT(DISTINCT ed.entry_id) AS cnt
@@ -518,8 +804,16 @@ domain_report() {
   if [ -z "$split" ]; then
     echo "      (none)"
   else
-    echo "$split" | while IFS='|' read -r domain cnt; do
+    echo "$split" | while IFS='|' read -r domain cnt patterns top_claims; do
       echo "      ${domain} -- ${cnt} entries"
+      if [ -n "$patterns" ]; then
+        echo "        patterns: ${patterns}"
+      fi
+      if [ -n "$top_claims" ]; then
+        echo "        sample claims:"
+        printf '%s' "$top_claims" | awk -F' \\|\\| ' '{ for (i = 1; i <= NF; i++) printf "          - %s\n", $i }'
+      fi
+      echo "        suggest: knowledge-gate domain-split '${domain}' <new-a> <desc-a> <new-b> <desc-b>"
     done
   fi
 
@@ -527,7 +821,21 @@ domain_report() {
   echo "  [!] MERGE CANDIDATES (entries <= 2):"
   local merge
   merge=$(sqlite3 "$VAULT" "
-    SELECT dr.domain, COALESCE(sub.cnt, 0)
+    SELECT
+      dr.domain,
+      COALESCE(sub.cnt, 0),
+      COALESCE((SELECT group_concat(dp.pattern, ', ')
+                FROM domain_paths dp
+                WHERE dp.domain = dr.domain), ''),
+      COALESCE((SELECT group_concat(claim, ' || ')
+                FROM (
+                  SELECT e.claim
+                  FROM entry_domains ed2
+                  JOIN entries e ON e.id = ed2.entry_id
+                  WHERE ed2.domain = dr.domain AND e.status = 'active'
+                  ORDER BY e.updated_at DESC, e.created_at DESC, e.id
+                  LIMIT 2
+                )), '')
     FROM domain_registry dr
     LEFT JOIN (
       SELECT ed.domain, COUNT(DISTINCT ed.entry_id) AS cnt
@@ -542,8 +850,16 @@ domain_report() {
   if [ -z "$merge" ]; then
     echo "      (none)"
   else
-    echo "$merge" | while IFS='|' read -r domain cnt; do
+    echo "$merge" | while IFS='|' read -r domain cnt patterns top_claims; do
       echo "      ${domain} -- ${cnt} entries"
+      if [ -n "$patterns" ]; then
+        echo "        patterns: ${patterns}"
+      fi
+      if [ -n "$top_claims" ]; then
+        echo "        sample claims:"
+        printf '%s' "$top_claims" | awk -F' \\|\\| ' '{ for (i = 1; i <= NF; i++) printf "          - %s\n", $i }'
+      fi
+      echo "        suggest: consider merging '${domain}' into a neighboring domain"
     done
   fi
 
@@ -618,15 +934,30 @@ domain_report() {
     echo ""
     echo "  [!] STRUCTURAL MISMATCH (top directories without domain):"
     local top_dirs
-    top_dirs=$(git ls-files 2>/dev/null | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn | head -10 | awk '{print $2}' | grep '/' | head -5)
+    local mismatch_lines=""
+    top_dirs=$(git ls-files 2>/dev/null | awk -F/ '
+      NF >= 3 { print $1 "/" $2 "/" }
+      NF == 2 { print $1 "/" }
+    ' | sort | uniq -c | sort -rn | head -10 | awk '{print $2}' | head -5)
     if [ -n "$top_dirs" ]; then
-      echo "$top_dirs" | while IFS= read -r dir; do
+      while IFS= read -r dir; do
         local has_domain
-        has_domain=$(sqlite3 "$VAULT" "SELECT COUNT(*) FROM domain_paths WHERE '${dir}/' LIKE pattern || '%' OR pattern = '*';")
+        has_domain=$(sqlite3 "$VAULT" "
+          SELECT COUNT(*)
+          FROM domain_paths
+          WHERE pattern != '*'
+            AND ('${dir}' LIKE pattern || '%' OR pattern LIKE '${dir}' || '%');
+        ")
         if [ "$has_domain" -eq 0 ]; then
-          echo "      ${dir}/ -- no domain mapping"
+          mismatch_lines="${mismatch_lines}      ${dir} -- no domain mapping"$'\n'
+          mismatch_lines="${mismatch_lines}        suggest: knowledge-gate domain-add '<domain>' 'Description' && knowledge-gate domain-paths-set '<domain>' '${dir}'"$'\n'
         fi
-      done
+      done <<< "$top_dirs"
+      if [ -n "$mismatch_lines" ]; then
+        printf '%s' "$mismatch_lines"
+      else
+        echo "      (none)"
+      fi
     else
       echo "      (none)"
     fi
@@ -637,16 +968,22 @@ domain_report() {
   local action_count=0
 
   if [ -n "$split" ]; then
-    action_count=$((action_count + 1))
-    echo "  ${action_count}. Consider splitting overcrowded domains"
+    while IFS='|' read -r domain _; do
+      action_count=$((action_count + 1))
+      echo "  ${action_count}. Split candidate: ${domain}"
+    done <<< "$split"
   fi
   if [ -n "$merge" ]; then
-    action_count=$((action_count + 1))
-    echo "  ${action_count}. Consider merging sparse domains"
+    while IFS='|' read -r domain _; do
+      action_count=$((action_count + 1))
+      echo "  ${action_count}. Merge candidate: ${domain}"
+    done <<< "$merge"
   fi
   if [ -n "$orphans" ]; then
-    action_count=$((action_count + 1))
-    echo "  ${action_count}. Consider deprecating orphan domains"
+    while IFS='|' read -r domain _; do
+      action_count=$((action_count + 1))
+      echo "  ${action_count}. Deprecate candidate: ${domain}"
+    done <<< "$orphans"
   fi
   if [ "$action_count" -eq 0 ]; then
     echo "  No action items."
@@ -665,8 +1002,12 @@ migrate_vault() {
 
   local has_migrations=false
   local sql="BEGIN;"
-  for f in "$migration_dir"/*.sql; do
-    [ -f "$f" ] || continue
+  local migration_files=()
+  while IFS= read -r f; do
+    [ -n "$f" ] && migration_files+=("$f")
+  done < <(list_migration_files "$migration_dir")
+
+  for f in "${migration_files[@]}"; do
     local version
     version=$(basename "$f" .sql | grep -oE '^[0-9]+')
     if [ -n "$version" ] && [ "$((10#$version))" -gt "$current_version" ]; then
@@ -732,13 +1073,13 @@ curate_queue() {
         sqlite3 "$VAULT" "UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")';"
         echo "Resolved: both kept." ;;
       keep-existing)
-        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='superseded', archived_at=datetime('now') WHERE id='$(esc "$entry_id")'; UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
-        echo "Resolved: new entry superseded." ;;
+        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='archived', archived_at=datetime('now'), archive_reason='Replaced by existing entry: $(esc "$related_id")' WHERE id='$(esc "$entry_id")'; UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
+        echo "Resolved: new entry archived." ;;
       keep-new)
-        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='superseded', archived_at=datetime('now') WHERE id='$(esc "$related_id")'; UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
-        echo "Resolved: existing entry superseded." ;;
+        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='archived', archived_at=datetime('now'), archive_reason='Replaced by newer entry: $(esc "$entry_id")' WHERE id='$(esc "$related_id")'; UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
+        echo "Resolved: existing entry archived." ;;
       archive-both)
-        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='superseded', archived_at=datetime('now') WHERE id IN ('$(esc "$entry_id")','$(esc "$related_id")'); UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
+        sqlite3 "$VAULT" "BEGIN; UPDATE entries SET status='archived', archived_at=datetime('now'), archive_reason='Archived during curation review' WHERE id IN ('$(esc "$entry_id")','$(esc "$related_id")'); UPDATE curation_queue SET status='resolved', resolved_at=datetime('now') WHERE id='$(esc "$cq_id")'; COMMIT;"
         echo "Resolved: both archived." ;;
       skip) echo "Skipped." ;;
       quit) echo "Exiting curation."; return 0 ;;
@@ -748,11 +1089,43 @@ curate_queue() {
 }
 
 # ============================================================
-# Command Dispatch
+# Auto-Migration
 # ============================================================
 
-CMD="${1:-help}"
-shift || true
+auto_migrate() {
+  local migration_dir="${PLUGIN_ROOT}/schema/migrations"
+  [ -d "$migration_dir" ] || return 0
+
+  local current_version
+  current_version=$(sqlite3 "$VAULT" "PRAGMA user_version;")
+
+  local sql="BEGIN;"
+  local has_migrations=false
+  local migration_files=()
+  while IFS= read -r f; do
+    [ -n "$f" ] && migration_files+=("$f")
+  done < <(list_migration_files "$migration_dir")
+
+  for f in "${migration_files[@]}"; do
+    local version
+    version=$(basename "$f" .sql | grep -oE '^[0-9]+')
+    if [ -n "$version" ] && [ "$((10#$version))" -gt "$current_version" ]; then
+      has_migrations=true
+      sql="${sql} $(cat "$f") PRAGMA user_version = $((10#$version));"
+    fi
+  done
+  sql="${sql} COMMIT;"
+
+  if [ "$has_migrations" = true ]; then
+    sqlite3 "$VAULT" "$sql"
+  fi
+}
+
+# Run auto-migration for commands that access the vault
+case "$CMD" in
+  help|--help|-h|migrate|init-db|doctor) ;;  # skip auto-migration
+  *) auto_migrate ;;
+esac
 
 case "$CMD" in
   # Knowledge Query Commands
@@ -776,14 +1149,14 @@ case "$CMD" in
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate domain-info <domain>" >&2; exit 1; }
     domain_info "$1" ;;
   domain-list)
-    local_status=""
+    status_filter=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --status) local_status="$2"; shift 2 ;;
-        *) local_status="$1"; shift ;;
+        --status) status_filter="$2"; shift 2 ;;
+        *) status_filter="$1"; shift ;;
       esac
     done
-    domain_list "${local_status:-active}" ;;
+    domain_list "${status_filter:-active}" ;;
   domain-resolve-path)
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate domain-resolve-path <filepath>" >&2; exit 1; }
     domain_resolve_path "$1" ;;
@@ -826,8 +1199,12 @@ case "$CMD" in
   _pipeline-insert)
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-insert" >&2; exit 1; }
     pipeline_insert ;;
+  init-db)
+    init_db "${1:-}" ;;
 
   # Report + Utility Commands
+  doctor)
+    doctor ;;
   domain-report)
     domain_report ;;
   migrate)
@@ -838,35 +1215,50 @@ case "$CMD" in
   help|--help|-h)
     echo "knowledge-gate — Knowledge Vault CLI"
     echo ""
-    echo "Query Commands:"
-    echo "  query-paths <filepath>        Query rules by file path"
-    echo "  query-domain <domain>         Query rules by domain"
-    echo "  search <keyword>              FTS5 keyword search"
-    echo "  get <id>                      Get full entry details"
-    echo "  list                          List all active entries"
+    echo "Usage: knowledge-gate <command> [arguments]"
     echo ""
-    echo "Domain Query Commands:"
-    echo "  domain-info <domain>          Domain details"
+    echo "Agent Runtime Commands:"
+    echo "  query-paths <filepath>        Query rules by file path (resolves domains automatically)"
+    echo "  query-domain <domain>         Query rules by domain name"
+    echo "  search <keyword>              FTS5 full-text keyword search"
+    echo "  get <id>                      Get full entry details (including body)"
+    echo "  list                          List all active entries (exploration/keyword discovery)"
+    echo ""
+    echo "Domain Queries:"
+    echo "  domain-info <domain>          Domain details (description, patterns, entry count)"
     echo "  domain-list [--status X]      List domains (active|deprecated|all)"
-    echo "  domain-resolve-path <filepath> Resolve file path to domains"
+    echo "  domain-resolve-path <filepath> Reverse-lookup file path to domains"
     echo ""
-    echo "Domain Management Commands:"
+    echo "Domain Management:"
     echo "  domain-add <domain> <desc>    Register new domain"
-    echo "  domain-merge <src> <target>   Merge domains"
-    echo "  domain-split <src> <a> <da> <b> <db>  Split domain"
+    echo "  domain-merge <src> <target>   Merge domains (transfers entries + paths)"
+    echo "  domain-split <src> <a> <da> <b> <db>  Split domain into two"
     echo "  domain-deprecate <domain> [--merge-into <target>]"
     echo "  domain-paths-set <domain> <pattern>..."
     echo "  domain-paths-add <domain> <pattern>"
     echo "  domain-paths-remove <domain> <pattern>"
     echo ""
-    echo "Loading Commands:"
-    echo "  add --type ... --title ... --claim ... --body ... --domain ... [--alternative ...] --considerations ... [--evidence ...]"
-    echo "  _pipeline-insert              Bulk insert from JSON stdin"
+    echo "Knowledge Loading:"
+    echo "  add --type <fact|anti-pattern> --title <t> --claim <c> --body <b>"
+    echo "      --domain <d>[,<d>...] [--alternative <alt>] --considerations <text>"
+    echo "      [--evidence <type:ref>[,<type:ref>...]]"
+    echo "  _pipeline-insert              Bulk insert from JSON stdin (pipeline only)"
     echo ""
-    echo "Utility Commands:"
-    echo "  domain-report                 Domain health report"
-    echo "  migrate                       Apply schema migrations"
-    echo "  curate                        Interactive curation queue"
+    echo "Diagnostics & Maintenance:"
+    echo "  init-db [path]                Create a new vault from bundled schema"
+    echo "  doctor                        Verify repository adoption state"
+    echo "  domain-report                 Domain health diagnosis + adjustment candidates"
+    echo "  migrate                       Apply PRAGMA user_version schema migrations"
+    echo "  curate                        Interactive curation queue resolution"
+    echo ""
+    echo "Environment:"
+    echo "  KNOWLEDGE_VAULT_PATH          Vault location (default: .knowledge/vault.db relative to CLI)"
+    echo ""
+    echo "Examples:"
+    echo "  knowledge-gate query-paths src/api/auth/login.ts"
+    echo "  knowledge-gate domain-resolve-path src/services/payment.rb"
+    echo "  knowledge-gate search \"callback\""
+    echo "  knowledge-gate domain-report"
     ;;
 
   *)

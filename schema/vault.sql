@@ -6,7 +6,7 @@ CREATE TABLE entries (
   id              TEXT PRIMARY KEY,
   type            TEXT NOT NULL CHECK(type IN ('fact', 'anti-pattern')),
   status          TEXT NOT NULL DEFAULT 'active'
-                  CHECK(status IN ('active', 'archived', 'deprecated', 'superseded')),
+                  CHECK(status IN ('active', 'archived')),
   title           TEXT NOT NULL,
   claim           TEXT NOT NULL,
   body            TEXT NOT NULL,
@@ -17,7 +17,10 @@ CREATE TABLE entries (
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK(type != 'anti-pattern' OR alternative IS NOT NULL),
-  CHECK((status = 'active' AND archived_at IS NULL) OR (status IN ('archived','deprecated','superseded') AND archived_at IS NOT NULL))
+  CHECK(
+    (status = 'active' AND archived_at IS NULL AND archive_reason IS NULL) OR
+    (status = 'archived' AND archived_at IS NOT NULL AND length(trim(COALESCE(archive_reason, ''))) > 0)
+  )
 );
 
 -- Domain dictionary (controlled vocabulary)

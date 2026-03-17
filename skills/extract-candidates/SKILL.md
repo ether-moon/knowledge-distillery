@@ -22,6 +22,7 @@ description: "Analyzes an Evidence Bundle and extracts knowledge candidates — 
 - `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain` — fetch existing entries for relevant domains
 - `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate search` — keyword search for potential duplicates
 - `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate get` — full entry details for conflict check
+- GitHub MCP (read-only) or `git diff` / `git show` — selective diff inspection for the specific files or hunks that need code confirmation
 - No direct vault.db reads. No file writes.
 
 ## Input
@@ -50,7 +51,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-resolve-path "<filepath>"
 
 Collect all matched domains from the output. Results include global domains (pattern = `*`) automatically — do not exclude them; they serve as the scope for project-wide rules.
 
-If no domains match any file (aside from global domains), note this — the candidate's `applies_to.domains` will be proposed as new domains. When proposing a new domain, include in the candidate a `_proposed_domain` annotation:
+If no domains match any file (aside from global domains), note this — the candidate's `applies_to.domains` will contain proposed names for new domains. When proposing a new domain, include in the candidate a `_proposed_domain` annotation array. `_pipeline-insert` will consume this to create domains with proper descriptions and path mappings:
 
 ```json
 {
@@ -162,7 +163,8 @@ For each validated extraction, produce a candidate object:
 [Optional. When this rule should be reconsidered. Trigger for re-evaluation.]
 ```
 
-6. **`applies_to.domains`**: The domain list from Step 1
+6. **`applies_to`**: The applicability scope from Step 1
+   - `applies_to.domains`: domain list derived in Step 1
 
 7. **`evidence`**: Array citing specific sources:
    - `{ "type": "pr", "ref": "#1234" }`
@@ -202,9 +204,12 @@ Each candidate MUST conform to this schema:
   ],
   "alternative": "<required for anti-pattern, null for fact>",
   "conflict_check": "<existing vault entry ID if potential conflict, null otherwise>",
-  "considerations": "<explicit concerns, conditions, or caveats — NEVER empty>"
+  "considerations": "<explicit concerns, conditions, or caveats — NEVER empty>",
+  "_proposed_domain": [{"name": "<new-domain>", "description": "...", "suggested_patterns": ["path/"]}]
 }
 ```
+
+Note: `_proposed_domain` is only present when new domains are proposed (see Step 1). Omit when all domains already exist in the vault.
 
 ## Error Handling
 
