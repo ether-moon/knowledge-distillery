@@ -31,17 +31,75 @@ The agent never touches raw data. It only sees what has survived distillation.
 
 ## Documentation
 
+Executable skills in `skills/` are the source of truth for pipeline behavior.
+
 | Document | Description |
 |---|---|
 | [Design Philosophy](docs/design-philosophy.md) | Why this architecture exists — the rationale behind information control for AI agents |
 | [Implementation Design](docs/design-implementation.md) | How it works — pipeline design, vault schema, runtime policies, deployment as a Claude Code Plugin |
-| [CLI Reference](docs/cli.md) | `knowledge-gate` command specification — queries, domain management, pipeline operations |
+| [Adoption Guide](docs/adoption-guide.md) | How to install the plugin, initialize a repository, and start using the vault |
 | [Tool Evaluation](docs/tool-evaluation.md) | Adopted and rejected tools with rationale |
-| [Skill Prompts](docs/skill-prompts/) | Pipeline skill specifications and dependency graph |
+
+## CLI Quick Reference
+
+The `knowledge-gate` CLI is the sole access path to the knowledge vault (`.knowledge/vault.db`). Set `KNOWLEDGE_VAULT_PATH` to override the default vault location.
+
+**Agent Runtime** — query rules before modifying code:
+
+| Command | Purpose |
+|---|---|
+| `query-paths <filepath>` | Resolve file path to domains → return matching rules |
+| `query-domain <domain>` | Query rules by domain name |
+| `search <keyword>` | FTS5 full-text keyword search |
+| `get <id>` | Retrieve full entry details (including body) |
+| `list` | Summary list of all active entries (exploration/keyword discovery) |
+
+**Domain** — explore and manage the domain registry:
+
+| Command | Purpose |
+|---|---|
+| `domain-info <domain>` | Domain details (description, patterns, entry count) |
+| `domain-list [--status X]` | List domains (active\|deprecated\|all) |
+| `domain-resolve-path <filepath>` | Reverse-lookup file path to domains |
+| `domain-add`, `domain-merge`, `domain-split`, `domain-deprecate` | Registry lifecycle |
+| `domain-paths-set`, `domain-paths-add`, `domain-paths-remove` | Path pattern management |
+| `domain-report` | Domain health diagnosis |
+
+**Loading** — add entries to the vault:
+
+| Command | Purpose |
+|---|---|
+| `add --type <type> --title ... --claim ... --body ... --domain ... [flags]` | Add entry with validation |
+| `_pipeline-insert` | Pipeline-only bulk INSERT (JSON stdin) |
+
+**Utility** — setup and maintenance:
+
+| Command | Purpose |
+|---|---|
+| `init-db [path]` | Create a new vault from bundled schema |
+| `migrate` | Apply schema migrations |
+| `doctor` | Verify repository adoption state |
+| `curate` | Interactive curation queue resolution |
+
+**Examples:**
+
+```bash
+# Query rules before editing a file
+knowledge-gate query-paths src/api/auth/login.ts
+
+# Check which domains a file belongs to
+knowledge-gate domain-resolve-path src/services/payment.rb
+
+# Search for rules by keyword
+knowledge-gate search "callback"
+```
+
+Run `knowledge-gate help` for full usage details.
 
 ## Delivery Format
 
-Distributed as a **Claude Code Plugin** — install with `claude plugin install` to get runtime skills, pipeline skills, and the `knowledge-gate` CLI in one package. The CLI itself is vendor-neutral (`sqlite3`-based), runnable from any coding agent.
+Distributed as a **Claude Code Plugin** — install with `claude plugin install` to get runtime skills, pipeline skills, bundled schema assets, and the `knowledge-gate` CLI in one package. The CLI itself is vendor-neutral (`sqlite3`-based), runnable from any coding agent.
+The plugin follows the standard Claude Code layout: `.claude-plugin/plugin.json` for metadata, with bundled assets kept at the plugin root in `skills/`, `scripts/`, and `schema/`.
 
 ## Status
 

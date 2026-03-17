@@ -2,7 +2,7 @@
 
 > **Evaluation Criteria (Alignment with Design Philosophy/Implementation)**
 >
-> 1. **Automatic Quality Gate Compatibility**: Can the tool's output meet or be transformed to satisfy the refinement candidate required schema ([Design Implementation §3.3](./design-implementation.md#33-refinement-candidate-required-schema))?
+> 1. **Automatic Quality Gate Compatibility**: Can the tool's output meet or be transformed to satisfy the refinement candidate required schema ([Design Implementation §3.3.1](./design-implementation.md#331-refinement-candidate-required-schema))?
 > 2. **Air Gap Principle Compliance**: Does it maintain a structure where agents cannot directly access raw data?
 > 3. **Batch Pipeline Suitability**: Is it compatible with periodic batch refinement rather than real-time processing?
 > 4. **Vendor Neutrality**: Can it be applied universally without being tied to a specific coding agent (Claude Code, Codex, Gemini, etc.)?
@@ -48,7 +48,7 @@ Since it is currently at the RFC stage, it is used only as a schema design refer
 
 ### git-memento (New — Layer 1 Session Capture Infrastructure)
 
-A CLI tool that preserves the context of "why was this changed" by attaching AI coding session transcripts to commits as `git notes`. Adopted as core infrastructure for Knowledge Distillery's Layer 1 (Raw Data Lake).
+A CLI tool that preserves the context of "why was this changed" by attaching AI coding session transcripts to commits as `git notes`. Adopted as core infrastructure for Knowledge Distillery's Layer 1 (History Archive).
 
 **Rationale for Adoption:**
 
@@ -59,7 +59,7 @@ A CLI tool that preserves the context of "why was this changed" by attaching AI 
 | Squash Merge Survival | `notes-carry` command transfers individual commit notes to merge commits. GitHub Action automation supported |
 | CI Gate | `audit --strict` verifies commits without attached notes. Can be used as a PR gate |
 
-Detailed specifications (storage structure, retention policy, custom Summary Skill, etc.) are defined in Design Implementation §2.5.
+The role of git-memento in the pipeline is described in Design Implementation §2.5 and §3.2 (Evidence Bundle).
 
 ### SQLite (New — Knowledge Vault Storage + Context Gate)
 
@@ -76,7 +76,7 @@ Adopted as the **sole storage** for the knowledge vault and the query engine for
 | Schema Enforcement | `CHECK`, `NOT NULL`, `FOREIGN KEY` guarantee refinement pipeline output integrity at the DB level |
 | Deployment | Commit a single `.db` file to the master branch. Use the latest knowledge vault with just `git pull` |
 
-**Position on Git Diff Limitations:** Since the LLM (refinement pipeline) exclusively handles knowledge vault document changes, humans do not need to view diffs. If change history is needed, query by `created_at` using `sqlite3` or track via in-DB status (`active`/`archived`/`deprecated`).
+**Position on Git Diff Limitations:** Since the LLM (refinement pipeline) exclusively handles knowledge vault document changes, humans do not need to view diffs. If change history is needed, query by `created_at` using `sqlite3` or track via in-DB status (`active`/`archived`) plus `archive_reason`.
 
 **Alternative Comparison:** See §A.5 Knowledge Vault Storage + Context Gate Tool Comparison.
 
@@ -202,10 +202,10 @@ Rebranded as Letta in 2026 and introduced **Context Repositories** (Git-based Me
 This structure can be summarized as a command system that separates "installation/bootstrapping," "agent runtime queries," "operational management," and "server entry point." While this separation itself is valid for Knowledge Distillery, the responsibilities of each layer must be redefined to align with the air gap principle.
 
 **What to Borrow (Concepts Only):**
-- **One-Shot Multi-Client Bootstrap:** Having a bootstrap command like `knowledge-gate init` that auto-detects supported agents' configuration files and installs plugins/skills/wrappers in one go has high adoption value. Since our design aims for "Claude-first (distribution) / vendor-neutral (runtime)" per [cli.md §Design Principles](./cli.md#design-principles), the appropriate configuration is to adapt only the installation step per agent while keeping the runtime data path on the common `knowledge-gate`.
-- **Installation Mode Separation:** The pattern of separating MCP registration/execution path installation from agent-specific rule file or slash command installation is directly useful. For example, `knowledge-gate init` handles execution path and configuration file registration, while `knowledge-gate init --mode skill` installs supplementary prompt assets for Claude/Cursor/Codex/OpenCode.
-- **CLI Layer Clarification:** Currently, `knowledge-gate` has query/domain management/pipeline post-processing coexisting in a single document. In the long term, it would be better for usability and document navigability to more clearly separate `agent runtime` (`query-paths`, `query-domain`, `search`, `get`), `pipeline/admin` (`_pipeline-insert`, `domain-*`, `migrate`), and `diagnostics` (`domain-report`, future `vault-health`, `vault-stats`, `doctor`).
-- **Diagnostic Command Enhancement:** In line with the human's role as strategic overseer ([Design Philosophy §6.3](./design-philosophy.md#63-the-role-of-humans-strategic-overseers-not-individual-item-approvers)), adding `vault-health` type commands in the future is reasonable. Candidate items include domain overcrowding/underpopulation, orphan domains, deprecated ratios, potential duplicates, and `knowledge:insufficient`/`knowledge:abandoned` queue status.
+- **One-Shot Multi-Client Bootstrap:** Having a bootstrap entry point that installs the Claude plugin and then runs a single adoption step such as `/knowledge-distillery:init` has high adoption value. Since our design aims for "Claude-first (distribution) / vendor-neutral (runtime)" per [design-implementation.md §7.5](./design-implementation.md#75-context-gate-knowledge-gate-skill--cli), the appropriate configuration is to keep the runtime data path on the common `knowledge-gate` while adapting only the installation UX per agent.
+- **Installation Mode Separation:** The pattern of separating plugin/runtime installation from project adoption setup is directly useful. In our case, plugin installation provides `skills/`, `scripts/`, and `schema/`, while `/knowledge-distillery:init` performs repository-local adoption work such as vault creation and workflow setup.
+- **CLI Layer Clarification:** Currently, `knowledge-gate` has query/domain management/pipeline post-processing coexisting in a single document. In the long term, it would be better for usability and document navigability to more clearly separate `agent runtime` (`query-paths`, `query-domain`, `search`, `get`), `pipeline/admin` (`_pipeline-insert`, `domain-*`, `migrate`), and `diagnostics` (`doctor`, `domain-report`, future `vault-health`, `vault-stats`).
+- **Diagnostic Command Enhancement:** In line with the human's role as strategic overseer ([Design Philosophy §6.3](./design-philosophy.md#63-the-role-of-humans-strategic-overseers-not-approvers-of-individual-items)), adding `vault-health` type commands in the future is reasonable. Candidate items include domain overcrowding/underpopulation, orphan domains, archived ratios, potential duplicates, and the current `knowledge:pending` backlog.
 - **Configuration Visibility:** While CLI specs are already clear, `config`/`doctor` type commands for quickly inspecting the active vault path and current settings are helpful from an operational convenience perspective. Having a layer that diagnoses installation issues like "why can't this agent find knowledge-gate" improves plugin deployment quality.
 
 **What Not to Borrow:**
@@ -215,9 +215,9 @@ This structure can be summarized as a command system that separates "installatio
 - A structure that centers the memory system as the product's core while subordinating the batch refinement pipeline
 
 **Our Adoption Direction:**
-- `knowledge-gate` continues to be maintained as the **sole runtime access path** ([cli.md §Design Principles](./cli.md#design-principles)).
+- `knowledge-gate` continues to be maintained as the **sole runtime access path** ([design-implementation.md §7.5](./design-implementation.md#75-context-gate-knowledge-gate-skill--cli)).
 - Only installation UX and operational UX are borrowed; the knowledge creation/promotion path continues to follow [Design Implementation §3.1](./design-implementation.md#31-trigger-2-stage-pipeline)'s 2-stage refinement pipeline.
-- If needed, `knowledge-gate init`, `knowledge-gate doctor`, and `knowledge-gate vault-health` will be considered as future implementation tasks. All of these must be **auxiliary interfaces that do not grant vault write permissions**.
+- `knowledge-gate doctor` is now a valid auxiliary interface for adoption validation. Future diagnostics may add `knowledge-gate vault-health` and related read-only status commands, but these must remain **auxiliary interfaces that do not grant vault write permissions**.
 
 **License Notice:**
 The [ICM License](https://github.com/rtk-ai/icm/blob/main/LICENSE) is source-available and explicitly states `NO COPYING OR REDISTRIBUTION` and `NO DERIVATIVE WORKS`. Therefore, this project does not reuse ICM's code, wording, or configuration templates, and only references publicly visible product ideas and UX patterns at a conceptual level.
@@ -302,7 +302,7 @@ Human curation of the knowledge vault (vault.db) ([Design Implementation §5.2](
 ### Review Context
 
 Core requirements for curation tasks:
-- State transitions of the `entries` table (active → archived/deprecated)
+- State transitions of the `entries` table (active → archived)
 - Reviewing and resolving pending conflict pairs in `curation_queue`
 - Managing `domain_registry` / `domain_paths`
 - Schema exploration including FTS5 virtual tables
@@ -410,4 +410,4 @@ Core requirements for curation tasks:
 
 ---
 
-> **Last Reviewed:** 2026-03-06 | **Alignment Targets:** design-philosophy.md, design-implementation.md, cli.md
+> **Last Reviewed:** 2026-03-06 | **Alignment Targets:** design-philosophy.md, design-implementation.md, README.md

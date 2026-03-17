@@ -113,7 +113,7 @@ The Knowledge Vault **contains no metadata indicating confidence levels.** Being
 
 Estimates whose uncertainty is not indicated are not placed in the Vault. Since agents cannot independently determine the uncertainty of given text, if uncertain information is described as fact, the agent will treat it as fact and act accordingly. Conversely, if uncertainty or conditions are explicitly stated, the agent can also act accordingly.
 
-The rationale for conservative distillation lies in cost asymmetry. A false positive (incorrect knowledge entering the Vault) steers the agent's actions in the wrong direction and is difficult to detect. A false negative (missing valid knowledge), on the other hand, can be re-extracted in the next distillation cycle, and the agent operates safely in areas without knowledge following the Soft miss principle (Section 7.2). The fear of "missing something" (FOMO) is always less risky than "including something wrong" in this system.
+The rationale for conservative distillation lies in cost asymmetry. A false positive (incorrect knowledge entering the Vault) steers the agent's actions in the wrong direction and is difficult to detect. A false negative (missing valid knowledge), on the other hand, can be re-extracted in the next distillation cycle, and the agent operates safely in areas without knowledge following the Soft miss principle ([Design Implementation §7.2](./design-implementation.md#72-soft-miss-principle)). The fear of "missing something" (FOMO) is always less risky than "including something wrong" in this system.
 
 The Knowledge Vault is a knowledge source that AI can access. However, it exists in a state with **indexing and metadata management** so that only items relevant to the task are queried. Rather than having the entire contents read at once, only items matching the domain and context of the current task are selectively referenced.
 
@@ -179,7 +179,7 @@ In this design, humans are not gatekeepers who approve individual knowledge item
 Key activities humans perform:
 
 - **Overall review of the Knowledge Vault:** Periodically review the entire Knowledge Vault to clean up incorrect, duplicate, or low-value items. This is not a fixed schedule but is performed when humans deem it necessary.
-- **Quality management of Vault content:** Transition items that are no longer valid to `deprecated`, or clean up conflicting items. Since the Context Gate is an interface through which the agent automatically queries based on domain at runtime, humans take on the role of managing the quality of content loaded in the Vault.
+- **Quality management of Vault content:** Archive items that are no longer valid, duplicated, or otherwise should not be exposed, and clean up conflicting items. Since the Context Gate is an interface through which the agent automatically queries based on domain at runtime, humans take on the role of managing the quality of content loaded in the Vault.
 - **Utilizing air gap review reports:** As the basis and starting point for this work, a tool is needed that periodically reports on the state of the Knowledge Vault. This tool summarizes trends in Vault changes, newly added insights, and areas requiring attention, supporting the human's strategic review.
 
 The Knowledge Vault itself is managed autonomously by AI, but **what goes into the agent's always-on context** is decided by humans. This is the balance point between minimizing human intervention and quality control.
