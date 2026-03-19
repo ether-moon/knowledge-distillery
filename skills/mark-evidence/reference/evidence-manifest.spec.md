@@ -30,6 +30,7 @@ The `version` field is a string. Consumers MUST check version compatibility befo
 | Slack Threads | {n} | {comma-separated channels, or "—"} |
 | Git Sessions | {n} | {count} commits with memento notes |
 | Greptile Reviews | {n} | {count} review comments, or "—" |
+| Notion Pages | {n} | {comma-separated page titles or shortened URLs, or "—"} |
 
 <!-- EVIDENCE_BUNDLE_MANIFEST_START -->
 ```json
@@ -56,6 +57,9 @@ The `version` field is a string. Consumers MUST check version compatibility befo
     ],
     "greptile": [
       { "review_id": "<id>", "comment_count": <integer> }
+    ],
+    "notion": [
+      { "url": "<notion page URL>", "source": "<source_type>" }
     ]
   },
   "collected_at": "<ISO 8601 timestamp>"
@@ -83,6 +87,7 @@ The `version` field is a string. Consumers MUST check version compatibility befo
 | `slack` | `url`, `source` | Slack thread permalinks found in Linear issues or PR body |
 | `memento` | `sha`, `has_notes` | Commits with git-memento notes (`git notes show <sha>` succeeded) |
 | `greptile` | `review_id`, `comment_count` | Greptile review metadata if available |
+| `notion` | `url`, `source` | Notion page URLs found in PR body/comments or Linear issues |
 
 #### `source` enum
 
@@ -113,6 +118,7 @@ ISO 8601 timestamp of when the Manifest was generated.
 | V7 | Each `memento[].sha` matches `/^[0-9a-f]{7,40}$/` |
 | V8 | `collected_at` is valid ISO 8601 |
 | V9 | No duplicate Manifest comment exists on the PR (idempotency) |
+| V10 | Each `notion[].url` matches Notion URL pattern (`https://(www.)?notion.(so\|site)/*`) |
 
 ## Parsing Instructions
 
@@ -136,4 +142,4 @@ Consumers extract the JSON by:
 - Evidence Bundle structure: design-implementation.md §3.2
 - Auto domain derivation from changed files: design-implementation.md §4.6
 - Stage A trigger: design-implementation.md §3.1
-- git-memento notes: design-implementation.md §2.5
+- git-memento notes: design-implementation.md §2.6

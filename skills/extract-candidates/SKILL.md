@@ -172,7 +172,9 @@ For each validated extraction, produce a candidate object:
    - `{ "type": "memento", "ref": "a1b2c3d" }`
    - `{ "type": "slack", "ref": "<url>" }`
    - `{ "type": "greptile", "ref": "<review_id>" }`
+   - `{ "type": "notion", "ref": "<notion page URL>" }`
    - Memento notes being absent is normal (git-memento is optional). Other evidence types are sufficient.
+   - Notion pages provide design decisions, team agreements, and architectural context as supporting evidence.
 
 8. **`alternative`**: Required for anti-patterns (what to do instead). `null` for facts.
 
@@ -200,7 +202,7 @@ Each candidate MUST conform to this schema:
     "domains": ["<domain1>", "<domain2>"]
   },
   "evidence": [
-    { "type": "pr | linear | slack | greptile | memento", "ref": "<reference string>" }
+    { "type": "pr | linear | slack | greptile | memento | notion", "ref": "<reference string>" }
   ],
   "alternative": "<required for anti-pattern, null for fact>",
   "conflict_check": "<existing vault entry ID if potential conflict, null otherwise>",

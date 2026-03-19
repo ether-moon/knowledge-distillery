@@ -49,7 +49,7 @@ CREATE TABLE entry_domains (
 -- Evidence links
 CREATE TABLE evidence (
   entry_id TEXT NOT NULL REFERENCES entries(id),
-  type     TEXT NOT NULL CHECK(type IN ('pr', 'linear', 'slack', 'greptile', 'memento')),
+  type     TEXT NOT NULL CHECK(type IN ('pr', 'linear', 'slack', 'greptile', 'memento', 'notion')),
   ref      TEXT NOT NULL CHECK(length(trim(ref)) > 0),
   PRIMARY KEY (entry_id, type, ref)
 );

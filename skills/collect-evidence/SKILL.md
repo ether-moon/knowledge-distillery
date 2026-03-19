@@ -14,12 +14,14 @@ description: "Collects the actual content of all evidence sources identified in 
 
 - GitHub MCP server configured with `pull_requests,issues,labels` toolsets
 - `git` with access to `refs/notes/commits`
-- Linear MCP server (graceful degradation — but triggers `insufficient` if Linear IDs exist)
+- Linear MCP server (optional — graceful degradation if unavailable)
+- Notion MCP server (optional — graceful degradation if unavailable)
 
 ## Allowed Tools
 
 - GitHub MCP (read-only by behavioral contract) — PR data and review comments
 - Linear MCP — issue details and comments (read-only)
+- Notion MCP — page content retrieval (read-only)
 - `git log`, `git show`, `git notes show` — commit and memento data
 - `Bash`, `Read`, `Glob`, `Grep`
 - No file writes. No vault.db access. No `knowledge-gate` CLI.
@@ -57,7 +59,7 @@ Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
    - `version` must be `"1"`
    - `pr.number` must be a positive integer
    - `pr.merge_sha` must match `/^[0-9a-f]{7,40}$/`
-   - All `identifiers` sub-keys (`linear`, `slack`, `memento`, `greptile`) must be present (even if empty arrays)
+   - All `identifiers` sub-keys (`linear`, `slack`, `memento`, `greptile`, `notion`) must be present (even if empty arrays)
 
 **If no Manifest comment is found**, return an Evidence Bundle with:
 ```json
@@ -124,7 +126,7 @@ Then collect PR content:
 
 Note: The full PR diff is not pre-collected. The changed file list is sufficient for this step.
 
-### Step 3: Collect Linear Evidence (Required when IDs exist)
+### Step 3: Collect Linear Evidence (Optional)
 
 For each entry in `identifiers.linear`:
 
@@ -135,12 +137,9 @@ For each entry in `identifiers.linear`:
    - `labels` — array of label names
    - `status_changes` — status transition history (e.g., `[{ "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }]`). Use Linear MCP `getIssueHistory` or extract from issue activity/audit log. If the API does not expose a dedicated history endpoint, reconstruct transitions from issue comments or activity entries where status changes are logged.
 2. If Linear MCP is unavailable or the specific issue is not found:
-   - Record the ID in `sufficiency.missing` as `"linear:{id}"`
-   - This triggers an `insufficient` verdict
+   - Record: `{ "id": "...", "title": null, "description": null, "comments": [], "labels": [], "status_changes": [], "retrieved": false }`
 
-**Why Linear is required:** When a developer explicitly linked a Linear issue to a PR, the issue context (discussion, decisions, rationale) is critical evidence for knowledge extraction. Its absence meaningfully degrades extraction quality.
-
-If `identifiers.linear` is an empty array, skip this step entirely — no insufficiency triggered.
+Missing Linear content does NOT trigger `insufficient`. Linear issues are supplementary context that enriches the evidence bundle.
 
 ### Step 4: Collect Slack Evidence (Optional)
 
@@ -187,17 +186,28 @@ For each entry in `identifiers.greptile`:
 
 Missing Greptile data does NOT trigger `insufficient`.
 
-### Step 7: Sufficiency Judgment
+### Step 7: Collect Notion Evidence (Optional)
+
+For each entry in `identifiers.notion`:
+
+1. Use Notion MCP `notion-fetch` to retrieve the page:
+   ```
+   Use Notion MCP to fetch the page at the URL from the identifier. Extract page title and content (returned as Markdown).
+   ```
+
+2. If retrieved successfully: `{ "url": "...", "title": "Page Title", "content": "markdown content", "retrieved": true }`
+3. If Notion MCP is unavailable or the page is not found: `{ "url": "...", "title": null, "content": null, "retrieved": false }`
+
+Missing Notion content does NOT trigger `insufficient`. Notion pages are supplementary context — design documents, decision records, and meeting notes that enrich the evidence bundle.
+
+### Step 8: Sufficiency Judgment
 
 Evaluate evidence completeness using these rules:
 
 | Condition | Verdict |
 |-----------|---------|
-| Changed file list present AND commit messages present | Required baseline met |
-| `identifiers.linear` is non-empty AND all Linear issues retrieved | Required condition met |
-| `identifiers.linear` is non-empty AND any Linear issue NOT retrieved | `insufficient` |
-| `identifiers.linear` is empty (no Linear IDs in Manifest) | No Linear requirement |
-| All optional sources (Slack, memento, Greptile) missing but required baseline met | `sufficient` |
+| Changed file list present AND commit messages present | Required baseline met — `sufficient` |
+| All optional sources (Linear, Slack, memento, Greptile, Notion) missing but required baseline met | `sufficient` |
 | No Manifest found | `insufficient` |
 
 **Composing the sufficiency object:**
@@ -257,7 +267,8 @@ The final Evidence Bundle must follow this structure:
         "labels": ["decision", "bug"],
         "status_changes": [
           { "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }
-        ]
+        ],
+        "retrieved": true
       }
     ],
     "slack": [
@@ -280,6 +291,14 @@ The final Evidence Bundle must follow this structure:
           { "path": "file.rb", "line": 10, "body": "review comment" }
         ]
       }
+    ],
+    "notion": [
+      {
+        "url": "https://notion.so/workspace/Design-Doc-abc123",
+        "title": "Design Doc: Payment Flow",
+        "content": "markdown content of the page",
+        "retrieved": true
+      }
     ]
   },
   "sufficiency": {
@@ -296,10 +315,12 @@ The final Evidence Bundle must follow this structure:
 |-------------|----------|
 | No Manifest comment on PR | Return `insufficient` with reason. Do not proceed to collection steps. |
 | Manifest JSON malformed | Return `insufficient` with reason. Do not proceed. |
-| Linear MCP unavailable | `insufficient` if Linear IDs exist in Manifest. Record which IDs failed in `missing`. |
-| Linear issue deleted/moved/not found | Record `"linear:{id}"` in `missing`. `insufficient` for this PR. |
+| Linear MCP unavailable | Set `retrieved: false` for all Linear entries. Continue — optional source. |
+| Linear issue deleted/moved/not found | Set `retrieved: false` for that entry. Continue — optional source. |
 | Slack content unretrievable | Set `retrieved: false` for that entry. Continue — optional source. |
 | `git notes show` fails | Skip that memento entry. Continue — optional source. |
+| Notion MCP unavailable | Set `retrieved: false` for all Notion entries. Continue — optional source. |
+| Notion page not found / access denied | Set `retrieved: false` for that entry. Continue — optional source. |
 | Changed file list unavailable | Use `pr.changed_files` from Manifest as fallback. |
 | GitHub API rate limit | Report failure to orchestrator. Orchestrator retries in next batch. |
 

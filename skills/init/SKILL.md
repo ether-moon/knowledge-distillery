@@ -63,6 +63,10 @@ jobs:
   mark-evidence:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,6 +81,7 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
+          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
@@ -108,6 +113,10 @@ jobs:
             Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
             and add 'knowledge:pending' label.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(git:*),Read,Glob,Grep"
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f .mcp.json
 ```
 
 #### `.github/workflows/batch-refine.yml`
@@ -127,6 +136,10 @@ on:
 jobs:
   collect-and-refine:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,6 +154,9 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
+          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
+          echo "::add-mask::${{ secrets.SLACK_API_KEY }}"
+          echo "::add-mask::${{ secrets.NOTION_API_KEY }}"
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
@@ -159,10 +175,31 @@ jobs:
                 "env": {
                   "LINEAR_API_KEY": "${{ secrets.LINEAR_API_KEY }}"
                 }
+              },
+              "slack": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@anthropic/slack-mcp"],
+                "env": {
+                  "SLACK_API_KEY": "${{ secrets.SLACK_API_KEY }}"
+                }
+              },
+              "notion": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@anthropic/notion-mcp"],
+                "env": {
+                  "NOTION_API_KEY": "${{ secrets.NOTION_API_KEY }}"
+                }
               }
             }
           }
           MCPEOF
+
+      - name: Configure git identity
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - uses: anthropics/claude-code-action@v1
         with:
@@ -175,7 +212,11 @@ jobs:
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(sqlite3:*,git:*),Read,Write,Glob,Grep"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(sqlite3:*,git:*),Read,Write,Glob,Grep"
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f .mcp.json
 ```
 
 ### Step 4: Update CLAUDE.md
@@ -231,8 +272,10 @@ Knowledge Distillery initialized:
 Next steps:
   1. Add ANTHROPIC_API_KEY to your repository secrets
   2. Add LINEAR_API_KEY to your repository secrets (if using Linear)
-  3. Seed initial entries: knowledge-gate add --type fact --title "..." ...
-  4. Review and customize workflow schedules as needed
+  3. Add SLACK_API_KEY to your repository secrets (if using Slack as evidence source)
+  4. Add NOTION_API_KEY to your repository secrets (if using Notion as evidence source)
+  5. Seed initial entries: knowledge-gate add --type fact --title "..." ...
+  6. Review and customize workflow schedules as needed
 ```
 
 ## Constraints

@@ -19,6 +19,8 @@ description: "Orchestrates the Stage B distillation pipeline: discovers merged P
 - `jq` CLI available
 - `git` with push access
 - Linear MCP server (graceful degradation if unavailable)
+- Slack MCP server (optional — graceful degradation if unavailable)
+- Notion MCP server (optional — graceful degradation if unavailable)
 - git-memento (optional — gracefully degrade if unavailable)
 
 ## Execution Steps

@@ -10,6 +10,10 @@ Use this guide in a repository that wants to adopt Knowledge Distillery.
 - Repository secrets for:
   - `ANTHROPIC_API_KEY`
   - `LINEAR_API_KEY` if Linear is used
+  - `SLACK_API_KEY` if Slack is used as an evidence source
+  - `NOTION_API_KEY` if Notion is used as an evidence source (requires a Notion integration with read access to referenced pages)
+- Slack MCP server configured (optional — only if using Slack threads as evidence)
+- Notion MCP server configured (optional — only if using Notion pages as evidence)
 
 ## 1. Install the Plugin
 

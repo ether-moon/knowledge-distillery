@@ -56,7 +56,13 @@ In this design, external tools are treated as evidence collectors, not truth gen
 - Finds related code, docs, and conversations across sources.
 - Its output is treated as a set of references to inspect, not as accepted truth.
 
-### 2.5 git-memento — AI Session Context Capture
+### 2.5 Notion — Team Knowledge Base Evidence
+
+- Provides design documents, decision records, and meeting notes as evidence context.
+- URLs serve as identifiers at marking time; content fetched via Notion MCP at collection time.
+- Optional source: pipeline proceeds without it.
+
+### 2.6 git-memento — AI Session Context Capture
 
 - Optionally preserves why a code change was made by attaching structured AI session summaries to commits.
 - The pipeline works without it, but when present it improves recovery of decision context.

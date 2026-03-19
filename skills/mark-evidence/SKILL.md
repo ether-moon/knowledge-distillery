@@ -143,7 +143,28 @@ Look for comments from users whose login contains "greptile" (case-insensitive).
 - If found, count the review comments and record: `{ "review_id": "greptile-pr-{pr_number}", "comment_count": {count} }`
 - If not found, the `greptile` array stays empty
 
-### Step 7: Compose the Manifest
+### Step 7: Discover Notion Page Links
+
+Notion page URLs can appear in PR text and Linear issues. Collect from both.
+
+**7a. Extract Notion links from PR body and comments:**
+
+1. Scan the PR body (from Step 2) for Notion page URLs matching the pattern: `https://(www\.)?notion\.(so|site)/\S+`
+2. Record each discovered URL with `source: "pr_body"`
+3. Also scan PR issue-level comments for the same pattern; record those with `source: "pr_comment"`
+
+**7b. Extract Notion links from Linear issues (requires Linear MCP):**
+
+For each Linear issue ID found in Step 3:
+
+1. Scan the issue body and all comments (already retrieved in Step 4b) for Notion page URLs matching the same pattern
+2. Record each discovered URL with `source: "linear_issue"`
+
+**Graceful degradation:** If Linear MCP was unavailable in Step 4b, skip Step 7b only. Notion links from Step 7a are still collected.
+
+**7c. Deduplicate** all collected Notion URLs by URL, keeping the first `source` encountered.
+
+### Step 8: Compose the Manifest
 
 Build the Evidence Bundle Manifest with the following structure. All fields are required. Empty arrays are valid — never omit a field.
 
@@ -158,6 +179,7 @@ Build the Evidence Bundle Manifest with the following structure. All fields are 
 | Slack Threads | {n} | {comma-separated channel names extracted from URLs, or "—"} |
 | Git Sessions | {n} | {n} commits with memento notes |
 | Greptile Reviews | {n} | {total comment_count} review comments, or "—" |
+| Notion Pages | {n} | {comma-separated page titles or shortened URLs, or "—"} |
 ```
 
 **Machine-parseable JSON** (inside HTML comment delimiters, using actual code fences):
@@ -185,6 +207,9 @@ Build the Evidence Bundle Manifest with the following structure. All fields are 
     ],
     "greptile": [
       { "review_id": "<id>", "comment_count": <integer> }
+    ],
+    "notion": [
+      { "url": "<notion page URL>", "source": "<source_type>" }
     ]
   },
   "collected_at": "<ISO 8601 timestamp>"
@@ -205,10 +230,11 @@ Build the Evidence Bundle Manifest with the following structure. All fields are 
 | V6 | Each `slack[].url` matches `https://*.slack.com/archives/*/p*` |
 | V7 | Each `memento[].sha` matches `/^[0-9a-f]{7,40}$/` |
 | V8 | `collected_at` is valid ISO 8601 |
+| V9 | Each `notion[].url` matches `https://(www.)?notion.(so\|site)/*` |
 
 If any validation fails, fix the data before posting. Do not post an invalid Manifest.
 
-### Step 8: Post Comment and Add Label
+### Step 9: Post Comment and Add Label
 
 Ensure the label exists:
 

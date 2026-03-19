@@ -59,7 +59,7 @@ A CLI tool that preserves the context of "why was this changed" by attaching AI 
 | Squash Merge Survival | `notes-carry` command transfers individual commit notes to merge commits. GitHub Action automation supported |
 | CI Gate | `audit --strict` verifies commits without attached notes. Can be used as a PR gate |
 
-The role of git-memento in the pipeline is described in Design Implementation §2.5 and §3.2 (Evidence Bundle).
+The role of git-memento in the pipeline is described in Design Implementation §2.6 and §3.2 (Evidence Bundle).
 
 ### SQLite (New — Knowledge Vault Storage + Context Gate)
 
