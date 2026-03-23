@@ -1,5 +1,0 @@
-{
-  "name": "knowledge-distillery",
-  "version": "0.1.0",
-  "description": "A knowledge distillation system that delivers only verified knowledge to AI coding agents. 3-layer architecture with convention-based air gap."
-}
