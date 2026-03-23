@@ -7,12 +7,12 @@ Knowledge Distillery — A system that delivers only verified knowledge to AI co
 
 ## Project Nature
 
-This project builds the tool itself, not applies it.
-This repository does NOT use Knowledge Distillery — it creates a tool/framework that other projects can adopt.
+This project builds the Knowledge Distillery tool AND dogfoods it on itself.
+The repository uses its own distillation pipeline to capture knowledge about its own development.
 
-- MUST-NOT: Do not apply evidence collection workflows, hooks, skills, etc. directly to this repository
 - MUST: All implementation artifacts must be built in a form deployable/applicable to other projects
 - Delivery format: Claude Code Plugin (Skill + CLI + schema를 하나의 plugin으로 배포). 배포는 Claude-first, 런타임 CLI(`knowledge-gate`)는 벤더 중립(`sqlite3` 기반)
+- Dogfooding: This repo has its own `.knowledge/vault.db` and GitHub Actions workflows. The CLI path is `scripts/knowledge-gate` (local, not `${CLAUDE_PLUGIN_ROOT}`)
 
 ## Implementation Philosophy
 

@@ -1,0 +1,13 @@
+{
+  "name": "knowledge-distillery",
+  "owner": {
+    "name": "ether-moon"
+  },
+  "plugins": [
+    {
+      "name": "knowledge-distillery",
+      "source": ".",
+      "description": "A knowledge distillation system that delivers only verified knowledge to AI coding agents. 3-layer architecture with convention-based air gap."
+    }
+  ]
+}
