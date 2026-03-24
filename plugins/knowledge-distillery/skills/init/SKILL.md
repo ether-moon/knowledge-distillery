@@ -179,17 +179,17 @@ jobs:
               "slack": {
                 "type": "stdio",
                 "command": "npx",
-                "args": ["-y", "@anthropic/slack-mcp"],
+                "args": ["-y", "@modelcontextprotocol/server-slack"],
                 "env": {
-                  "SLACK_API_KEY": "${{ secrets.SLACK_API_KEY }}"
+                  "SLACK_BOT_TOKEN": "${{ secrets.SLACK_API_KEY }}"
                 }
               },
               "notion": {
                 "type": "stdio",
                 "command": "npx",
-                "args": ["-y", "@anthropic/notion-mcp"],
+                "args": ["-y", "@notionhq/notion-mcp-server"],
                 "env": {
-                  "NOTION_API_KEY": "${{ secrets.NOTION_API_KEY }}"
+                  "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ${{ secrets.NOTION_API_KEY }}\", \"Notion-Version\": \"2022-06-28\"}"
                 }
               }
             }
