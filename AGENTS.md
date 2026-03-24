@@ -19,10 +19,12 @@ The repository uses its own distillation pipeline to capture knowledge about its
 The current implementation serves as a proof of concept. Do not over-engineer for edge cases or enforce rigid policies. Keep the design open to change — tight constraints and exhaustive safeguards make future iteration harder. Focus on experiencing real-world usability first and refining incrementally based on what you learn.
 
 ## Knowledge Vault
-- Before modifying code, query related rules with `knowledge-gate query-paths <file-path>`
-- Domain-level rule query: `knowledge-gate query-domain <domain-name>`
-- Domain lookup: `knowledge-gate domain-info <domain-name>`, `domain-resolve-path <path>`
-- MUST/MUST-NOT rules from related entries must be strictly followed
+- A UserPromptSubmit hook reminds you to query the vault when active entries exist
+- When the hook fires and the task involves code modifications, query before planning:
+  - Single file: `knowledge-gate query-paths <file-path>`
+  - Multiple files: `knowledge-gate domain-resolve-path <path>` → `knowledge-gate query-domain <domain>`
+  - Topic search: `knowledge-gate search <keyword>`
+- MUST/MUST-NOT rules from returned entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
 - Do not directly read files in the .knowledge/ directory
 

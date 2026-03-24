@@ -1,20 +1,16 @@
 ---
-description: Queries team-verified knowledge from the Knowledge Vault before code modification. Must be used when modifying files, creating new modules, or making architectural decisions.
+name: knowledge-gate
+description: "Queries team-verified knowledge from the Knowledge Vault. A UserPromptSubmit hook reminds you when active vault entries exist — use this skill to query and interpret them before planning code changes."
+argument-hint: "[file-path or keyword]"
 ---
 
 # knowledge-gate
 
-Query the Knowledge Vault (`.knowledge/vault.db`) before making code changes. The vault contains team-verified Facts and Anti-Patterns that constrain how code should be written.
+Query the Knowledge Vault (`.knowledge/vault.db`) before planning code changes. The vault contains team-verified Facts and Anti-Patterns that constrain how code should be written.
+
+A `UserPromptSubmit` hook fires on each user prompt. When the vault has active entries, it reminds you to query before planning. Follow the reminder when the task involves code modifications; ignore it for non-code tasks.
 
 **You MUST NOT directly read files in the `.knowledge/` directory.** All vault access goes through the `knowledge-gate` CLI.
-
-## When to Use
-
-- Before modifying code files
-- Before creating new files or modules
-- When making architectural or structural decisions
-- When introducing new patterns or conventions
-- When working in an unfamiliar area of the codebase
 
 ## CLI Path
 
@@ -88,9 +84,9 @@ GATE domain-info "<domain>"
 
 ## Behavioral Rules
 
-### 1. Query before modifying
+### 1. Query once before planning
 
-Before changing any file, run `query-paths` for that file. Read and understand all returned entries before proceeding.
+When the hook reminder fires and the task involves code changes, query relevant paths or domains before you start planning. One round of queries per task is sufficient -- you do not need to re-query before each individual file edit.
 
 ### 2. Respect MUST / MUST-NOT claims
 
@@ -138,6 +134,26 @@ When vault queries return entries, present them as follows:
 - For anti-patterns, show `alternative` -- it tells the user what to do instead.
 - Reference `evidence` links only if the user asks "why?"
 - Do NOT show `body` by default. Show it only if the user asks for details.
+
+## Example Workflow
+
+User asks: "Refactor the batch-refine pipeline to support parallel PR processing."
+
+1. Hook fires: "Knowledge Vault active (12 entries). If this task involves code modifications, query relevant entries before planning."
+2. Query the relevant domain:
+   ```bash
+   GATE domain-resolve-path "plugins/knowledge-distillery/skills/batch-refine/SKILL.md"
+   # → domain: distillation-pipeline
+   GATE query-domain "distillation-pipeline"
+   ```
+3. Vault returns an entry:
+   ```
+   [FACT] Pipeline stages must execute sequentially per PR
+   claim: "Stage B steps (collect → extract → quality-gate) MUST run in sequence for each PR."
+   considerations: "Cross-PR parallelism is allowed; intra-PR parallelism is not."
+   ```
+4. Inform the user: "Vault says intra-PR stages must be sequential. I'll parallelize across PRs while keeping per-PR stages sequential."
+5. Proceed with implementation respecting the constraint.
 
 ## Error Handling
 

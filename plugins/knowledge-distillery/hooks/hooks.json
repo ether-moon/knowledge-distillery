@@ -1,4 +1,14 @@
 {
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-prompt-knowledge-gate.sh"
+        }
+      ]
+    }
+  ],
   "PostToolUse": [
     {
       "matcher": "Bash",
