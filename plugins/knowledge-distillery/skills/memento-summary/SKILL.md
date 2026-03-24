@@ -1,10 +1,10 @@
 ---
-description: Generates a structured session summary for git-memento's --summary-skill. Extracts decisions, problems, constraints, and open questions from an AI coding session transcript for use as evidence in the Knowledge Distillery refinement pipeline.
+description: Generates a structured session summary for git notes on refs/notes/commits. Extracts decisions, problems, constraints, and open questions from an AI coding session transcript for use as evidence in the Knowledge Distillery refinement pipeline.
 ---
 
 # memento-summary
 
-Produce a structured summary of the current AI coding session. This summary is stored as a git note on the commit via git-memento and later consumed by the Knowledge Distillery refinement pipeline as evidence.
+Produce a structured summary of the current AI coding session. This summary is stored as a git note on `refs/notes/commits` (via memento-commit skill or directly) and later consumed by the Knowledge Distillery refinement pipeline as evidence.
 
 ## Output Structure
 
