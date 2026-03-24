@@ -15,12 +15,12 @@ jobs:
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
@@ -28,7 +28,7 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
-          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
+          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
