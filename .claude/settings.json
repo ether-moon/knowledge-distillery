@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(*/knowledge-gate:*)",
-      "Bash(sqlite3 .knowledge/vault.db:*)"
+      "Bash(plugins/knowledge-distillery/scripts/knowledge-gate:*)",
+      "Bash(sqlite3:*)"
     ]
   },
   "extraKnownMarketplaces": {

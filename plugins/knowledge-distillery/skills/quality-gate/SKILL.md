@@ -12,15 +12,15 @@ description: "Validates knowledge candidates against quality rules before vault 
 
 ## Prerequisites
 
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate` CLI available
+- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
 - `.knowledge/vault.db` accessible via CLI only (no direct reads)
 - Candidate array from `/knowledge-distillery:extract-candidates` available in-memory
 
 ## Allowed Tools
 
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain` — existing entries for semantic comparison
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate get` — full entry details for conflict analysis
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate search` — keyword search for duplicate detection
+- `GATE query-domain` — existing entries for semantic comparison
+- `GATE get` — full entry details for conflict analysis
+- `GATE search` — keyword search for duplicate detection
 - No direct vault.db access. No file writes.
 
 ## Input
@@ -109,12 +109,12 @@ Compare the candidate against existing vault entries in the same domains:
 
 1. Fetch existing entries for each domain in `applies_to.domains`:
    ```bash
-   ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain "<domain>"
+   GATE query-domain "<domain>"
    ```
 
 2. If the candidate has a `conflict_check` value referencing an existing entry, also fetch that entry:
    ```bash
-   ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate get "<conflict_check_id>"
+   GATE get "<conflict_check_id>"
    ```
 
 3. For each existing entry, classify the relationship:

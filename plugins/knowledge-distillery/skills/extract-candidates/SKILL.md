@@ -12,16 +12,16 @@ description: "Analyzes an Evidence Bundle and extracts knowledge candidates — 
 
 ## Prerequisites
 
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate` CLI available
+- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
 - `.knowledge/vault.db` accessible via CLI only (no direct reads)
 - Evidence Bundle from `/knowledge-distillery:collect-evidence` available in-memory
 
 ## Allowed Tools
 
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-resolve-path` — resolve changed files to domains
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain` — fetch existing entries for relevant domains
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate search` — keyword search for potential duplicates
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate get` — full entry details for conflict check
+- `GATE domain-resolve-path` — resolve changed files to domains
+- `GATE query-domain` — fetch existing entries for relevant domains
+- `GATE search` — keyword search for potential duplicates
+- `GATE get` — full entry details for conflict check
 - GitHub MCP (read-only) or `git diff` / `git show` — selective diff inspection for the specific files or hunks that need code confirmation
 - No direct vault.db reads. No file writes.
 
@@ -46,7 +46,7 @@ Do NOT filter candidates — that is the quality gate's job. Return all candidat
 For each file path in the Evidence Bundle's root-level `changed_files` array:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-resolve-path "<filepath>"
+GATE domain-resolve-path "<filepath>"
 ```
 
 Collect all matched domains from the output. Results include global domains (pattern = `*`) automatically — do not exclude them; they serve as the scope for project-wide rules.
@@ -73,7 +73,7 @@ Deduplicate the final domain list.
 For each resolved domain from Step 1:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain "<domain>"
+GATE query-domain "<domain>"
 ```
 
 Collect all existing active entries for these domains. These are needed for:
