@@ -18,10 +18,15 @@ Query the Knowledge Vault (`.knowledge/vault.db`) before making code changes. Th
 
 ## CLI Path
 
-All commands use the following path:
+Resolve the CLI path once at session start. If `plugins/knowledge-distillery/scripts/knowledge-gate` exists in the current repo root, use the local development path. Otherwise use the installed plugin path:
+
+- **Development repo**: `plugins/knowledge-distillery/scripts/knowledge-gate`
+- **Installed plugin**: `GATE`
+
+All commands below use `GATE` as placeholder for the resolved path:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate <command> [args]
+GATE <command> [args]
 ```
 
 If the CLI or vault is not available, inform the user: "Knowledge vault not configured. Proceeding without vault guidance." Then continue normally -- do not block work.
@@ -31,7 +36,7 @@ If the CLI or vault is not available, inform the user: "Knowledge vault not conf
 ### Modifying a single file
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-paths "<filepath>"
+GATE query-paths "<filepath>"
 ```
 
 ### Modifying multiple files
@@ -40,16 +45,16 @@ Resolve domains first to avoid duplicate queries:
 
 ```bash
 # 1. Resolve each file to its domain(s) -- a few representative files suffice
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-resolve-path "<filepath>"
+GATE domain-resolve-path "<filepath>"
 
 # 2. Deduplicate the resolved domains, then query each one
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate query-domain "<domain>"
+GATE query-domain "<domain>"
 ```
 
 ### Investigating a topic or concept
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate search "<keyword>"
+GATE search "<keyword>"
 ```
 
 ### Getting full details for an entry
@@ -57,7 +62,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate search "<keyword>"
 When a query returns an entry ID and you need the complete body:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate get "<id>"
+GATE get "<id>"
 ```
 
 ### Exploring what knowledge exists
@@ -66,10 +71,10 @@ When the relevant domain or keyword is unknown:
 
 ```bash
 # Browse all active entries
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate list
+GATE list
 
 # Browse all domains
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-list
+GATE domain-list
 ```
 
 Then use `query-paths`, `query-domain`, or `search` for precise queries.
@@ -77,8 +82,8 @@ Then use `query-paths`, `query-domain`, or `search` for precise queries.
 ### Checking which domain a file belongs to
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-resolve-path "<filepath>"
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-info "<domain>"
+GATE domain-resolve-path "<filepath>"
+GATE domain-info "<domain>"
 ```
 
 ## Behavioral Rules

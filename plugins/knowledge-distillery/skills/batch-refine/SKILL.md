@@ -13,7 +13,7 @@ description: "Orchestrates the Stage B distillation pipeline: discovers merged P
 ## Prerequisites
 
 - GitHub MCP server configured with `pull_requests,issues,labels` toolsets
-- `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate` CLI available
+- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
 - `.knowledge/vault.db` accessible
 - `sqlite3` CLI available
 - `jq` CLI available
@@ -75,7 +75,7 @@ For PRs where collect-evidence returned `insufficient`:
 For all passed candidates, construct a JSON array and insert via the pipeline CLI:
 
 ```bash
-echo '<json_array>' | ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate _pipeline-insert
+echo '<json_array>' | GATE _pipeline-insert
 ```
 
 The JSON format for `_pipeline-insert`:
@@ -116,7 +116,7 @@ Notes:
 ### Step 6: Domain Health Report
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate domain-report
+GATE domain-report
 ```
 
 Capture output for inclusion in the report PR.
