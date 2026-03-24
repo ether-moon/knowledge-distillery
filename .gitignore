@@ -28,6 +28,8 @@ Desktop.ini
 *.pem
 *.key
 *.cert
+credentials*
+*.secret
 
 # ===== Python =====
 __pycache__/

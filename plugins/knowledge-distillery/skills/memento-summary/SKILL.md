@@ -1,5 +1,6 @@
 ---
-description: Generates a structured session summary for git notes on refs/notes/commits. Extracts decisions, problems, constraints, and open questions from an AI coding session transcript for use as evidence in the Knowledge Distillery refinement pipeline.
+name: memento-summary
+description: "Generates a structured session summary for git notes on refs/notes/commits. Extracts decisions, problems, constraints, and open questions from an AI coding session transcript for use as evidence in the Knowledge Distillery refinement pipeline. Use when generating a memento summary for a commit, or when the post-commit hook requests a session summary."
 ---
 
 # memento-summary

@@ -83,8 +83,9 @@ jobs:
             Use skill /knowledge-distillery:curate-report.
             Process reviewer feedback on Report PR #${{ steps.pr.outputs.pr_number }}
             (branch: ${{ steps.pr.outputs.branch }}).
-            Read all PR comments, classify feedback into archive/update/keep actions,
-            execute changes on vault.db, regenerate the batch report, commit, and post summary.
+            Read all PR comments, classify feedback into reject/update/keep actions,
+            update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary.
+            Do NOT modify vault.db directly — operate on the changeset file only.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 

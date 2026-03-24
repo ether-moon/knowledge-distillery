@@ -8,20 +8,18 @@ on:
 jobs:
   collect-and-refine:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write
       pull-requests: write
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
@@ -83,10 +81,11 @@ jobs:
             Use skill /knowledge-distillery:batch-refine.
             Find all PRs with 'knowledge:pending' label,
             collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
-            insert into vault.db via knowledge-gate _pipeline-insert.
+            write accepted entries to a changeset file (.knowledge/changesets/).
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
+            Do NOT modify vault.db directly — the changeset will be applied on merge.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 

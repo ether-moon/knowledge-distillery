@@ -786,6 +786,62 @@ pipeline_update() {
   echo "Updated ${entry_id}"
 }
 
+changeset_apply() {
+  local changeset_file="$1"
+
+  if [ ! -f "$changeset_file" ]; then
+    echo "ERROR: Changeset file not found: ${changeset_file}" >&2
+    return 1
+  fi
+
+  local version
+  version=$(jq -r '.version // empty' "$changeset_file")
+  if [ -z "$version" ] || [ "$version" != "1" ]; then
+    echo "ERROR: Unsupported or missing changeset version (expected 1, got '${version}')" >&2
+    return 1
+  fi
+
+  local accepted
+  accepted=$(jq -c '[.entries[] | select(.status == "accepted") | .data]' "$changeset_file")
+
+  local count
+  count=$(echo "$accepted" | jq 'length')
+
+  if [ "$count" -eq 0 ]; then
+    echo "No accepted entries to apply"
+    return 0
+  fi
+
+  # Idempotency: filter out entries whose ID already exists in vault.db
+  local new_entries="[]"
+  local skipped=0
+  for ((i=0; i<count; i++)); do
+    local entry_id
+    entry_id=$(echo "$accepted" | jq -r ".[$i].id")
+    local exists
+    exists=$(sqlite3 "$VAULT" "SELECT COUNT(*) FROM entries WHERE id='$(echo "$entry_id" | sed "s/'/''/g")';" 2>/dev/null || echo "0")
+    if [ "$exists" -gt 0 ]; then
+      skipped=$((skipped + 1))
+    else
+      new_entries=$(echo "$new_entries" | jq --argjson entry "$(echo "$accepted" | jq ".[$i]")" '. + [$entry]')
+    fi
+  done
+
+  local new_count
+  new_count=$(echo "$new_entries" | jq 'length')
+
+  if [ "$skipped" -gt 0 ]; then
+    echo "Skipped ${skipped} entries already in vault"
+  fi
+
+  if [ "$new_count" -eq 0 ]; then
+    echo "No new entries to apply (all ${count} already in vault)"
+    return 0
+  fi
+
+  echo "$new_entries" | pipeline_insert
+}
+
 # ============================================================
 # 5. Report + Utility Commands
 # ============================================================
@@ -1323,6 +1379,10 @@ case "$CMD" in
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate _pipeline-update <id> (reads JSON from stdin)" >&2; exit 1; }
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-update" >&2; exit 1; }
     pipeline_update "$@" ;;
+  _changeset-apply)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate _changeset-apply <changeset-file>" >&2; exit 1; }
+    command -v jq &>/dev/null || { echo "ERROR: jq is required for _changeset-apply" >&2; exit 1; }
+    changeset_apply "$1" ;;
   init-db)
     init_db "${1:-}" ;;
 
