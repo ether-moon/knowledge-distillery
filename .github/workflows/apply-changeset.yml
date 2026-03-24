@@ -41,7 +41,11 @@ jobs:
 
       - name: Find and apply changeset
         run: |
-          GATE=".knowledge-distillery-plugin/scripts/knowledge-gate"
+          GATE=$(find .knowledge-distillery-plugin -name knowledge-gate -path '*/scripts/*' -type f | head -1)
+          if [ -z "$GATE" ]; then
+            echo "::error::knowledge-gate script not found in plugin checkout"
+            exit 1
+          fi
           chmod +x "$GATE"
 
           CHANGESET=".knowledge/changesets/batch-${{ steps.batch.outputs.date }}.json"
