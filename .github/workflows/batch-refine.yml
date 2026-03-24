@@ -8,6 +8,8 @@ on:
 jobs:
   collect-and-refine:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write
       pull-requests: write
@@ -27,9 +29,9 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
-          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
-          echo "::add-mask::${{ secrets.SLACK_API_KEY }}"
-          echo "::add-mask::${{ secrets.NOTION_API_KEY }}"
+          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
+          if [ -n "${{ secrets.SLACK_API_KEY }}" ]; then echo "::add-mask::${{ secrets.SLACK_API_KEY }}"; fi
+          if [ -n "${{ secrets.NOTION_API_KEY }}" ]; then echo "::add-mask::${{ secrets.NOTION_API_KEY }}"; fi
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
@@ -85,8 +87,8 @@ jobs:
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin"
-          allowed_tools: "mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash,Read,Write,Glob,Grep,Skill,Agent,WebFetch,WebSearch"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
 
       - name: Cleanup sensitive files
         if: always()
