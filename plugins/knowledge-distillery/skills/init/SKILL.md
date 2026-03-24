@@ -31,7 +31,7 @@ If `.knowledge/vault.db` already exists, skip this step (idempotent).
 If it does not exist, initialize it through the bundled CLI:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate init-db .knowledge/vault.db
+GATE init-db .knowledge/vault.db
 ```
 
 Verify: `sqlite3 .knowledge/vault.db "PRAGMA user_version;"` should return `1`.
@@ -68,6 +68,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,6 +142,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -273,7 +275,7 @@ Preserve all existing keys in the file. Only add to the `permissions.allow` arra
 After all files are created or updated, verify the repository state through the bundled CLI:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor
+GATE doctor
 ```
 
 This command must succeed. If any check fails, stop and report the failing items instead of claiming initialization is complete.
@@ -309,4 +311,4 @@ Next steps:
 - Does NOT modify existing vault.db data
 - Does NOT overwrite existing workflow files
 - Does NOT remove existing CLAUDE.md content
-- Final repository validation must go through `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor`
+- Final repository validation must go through `GATE doctor`
