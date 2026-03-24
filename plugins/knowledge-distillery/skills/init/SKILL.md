@@ -14,7 +14,7 @@ Run `/knowledge-distillery:init` once in a new project to set up the Knowledge D
 2. `.knowledge/reports/` — Directory for batch report files
 3. `.github/workflows/mark-evidence.yml` — Stage A workflow (merge-time marking)
 4. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
-5. Knowledge Vault section in `CLAUDE.md`
+5. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
 6. `.knowledge/` entries in `.gitignore`
 7. CLI permissions in `.claude/settings.json`
 
@@ -222,9 +222,26 @@ jobs:
         run: rm -f .mcp.json
 ```
 
-### Step 4: Update CLAUDE.md
+### Step 4: Add Directive Sections
 
-If `CLAUDE.md` does not exist, create it. If it exists, check if a `## Knowledge Vault` section already exists. If it does, skip (idempotent). Otherwise, append the following block:
+Two sections need to be added: **Knowledge Vault** and **Memento**. The target file depends on the project's existing directive pattern.
+
+#### 4a: Detect target file
+
+Check the project root for directive files and determine where to append:
+
+| Project state | Target file |
+|---------------|-------------|
+| `CLAUDE.md` contains `@AGENTS.md` | `AGENTS.md` (create if missing) |
+| `AGENTS.md` exists (no `@AGENTS.md` in CLAUDE.md) | `AGENTS.md` |
+| Only `CLAUDE.md` exists | `CLAUDE.md` |
+| Neither exists | Create `CLAUDE.md` |
+
+#### 4b: Append sections (idempotent)
+
+For each section below, check if it already exists in the target file (search for the `##` heading). Skip any section that already exists.
+
+**Knowledge Vault section:**
 
 ```markdown
 ## Knowledge Vault
@@ -234,6 +251,16 @@ If `CLAUDE.md` does not exist, create it. If it exists, check if a `## Knowledge
 - MUST/MUST-NOT rules from related entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
 - Do not directly read files in the .knowledge/ directory
+```
+
+**Memento section:**
+
+```markdown
+## Memento
+- After every git commit, attach a memento session summary as a git note on `refs/notes/commits`
+- The summary follows the 5-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context
+- See `/knowledge-distillery:memento-commit` for the full workflow and format specification
+- If the PostToolUse hook fires a reminder, follow it — generate the summary and attach the note
 ```
 
 ### Step 5: Update .gitignore
@@ -290,7 +317,7 @@ Knowledge Distillery initialized:
   [created|exists] .knowledge/reports/
   [created|exists] .github/workflows/mark-evidence.yml
   [created|exists] .github/workflows/batch-refine.yml
-  [updated|exists] CLAUDE.md (Knowledge Vault section)
+  [updated|exists] <target file> (Knowledge Vault + Memento sections)
   [updated|exists] .gitignore
   [updated|exists] .claude/settings.json (CLI permissions)
   [passed] knowledge-gate doctor

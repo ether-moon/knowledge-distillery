@@ -17,3 +17,17 @@ The repository uses its own distillation pipeline to capture knowledge about its
 ## Implementation Philosophy
 
 The current implementation serves as a proof of concept. Do not over-engineer for edge cases or enforce rigid policies. Keep the design open to change — tight constraints and exhaustive safeguards make future iteration harder. Focus on experiencing real-world usability first and refining incrementally based on what you learn.
+
+## Knowledge Vault
+- Before modifying code, query related rules with `knowledge-gate query-paths <file-path>`
+- Domain-level rule query: `knowledge-gate query-domain <domain-name>`
+- Domain lookup: `knowledge-gate domain-info <domain-name>`, `domain-resolve-path <path>`
+- MUST/MUST-NOT rules from related entries must be strictly followed
+- For structural changes in areas without related rules, confirm with a human first
+- Do not directly read files in the .knowledge/ directory
+
+## Memento
+- After every git commit, attach a memento session summary as a git note on `refs/notes/commits`
+- The summary follows the 5-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context
+- See `/knowledge-distillery:memento-commit` for the full workflow and format specification
+- If the PostToolUse hook fires a reminder, follow it — generate the summary and attach the note
