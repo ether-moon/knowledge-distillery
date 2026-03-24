@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*/knowledge-gate:*)",
+      "Bash(sqlite3 .knowledge/vault.db:*)"
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "knowledge-distillery": {
+      "source": {
+        "source": "github",
+        "repo": "ether-moon/knowledge-distillery"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "knowledge-distillery@knowledge-distillery": true
+  }
+}

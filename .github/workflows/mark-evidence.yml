@@ -1,0 +1,65 @@
+name: Knowledge Distillery — Mark Evidence
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+jobs:
+  mark-evidence:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Write dynamic MCP config
+        run: |
+          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
+          cat > .mcp.json << 'MCPEOF'
+          {
+            "mcpServers": {
+              "github": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
+                  "X-MCP-Toolsets": "pull_requests,issues,labels"
+                }
+              },
+              "linear": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "mcp-linear"],
+                "env": {
+                  "LINEAR_API_KEY": "${{ secrets.LINEAR_API_KEY }}"
+                }
+              }
+            }
+          }
+          MCPEOF
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
+            Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
+            and add 'knowledge:pending' label.
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(git:*),Read,Glob,Grep"
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f .mcp.json

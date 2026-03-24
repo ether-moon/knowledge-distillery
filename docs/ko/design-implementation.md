@@ -3,7 +3,7 @@
 **정제 파이프라인 설계 개요**
 
 > 이 문서는 구현 상세 스펙의 원문이 아니라, 시스템의 전체 구조와 흐름을 빠르게 이해하기 위한 설계 개요서다.
-> 정확한 스키마는 [`schema/vault.sql`](../../schema/vault.sql), CLI 사용법은 `knowledge-gate help` 또는 [README CLI 빠른 참조](../../README.md#cli-quick-reference), 파이프라인 동작은 [`skills/`](../../skills/)를 기준으로 본다.
+> 정확한 스키마는 [`schema/vault.sql`](../../plugins/knowledge-distillery/schema/vault.sql), CLI 사용법은 `knowledge-gate help` 또는 [README CLI 빠른 참조](../../README.md#cli-quick-reference), 파이프라인 동작은 [`skills/`](../../plugins/knowledge-distillery/skills/)를 기준으로 본다.
 
 ---
 
@@ -154,7 +154,7 @@ flowchart LR
 
 ### 4.2 지식 금고 스키마
 
-지식 금고의 정확한 DDL은 [`schema/vault.sql`](../../schema/vault.sql)에 있다. 개념적으로는 다음 다섯 축으로 이해하면 된다.
+지식 금고의 정확한 DDL은 [`schema/vault.sql`](../../plugins/knowledge-distillery/schema/vault.sql)에 있다. 개념적으로는 다음 다섯 축으로 이해하면 된다.
 
 - **entries**: Fact / Anti-Pattern 본문
 - **domain_registry / domain_paths**: 통제된 도메인 어휘와 파일 경로 해소 규칙
@@ -316,7 +316,7 @@ PR 변경 맥락 (커밋 메시지, 리뷰 논의, Linear 이슈)
 **CLI를 지배하는 설계 원칙:**
 
 - **벤더 중립 지향(런타임) / Claude-first(배포)**: 에이전트 런타임 커맨드는 `sqlite3`(사전 설치)만 사용하여 벤더 중립을 유지한다. 파이프라인/관리 커맨드는 `jq`를 추가로 요구한다 (JSON 처리용). 배포는 Claude Code Plugin으로 제공하되, CLI 자체는 어떤 에이전트에서든 실행 가능.
-- **표준 plugin 패키징**: `.claude-plugin/plugin.json`은 메타데이터만 담고, `skills/`, `scripts/`, `schema/` 같은 번들 자산은 plugin root에 두며 `${CLAUDE_PLUGIN_ROOT}`를 통해 참조한다.
+- **표준 plugin 패키징**: 레포지토리가 marketplace를 겸한다 (`.claude-plugin/marketplace.json`). 플러그인은 `plugins/knowledge-distillery/` 하위에 위치하며, `skills/`, `scripts/`, `schema/` 같은 번들 자산은 `${CLAUDE_PLUGIN_ROOT}`를 통해 참조한다.
 - **규격화된 DB 조작**: LLM이 판단하고, CLI가 DB를 조작한다. 직접 SQL 실행 금지.
 
 ### 7.6 에이전트 Skill 템플릿
@@ -428,6 +428,6 @@ bin/knowledge-gate domain-resolve-path "<파일 경로>"
 이 문서에서 의도적으로 생략한 구현 세부는 아래 문서를 기준으로 본다.
 
 - CLI 명령과 입출력: `knowledge-gate help` 및 [README CLI 빠른 참조](../../README.md#cli-quick-reference)
-- 정확한 SQLite 스키마: [`schema/vault.sql`](../../schema/vault.sql)
-- 파이프라인 Skill 세부: [`skills/`](../../skills/)
+- 정확한 SQLite 스키마: [`schema/vault.sql`](../../plugins/knowledge-distillery/schema/vault.sql)
+- 파이프라인 Skill 세부: [`skills/`](../../plugins/knowledge-distillery/skills/)
 - 채택/비채택 도구 비교: [`docs/ko/tool-evaluation.md`](./tool-evaluation.md)

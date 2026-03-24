@@ -3,7 +3,7 @@
 **Refinement Pipeline Design Overview**
 
 > This document is an architecture overview, not the canonical implementation spec.
-> For exact schema details, see [`schema/vault.sql`](../schema/vault.sql). For CLI behavior, run `knowledge-gate help` or see the [README CLI Quick Reference](../README.md#cli-quick-reference). For pipeline behavior, see [`skills/`](../skills/).
+> For exact schema details, see [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql). For CLI behavior, run `knowledge-gate help` or see the [README CLI Quick Reference](../README.md#cli-quick-reference). For pipeline behavior, see [`skills/`](../plugins/knowledge-distillery/skills/).
 
 ---
 
@@ -160,7 +160,7 @@ The design intentionally prefers SQLite-native migration mechanics over an addit
 
 ### 4.2 Knowledge Vault Schema
 
-The exact DDL lives in [`schema/vault.sql`](../schema/vault.sql). Conceptually, the schema has five parts.
+The exact DDL lives in [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql). Conceptually, the schema has five parts.
 
 - **entries**: the Fact / Anti-Pattern content itself
 - **domain_registry / domain_paths**: controlled vocabulary plus path-to-domain resolution
@@ -322,7 +322,7 @@ What matters in this document is not command syntax. It is why `knowledge-gate` 
 **Design principles governing the CLI:**
 
 - **Vendor-neutral runtime / Claude-first delivery**: Agent runtime commands use only `sqlite3` (pre-installed) to maintain vendor neutrality. Pipeline/management commands additionally require `jq` (for JSON processing). Delivery is via Claude Code Plugin, but the CLI itself can run from any agent.
-- **Standard plugin packaging**: The plugin uses `.claude-plugin/plugin.json` only for metadata. Bundled assets such as `skills/`, `scripts/`, and `schema/` live at the plugin root and are referenced through `${CLAUDE_PLUGIN_ROOT}`.
+- **Standard plugin packaging**: The repository acts as a marketplace (`.claude-plugin/marketplace.json`). The plugin lives under `plugins/knowledge-distillery/` with its own `plugin.json`. Bundled assets (`skills/`, `scripts/`, `schema/`) are referenced through `${CLAUDE_PLUGIN_ROOT}`.
 - **Standardized DB manipulation**: The LLM decides, and the CLI manipulates the DB. Direct SQL execution is prohibited.
 
 ### 7.6 Agent Skill Template
@@ -434,6 +434,6 @@ The goal of metrics is not a perfect scorecard. It is to verify whether this str
 This document intentionally omits detailed implementation material. Use these as the canonical sources:
 
 - CLI commands and I/O behavior: `knowledge-gate help` and [README CLI Quick Reference](../README.md#cli-quick-reference)
-- Exact SQLite schema: [`schema/vault.sql`](../schema/vault.sql)
-- Pipeline skill details: [`skills/`](../skills/)
+- Exact SQLite schema: [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql)
+- Pipeline skill details: [`skills/`](../plugins/knowledge-distillery/skills/)
 - Adopted and rejected tool analysis: [`docs/tool-evaluation.md`](./tool-evaluation.md)

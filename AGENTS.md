@@ -12,7 +12,7 @@ The repository uses its own distillation pipeline to capture knowledge about its
 
 - MUST: All implementation artifacts must be built in a form deployable/applicable to other projects
 - Delivery format: Claude Code Plugin (Skill + CLI + schema를 하나의 plugin으로 배포). 배포는 Claude-first, 런타임 CLI(`knowledge-gate`)는 벤더 중립(`sqlite3` 기반)
-- Dogfooding: This repo has its own `.knowledge/vault.db` and GitHub Actions workflows. The CLI path is `scripts/knowledge-gate` (local, not `${CLAUDE_PLUGIN_ROOT}`)
+- Dogfooding: This repo has its own `.knowledge/vault.db` and GitHub Actions workflows. Plugin assets live under `plugins/knowledge-distillery/`
 
 ## Implementation Philosophy
 

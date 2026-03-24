@@ -16,6 +16,7 @@ Run `/knowledge-distillery:init` once in a new project to set up the Knowledge D
 4. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
 5. Knowledge Vault section in `CLAUDE.md`
 6. `.knowledge/` entries in `.gitignore`
+7. CLI permissions in `.claude/settings.json`
 
 ## Execution Steps
 
@@ -245,7 +246,29 @@ If `.gitignore` does not exist, create it. Check if `.knowledge/` related entrie
 
 Note: `.knowledge/vault.db` and `.knowledge/reports/` are intentionally NOT gitignored — they are committed to the repository. Only temporary working files are ignored.
 
-### Step 6: Run Self-Check
+### Step 6: Add CLI Permissions to .claude/settings.json
+
+The `knowledge-gate` CLI requires Bash permissions to run without manual approval. Add them to the project-level `.claude/settings.json` so all team members get them automatically.
+
+Read `.claude/settings.json` if it exists. Merge the following permissions into the `permissions.allow` array (skip any that already exist):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(*/knowledge-gate:*)",
+      "Bash(sqlite3 .knowledge/vault.db:*)"
+    ]
+  }
+}
+```
+
+- `Bash(*/knowledge-gate:*)` — allows running the CLI from any install path (plugin cache path varies per machine)
+- `Bash(sqlite3 .knowledge/vault.db:*)` — allows direct vault queries for verification
+
+Preserve all existing keys in the file. Only add to the `permissions.allow` array.
+
+### Step 7: Run Self-Check
 
 After all files are created or updated, verify the repository state through the bundled CLI:
 
@@ -255,7 +278,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor
 
 This command must succeed. If any check fails, stop and report the failing items instead of claiming initialization is complete.
 
-### Step 7: Output Summary
+### Step 8: Output Summary
 
 Print a summary of all created/updated files:
 
@@ -267,6 +290,7 @@ Knowledge Distillery initialized:
   [created|exists] .github/workflows/batch-refine.yml
   [updated|exists] CLAUDE.md (Knowledge Vault section)
   [updated|exists] .gitignore
+  [updated|exists] .claude/settings.json (CLI permissions)
   [passed] knowledge-gate doctor
 
 Next steps:

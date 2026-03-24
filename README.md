@@ -31,7 +31,7 @@ The agent never touches raw data. It only sees what has survived distillation.
 
 ## Documentation
 
-Executable skills in `skills/` are the source of truth for pipeline behavior.
+Executable skills in `plugins/knowledge-distillery/skills/` are the source of truth for pipeline behavior.
 
 | Document | Description |
 |---|---|
@@ -99,7 +99,7 @@ Run `knowledge-gate help` for full usage details.
 ## Delivery Format
 
 Distributed as a **Claude Code Plugin** — install with `claude plugin install` to get runtime skills, pipeline skills, bundled schema assets, and the `knowledge-gate` CLI in one package. The CLI itself is vendor-neutral (`sqlite3`-based), runnable from any coding agent.
-The plugin follows the standard Claude Code layout: `.claude-plugin/plugin.json` for metadata, with bundled assets kept at the plugin root in `skills/`, `scripts/`, and `schema/`.
+The repository doubles as a marketplace. `.claude-plugin/marketplace.json` declares the marketplace; the plugin itself lives under `plugins/knowledge-distillery/` with its own `plugin.json`, `skills/`, `scripts/`, and `schema/`.
 
 ## Status
 

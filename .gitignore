@@ -88,3 +88,7 @@ temp/
 
 # ===== Claude =====
 .claude/settings.local.json
+
+# Knowledge Distillery — vault is committed as binary, reports are committed
+# Only ignore temporary/working files
+.knowledge/tmp/
