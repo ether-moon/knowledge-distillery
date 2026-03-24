@@ -85,7 +85,7 @@ jobs:
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(sqlite3:*,git:*),Read,Write,Glob,Grep"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin"
 
       - name: Cleanup sensitive files
         if: always()

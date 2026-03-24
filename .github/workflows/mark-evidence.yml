@@ -59,7 +59,7 @@ jobs:
             Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
             Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
             and add 'knowledge:pending' label.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools mcp__github__*,mcp__linear__*,Bash(git:*),Read,Glob,Grep"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin"
 
       - name: Cleanup sensitive files
         if: always()
