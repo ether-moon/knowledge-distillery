@@ -21,7 +21,7 @@ Query the Knowledge Vault (`.knowledge/vault.db`) before making code changes. Th
 Resolve the CLI path once at session start. If `plugins/knowledge-distillery/scripts/knowledge-gate` exists in the current repo root, use the local development path. Otherwise use the installed plugin path:
 
 - **Development repo**: `plugins/knowledge-distillery/scripts/knowledge-gate`
-- **Installed plugin**: `GATE`
+- **Installed plugin**: `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate`
 
 All commands below use `GATE` as placeholder for the resolved path:
 
