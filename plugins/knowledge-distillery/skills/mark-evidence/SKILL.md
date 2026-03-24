@@ -1,5 +1,7 @@
 ---
-description: "Extracts evidence identifiers from a merged PR and posts an Evidence Bundle Manifest comment. Stage A of the distillation pipeline — lightweight, identifier-only, no content fetching. Triggered on PR merge or manual invocation."
+name: mark-evidence
+description: "Extracts evidence identifiers from a merged PR and posts an Evidence Bundle Manifest comment. Stage A of the distillation pipeline — lightweight, identifier-only, no content fetching. Triggered on PR merge or manual invocation. Use after a PR merge to begin knowledge tracking, or manually with a specific PR number to retroactively mark evidence."
+argument-hint: "[PR-number]"
 ---
 
 # mark-evidence — Stage A Evidence Marking
@@ -86,6 +88,8 @@ Apply the regex pattern `/\b([A-Z]+-\d+)\b/g` to these sources, in order:
 3. Each commit message (headline + body) — record matches with `source: "commit_message"`
 
 Deduplicate by ID, keeping the first `source` encountered for each unique ID.
+
+> **Note on regex breadth:** This pattern intentionally matches any `PREFIX-123` format (Linear, JIRA, etc.) rather than filtering by known project prefixes. False positives are handled gracefully downstream — `collect-evidence` looks up each ID in Linear and sets `retrieved: false` if not found. Overly narrow patterns risk missing valid references.
 
 ### Step 4: Discover Slack Links
 

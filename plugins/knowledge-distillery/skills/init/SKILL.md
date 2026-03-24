@@ -1,5 +1,6 @@
 ---
-description: "Initializes the Knowledge Distillery in an adopting project. Creates vault.db, GitHub Actions workflows, CLAUDE.md Knowledge Vault section, and .gitignore entries. Run once per project via /knowledge-distillery:init. Safe to re-run (idempotent)."
+name: init
+description: "Initializes the Knowledge Distillery in an adopting project. Creates vault.db, GitHub Actions workflows, CLAUDE.md Knowledge Vault section, and .gitignore entries. Run once per project via /knowledge-distillery:init. Safe to re-run (idempotent). Use when setting up, bootstrapping, or onboarding a new project into the Knowledge Distillery system — any mention of 'initialize', 'set up', 'install', or 'bootstrap' knowledge distillery should trigger this."
 ---
 
 # init — Knowledge Distillery Adoption Setup
@@ -12,12 +13,14 @@ Run `/knowledge-distillery:init` once in a new project to set up the Knowledge D
 
 1. `.knowledge/vault.db` — SQLite vault initialized from the plugin's schema
 2. `.knowledge/reports/` — Directory for batch report files
-3. `.github/workflows/mark-evidence.yml` — Stage A workflow (merge-time marking)
-4. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
-5. `.github/workflows/curate-report.yml` — Report PR curation workflow (comment-triggered)
-6. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
-7. `.knowledge/` entries in `.gitignore`
-8. CLI permissions in `.claude/settings.json`
+3. `.knowledge/changesets/` — Directory for batch changeset files
+4. `.github/workflows/mark-evidence.yml` — Stage A workflow (merge-time marking)
+5. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
+6. `.github/workflows/curate-report.yml` — Report PR curation workflow (comment-triggered)
+7. `.github/workflows/apply-changeset.yml` — Post-merge workflow (applies changeset to vault.db)
+8. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
+9. `.knowledge/` entries in `.gitignore`
+10. CLI permissions in `.claude/settings.json`
 
 ## Execution Steps
 
@@ -37,10 +40,11 @@ GATE init-db .knowledge/vault.db
 
 Verify: `sqlite3 .knowledge/vault.db "PRAGMA user_version;"` should return `1`.
 
-### Step 2: Create Reports Directory
+### Step 2: Create Reports and Changesets Directories
 
 ```bash
 mkdir -p .knowledge/reports
+mkdir -p .knowledge/changesets
 ```
 
 ### Step 3: Generate GitHub Actions Workflows
@@ -212,10 +216,11 @@ jobs:
             Use skill /knowledge-distillery:batch-refine.
             Find all PRs with 'knowledge:pending' label,
             collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
-            insert into vault.db via knowledge-gate _pipeline-insert.
+            write accepted entries to a changeset file (.knowledge/changesets/).
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
+            Do NOT modify vault.db directly — the changeset will be applied on merge.
           claude_args: "--plugin-dir .knowledge-distillery-plugin"
 
       - name: Cleanup sensitive files
@@ -307,14 +312,101 @@ jobs:
             Use skill /knowledge-distillery:curate-report.
             Process reviewer feedback on Report PR #${{ steps.pr.outputs.pr_number }}
             (branch: ${{ steps.pr.outputs.branch }}).
-            Read all PR comments, classify feedback into archive/update/keep actions,
-            execute changes on vault.db, regenerate the batch report, commit, and post summary.
+            Read all PR comments, classify feedback into reject/update/keep actions,
+            update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary.
+            Do NOT modify vault.db directly — operate on the changeset file only.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files
         if: always()
         run: rm -f .mcp.json
+```
+
+#### `.github/workflows/apply-changeset.yml`
+
+If this file already exists, skip (idempotent).
+
+Write the following content:
+
+```yaml
+name: Knowledge Distillery — Apply Changeset
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+jobs:
+  apply-changeset:
+    if: >-
+      github.event.pull_request.merged &&
+      startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Configure git identity
+        run: |
+          git config user.name "knowledge-distillery[bot]"
+          git config user.email "knowledge-distillery[bot]@users.noreply.github.com"
+
+      - name: Extract batch date from branch name
+        id: batch
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          DATE="${BRANCH#knowledge/batch-}"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+          echo "Batch date: ${DATE}"
+
+      - name: Find and apply changeset
+        run: |
+          GATE=$(find .knowledge-distillery-plugin -name knowledge-gate -path '*/scripts/*' -type f | head -1)
+          if [ -z "$GATE" ]; then
+            echo "::error::knowledge-gate script not found in plugin checkout"
+            exit 1
+          fi
+          chmod +x "$GATE"
+
+          CHANGESET=".knowledge/changesets/batch-${{ steps.batch.outputs.date }}.json"
+
+          if [ ! -f "$CHANGESET" ]; then
+            echo "::warning::No changeset file found at ${CHANGESET} — skipping"
+            exit 0
+          fi
+
+          ACCEPTED=$(jq '[.entries[] | select(.status == "accepted")] | length' "$CHANGESET")
+          echo "Accepted entries to apply: ${ACCEPTED}"
+
+          if [ "$ACCEPTED" -eq 0 ]; then
+            echo "No accepted entries — skipping vault update"
+            exit 0
+          fi
+
+          "$GATE" _changeset-apply "$CHANGESET"
+
+      - name: Commit and push vault.db
+        run: |
+          if git diff --quiet .knowledge/vault.db 2>/dev/null; then
+            echo "No vault.db changes — skipping commit"
+            exit 0
+          fi
+
+          git add .knowledge/vault.db
+          git commit -m "knowledge: apply batch ${{ steps.batch.outputs.date }} changeset"
+          git push origin ${{ github.event.pull_request.base.ref }}
 ```
 
 ### Step 4: Add Directive Sections
@@ -340,10 +432,12 @@ For each section below, check if it already exists in the target file (search fo
 
 ```markdown
 ## Knowledge Vault
-- Before modifying code, query related rules with `knowledge-gate query-paths <file-path>`
-- Domain-level rule query: `knowledge-gate query-domain <domain-name>`
-- Domain lookup: `knowledge-gate domain-info <domain-name>`, `domain-resolve-path <path>`
-- MUST/MUST-NOT rules from related entries must be strictly followed
+- A UserPromptSubmit hook reminds you to query the vault when active entries exist
+- When the hook fires and the task involves code modifications, query before planning:
+  - Single file: `knowledge-gate query-paths <file-path>`
+  - Multiple files: `knowledge-gate domain-resolve-path <path>` → `knowledge-gate query-domain <domain>`
+  - Topic search: `knowledge-gate search <keyword>`
+- MUST/MUST-NOT rules from returned entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
 - Do not directly read files in the .knowledge/ directory
 ```
@@ -410,9 +504,11 @@ Print a summary of all created/updated files:
 Knowledge Distillery initialized:
   [created|exists] .knowledge/vault.db
   [created|exists] .knowledge/reports/
+  [created|exists] .knowledge/changesets/
   [created|exists] .github/workflows/mark-evidence.yml
   [created|exists] .github/workflows/batch-refine.yml
   [created|exists] .github/workflows/curate-report.yml
+  [created|exists] .github/workflows/apply-changeset.yml
   [updated|exists] <target file> (Knowledge Vault + Memento sections)
   [updated|exists] .gitignore
   [updated|exists] .claude/settings.json (CLI permissions)

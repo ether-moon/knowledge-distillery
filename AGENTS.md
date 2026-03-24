@@ -11,7 +11,7 @@ This project builds the Knowledge Distillery tool AND dogfoods it on itself.
 The repository uses its own distillation pipeline to capture knowledge about its own development.
 
 - MUST: All implementation artifacts must be built in a form deployable/applicable to other projects
-- Delivery format: Claude Code Plugin (Skill + CLI + schema를 하나의 plugin으로 배포). 배포는 Claude-first, 런타임 CLI(`knowledge-gate`)는 벤더 중립(`sqlite3` 기반)
+- Delivery format: Claude Code Plugin (Skill + CLI + schema shipped as a single plugin). Distribution is Claude-first; runtime CLI (`knowledge-gate`) is vendor-neutral (`sqlite3`-based)
 - Dogfooding: This repo has its own `.knowledge/vault.db` and GitHub Actions workflows. Plugin assets live under `plugins/knowledge-distillery/`
 
 ## Implementation Philosophy
@@ -19,10 +19,12 @@ The repository uses its own distillation pipeline to capture knowledge about its
 The current implementation serves as a proof of concept. Do not over-engineer for edge cases or enforce rigid policies. Keep the design open to change — tight constraints and exhaustive safeguards make future iteration harder. Focus on experiencing real-world usability first and refining incrementally based on what you learn.
 
 ## Knowledge Vault
-- Before modifying code, query related rules with `knowledge-gate query-paths <file-path>`
-- Domain-level rule query: `knowledge-gate query-domain <domain-name>`
-- Domain lookup: `knowledge-gate domain-info <domain-name>`, `domain-resolve-path <path>`
-- MUST/MUST-NOT rules from related entries must be strictly followed
+- A UserPromptSubmit hook reminds you to query the vault when active entries exist
+- When the hook fires and the task involves code modifications, query before planning:
+  - Single file: `knowledge-gate query-paths <file-path>`
+  - Multiple files: `knowledge-gate domain-resolve-path <path>` → `knowledge-gate query-domain <domain>`
+  - Topic search: `knowledge-gate search <keyword>`
+- MUST/MUST-NOT rules from returned entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
 - Do not directly read files in the .knowledge/ directory
 

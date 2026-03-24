@@ -1,5 +1,7 @@
 ---
+name: quality-gate
 description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, conflict identification)."
+user-invocable: false
 ---
 
 # quality-gate — Stage B-3 Quality Verification
