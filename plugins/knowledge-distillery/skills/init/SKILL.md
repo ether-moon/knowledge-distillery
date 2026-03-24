@@ -1,5 +1,6 @@
 ---
-description: "Initializes the Knowledge Distillery in an adopting project. Creates vault.db, GitHub Actions workflows, CLAUDE.md Knowledge Vault section, and .gitignore entries. Run once per project via /knowledge-distillery:init. Safe to re-run (idempotent)."
+name: init
+description: "Initializes the Knowledge Distillery in an adopting project. Creates vault.db, GitHub Actions workflows, CLAUDE.md Knowledge Vault section, and .gitignore entries. Run once per project via /knowledge-distillery:init. Safe to re-run (idempotent). Use when setting up, bootstrapping, or onboarding a new project into the Knowledge Distillery system — any mention of 'initialize', 'set up', 'install', or 'bootstrap' knowledge distillery should trigger this."
 ---
 
 # init — Knowledge Distillery Adoption Setup
