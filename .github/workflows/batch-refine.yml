@@ -86,6 +86,7 @@ jobs:
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
           claude_args: "--plugin-dir .knowledge-distillery-plugin"
+          allowed_tools: "mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash,Read,Write,Glob,Grep,Skill,Agent,WebFetch,WebSearch"
 
       - name: Cleanup sensitive files
         if: always()
