@@ -47,6 +47,7 @@ From the session conversation, extract:
 ### Step 2: Write File and Commit (single Bash call)
 
 ```bash
+test -d .knowledge || { echo "knowledge-distillery not initialized. Run /knowledge-distillery:init"; exit 1; }
 mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" << 'DECISION_EOF'
 # Decision: <title>
 
@@ -63,13 +64,14 @@ COMMIT_EOF
 ```
 
 Key details:
-- `mkdir -p` ensures the directory exists (idempotent for first-time use).
+- `test -d .knowledge` fails fast if the distillery is not initialized, matching the error handling table.
+- `mkdir -p` ensures the `decisions/` subdirectory exists (idempotent).
 - `git add` targets ONLY the decision file — never stages other working changes.
 - Commit message uses the `decision:` prefix for pipeline discoverability.
 
 ### Step 3: Report Result (no Bash)
 
-```
+```text
 Decision recorded: <sha> decision: <slug>
 ```
 
