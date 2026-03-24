@@ -669,6 +669,121 @@ pipeline_insert() {
   echo "Inserted ${count} entries"
 }
 
+pipeline_archive() {
+  local entry_id="$1"
+  local reason=""
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reason) reason="$2"; shift 2 ;;
+      *) echo "ERROR: Unknown option: $1" >&2; return 1 ;;
+    esac
+  done
+
+  if [ -z "$entry_id" ]; then
+    echo "ERROR: entry id is required" >&2; return 1
+  fi
+  if [ -z "$reason" ]; then
+    echo "ERROR: --reason is required" >&2; return 1
+  fi
+
+  local current_status
+  current_status=$(sqlite3 "$VAULT" "SELECT status FROM entries WHERE id='$(esc "$entry_id")';" 2>/dev/null || true)
+  if [ -z "$current_status" ]; then
+    echo "ERROR: Entry '${entry_id}' not found" >&2; return 1
+  fi
+  if [ "$current_status" = "archived" ]; then
+    echo "ERROR: Entry '${entry_id}' is already archived" >&2; return 1
+  fi
+
+  local sql="UPDATE entries
+    SET status='archived',
+        archived_at=datetime('now'),
+        archive_reason='$(esc "$reason")',
+        updated_at=datetime('now')
+    WHERE id='$(esc "$entry_id")' AND status='active';"
+
+  sqlite3 "$VAULT" "$sql"
+  echo "Archived ${entry_id}"
+}
+
+pipeline_update() {
+  local entry_id="$1"
+  local json
+  json=$(cat)
+
+  if [ -z "$entry_id" ]; then
+    echo "ERROR: entry id is required" >&2; return 1
+  fi
+  if [ -z "$json" ]; then
+    echo "ERROR: JSON input is required (via stdin)" >&2; return 1
+  fi
+
+  local current_status current_type
+  current_status=$(sqlite3 "$VAULT" "SELECT status FROM entries WHERE id='$(esc "$entry_id")';" 2>/dev/null || true)
+  if [ -z "$current_status" ]; then
+    echo "ERROR: Entry '${entry_id}' not found" >&2; return 1
+  fi
+  if [ "$current_status" = "archived" ]; then
+    echo "ERROR: Entry '${entry_id}' is archived — cannot update" >&2; return 1
+  fi
+  current_type=$(sqlite3 "$VAULT" "SELECT type FROM entries WHERE id='$(esc "$entry_id")';")
+
+  # Build SET clause from JSON fields
+  local set_parts=""
+  local field value
+
+  for field in title claim body alternative considerations; do
+    value=$(echo "$json" | jq -r ".${field} // empty")
+    if [ -n "$value" ]; then
+      # R3: anti-pattern must keep alternative
+      if [ "$field" = "alternative" ] && [ "$current_type" = "anti-pattern" ] && [ "$value" = "null" ]; then
+        echo "ERROR: Cannot remove alternative from anti-pattern entry '${entry_id}'" >&2; return 1
+      fi
+      set_parts="${set_parts:+${set_parts}, }${field}='$(esc "$value")'"
+    fi
+  done
+
+  if [ -z "$set_parts" ] && [ "$(echo "$json" | jq 'has("domains")')" != "true" ]; then
+    echo "ERROR: No fields to update" >&2; return 1
+  fi
+
+  local sql="BEGIN TRANSACTION;"
+
+  if [ -n "$set_parts" ]; then
+    sql="${sql} UPDATE entries SET ${set_parts}, updated_at=datetime('now') WHERE id='$(esc "$entry_id")';"
+  else
+    sql="${sql} UPDATE entries SET updated_at=datetime('now') WHERE id='$(esc "$entry_id")';"
+  fi
+
+  # Handle domain updates (full replace)
+  if [ "$(echo "$json" | jq 'has("domains")')" = "true" ]; then
+    local domain_count
+    domain_count=$(echo "$json" | jq '.domains | length')
+    if [ "$domain_count" -eq 0 ]; then
+      echo "ERROR: domains array must not be empty" >&2; return 1
+    fi
+
+    sql="${sql} DELETE FROM entry_domains WHERE entry_id='$(esc "$entry_id")';"
+
+    for ((i=0; i<domain_count; i++)); do
+      local domain
+      domain=$(echo "$json" | jq -r ".domains[$i]" | sed "s/'/''/g")
+      # Verify domain exists
+      local domain_exists
+      domain_exists=$(sqlite3 "$VAULT" "SELECT COUNT(*) FROM domain_registry WHERE domain='${domain}' AND status='active';")
+      if [ "$domain_exists" -eq 0 ]; then
+        echo "ERROR: Domain '${domain}' does not exist or is not active" >&2; return 1
+      fi
+      sql="${sql} INSERT INTO entry_domains(entry_id, domain) VALUES ('$(esc "$entry_id")', '${domain}');"
+    done
+  fi
+
+  sql="${sql} COMMIT;"
+  sqlite3 "$VAULT" "$sql"
+  echo "Updated ${entry_id}"
+}
+
 # ============================================================
 # 5. Report + Utility Commands
 # ============================================================
@@ -1199,6 +1314,13 @@ case "$CMD" in
   _pipeline-insert)
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-insert" >&2; exit 1; }
     pipeline_insert ;;
+  _pipeline-archive)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate _pipeline-archive <id> --reason '<reason>'" >&2; exit 1; }
+    pipeline_archive "$@" ;;
+  _pipeline-update)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate _pipeline-update <id> (reads JSON from stdin)" >&2; exit 1; }
+    command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-update" >&2; exit 1; }
+    pipeline_update "$@" ;;
   init-db)
     init_db "${1:-}" ;;
 
@@ -1243,6 +1365,8 @@ case "$CMD" in
     echo "      --domain <d>[,<d>...] [--alternative <alt>] --considerations <text>"
     echo "      [--evidence <type:ref>[,<type:ref>...]]"
     echo "  _pipeline-insert              Bulk insert from JSON stdin (pipeline only)"
+    echo "  _pipeline-archive <id>        Archive an entry with reason (pipeline only)"
+    echo "  _pipeline-update <id>         Update entry fields from JSON stdin (pipeline only)"
     echo ""
     echo "Diagnostics & Maintenance:"
     echo "  init-db [path]                Create a new vault from bundled schema"

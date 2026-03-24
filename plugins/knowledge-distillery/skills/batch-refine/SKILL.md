@@ -214,6 +214,27 @@ Verify:
 - #{pr_number} "{title}": {missing sources}
 
 {If none: "All PRs had sufficient evidence."}
+
+---
+
+### How to Curate This Report
+
+This PR contains new knowledge entries already inserted into `vault.db`. You can selectively accept, reject, or modify entries before merging.
+
+**To provide feedback:**
+1. Leave comments on this PR referencing entry IDs from the Accepted Entries table:
+   - Reject: "Reject `entry-id` — reason"
+   - Modify: "Change the claim of `entry-id` to: new text"
+   - Update domains: "Move `entry-id` to domain `new-domain`"
+2. Post a comment with **`/curate`** to trigger automated processing
+3. Review the updated diff after curation completes
+4. Merge when satisfied, or run `/curate` again for further changes
+
+**What `/curate` does:**
+- Rejected entries are archived in vault.db (preserves history, not deleted)
+- Modified entries are updated in-place
+- The batch report is regenerated to reflect current state
+- A summary comment is posted with all actions taken
 ```
 
 ## Error Handling
