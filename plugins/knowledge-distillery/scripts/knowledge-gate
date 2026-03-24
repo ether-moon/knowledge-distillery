@@ -786,6 +786,35 @@ pipeline_update() {
   echo "Updated ${entry_id}"
 }
 
+changeset_apply() {
+  local changeset_file="$1"
+
+  if [ ! -f "$changeset_file" ]; then
+    echo "ERROR: Changeset file not found: ${changeset_file}" >&2
+    return 1
+  fi
+
+  local version
+  version=$(jq -r '.version // empty' "$changeset_file")
+  if [ -z "$version" ] || [ "$version" != "1" ]; then
+    echo "ERROR: Unsupported or missing changeset version (expected 1, got '${version}')" >&2
+    return 1
+  fi
+
+  local accepted
+  accepted=$(jq -c '[.entries[] | select(.status == "accepted") | .data]' "$changeset_file")
+
+  local count
+  count=$(echo "$accepted" | jq 'length')
+
+  if [ "$count" -eq 0 ]; then
+    echo "No accepted entries to apply"
+    return 0
+  fi
+
+  echo "$accepted" | pipeline_insert
+}
+
 # ============================================================
 # 5. Report + Utility Commands
 # ============================================================
@@ -1323,6 +1352,10 @@ case "$CMD" in
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate _pipeline-update <id> (reads JSON from stdin)" >&2; exit 1; }
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-update" >&2; exit 1; }
     pipeline_update "$@" ;;
+  _changeset-apply)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate _changeset-apply <changeset-file>" >&2; exit 1; }
+    command -v jq &>/dev/null || { echo "ERROR: jq is required for _changeset-apply" >&2; exit 1; }
+    changeset_apply "$1" ;;
   init-db)
     init_db "${1:-}" ;;
 

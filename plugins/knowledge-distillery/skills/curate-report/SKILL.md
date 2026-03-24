@@ -1,5 +1,5 @@
 ---
-description: "Processes reviewer feedback on Report PRs to selectively accept, reject, or modify vault entries. Triggered by /curate comment on knowledge/batch-* PRs. Reads PR comments, interprets natural language feedback, executes vault changes, regenerates report, and commits."
+description: "Processes reviewer feedback on Report PRs to selectively accept, reject, or modify changeset entries. Triggered by /curate comment on knowledge/batch-* PRs. Reads PR comments, interprets natural language feedback, updates the changeset file, regenerates report, and commits."
 ---
 
 # curate-report — Report PR Curation
@@ -13,18 +13,9 @@ description: "Processes reviewer feedback on Report PRs to selectively accept, r
 ## Prerequisites
 
 - GitHub MCP server configured with `pull_requests,issues` toolsets
-- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
-- `.knowledge/vault.db` accessible
-- `sqlite3`, `jq`, `git` CLIs available
+- `jq` CLI available
+- `git` CLI available
 - Must be checked out on the Report PR branch
-
-## CLI Shorthand
-
-Throughout this document, `GATE` refers to the resolved `knowledge-gate` CLI path:
-
-```bash
-GATE="<resolved-knowledge-gate-path>"
-```
 
 ## Execution Steps
 
@@ -38,14 +29,19 @@ Use GitHub MCP to read the PR that triggered the workflow:
 - Extract the batch date from the branch name (e.g., `knowledge/batch-2026-03-24` → `2026-03-24`)
 - Parse the "Accepted Entries" table from the PR body to build the **entry ID whitelist** — only these entries may be modified
 
-### Step 2: Ensure Correct Branch
+### Step 2: Ensure Correct Branch and Locate Changeset
 
 ```bash
 git checkout <pr-branch>
 git pull origin <pr-branch>
 ```
 
-Verify `.knowledge/vault.db` exists and is readable.
+Locate the changeset file:
+```bash
+ls .knowledge/changesets/batch-YYYY-MM-DD.json
+```
+
+**Validate**: Changeset file exists and is valid JSON. If not found, post an error comment and exit.
 
 ### Step 3: Read PR Comments
 
@@ -63,8 +59,8 @@ For each reviewer comment, interpret the natural language intent and classify in
 
 | Action | Examples | Result |
 |--------|----------|--------|
-| **ARCHIVE** | "reject `entry-x`", "remove `entry-x`", "`entry-x` is wrong" | Archive the entry with reviewer's reason |
-| **UPDATE** | "change claim of `entry-x` to: ...", "update title of `entry-x`" | Update specified fields |
+| **REJECT** | "reject `entry-x`", "remove `entry-x`", "`entry-x` is wrong" | Mark entry as rejected in changeset |
+| **UPDATE** | "change claim of `entry-x` to: ...", "update title of `entry-x`" | Modify entry data in changeset |
 | **KEEP** | "looks good", "approve", general discussion | No action |
 | **UNRESOLVED** | Ambiguous, unclear reference, contradictory | Flag for human clarification |
 
@@ -75,48 +71,51 @@ Rules:
 
 Build an **action plan** — a structured list of (action, entry_id, details/reason).
 
-### Step 5: Execute Archive Actions
+### Step 5: Execute Reject Actions
 
-For each ARCHIVE action:
+For each REJECT action, modify the changeset JSON:
 
 ```bash
-GATE _pipeline-archive <entry-id> --reason "<reviewer reason>"
+# Read changeset, update entry status to "rejected"
+jq '(.entries[] | select(.data.id == "<entry-id>")) |= . + {"status": "rejected", "reject_reason": "<reviewer reason>"}' \
+  .knowledge/changesets/batch-YYYY-MM-DD.json > tmp && mv tmp .knowledge/changesets/batch-YYYY-MM-DD.json
 ```
 
-- If the command succeeds: record as "Archived"
-- If it returns "already archived": record as "Already processed (skipped)"
-- If it returns any other error: record as "Failed" with error message
+- If the entry is already rejected: record as "Already rejected (skipped)"
+- If entry ID not found in changeset: record as "Failed — entry not in changeset"
 
 ### Step 6: Execute Update Actions
 
-For each UPDATE action:
+For each UPDATE action, modify the entry's `data` fields in the changeset JSON:
 
 ```bash
-echo '{"claim": "new claim", "body": "new body", ...}' | GATE _pipeline-update <entry-id>
+# Read changeset, update specific fields in the entry's data object
+jq '(.entries[] | select(.data.id == "<entry-id>") | .data.claim) = "<new claim>"' \
+  .knowledge/changesets/batch-YYYY-MM-DD.json > tmp && mv tmp .knowledge/changesets/batch-YYYY-MM-DD.json
 ```
 
-- Only include fields that the reviewer requested to change
-- If the command succeeds: record as "Updated"
-- If it fails: record as "Failed" with error message
+- Only modify fields that the reviewer requested to change
+- If the entry is already rejected: record as "Failed — cannot update rejected entry"
+- If update fails: record as "Failed" with error message
 
 ### Step 7: Regenerate Batch Report
 
-After all actions are executed, regenerate `.knowledge/reports/batch-YYYY-MM-DD.md` to reflect the current vault state.
+After all actions are executed, regenerate `.knowledge/reports/batch-YYYY-MM-DD.md` to reflect the current changeset state.
 
-For each entry in the original whitelist, query current state:
+Read entry data from the changeset file:
 ```bash
-GATE get <entry-id>
+jq '.entries[]' .knowledge/changesets/batch-YYYY-MM-DD.json
 ```
 
 Write the updated report with the same structure as the original, but:
-- **Active entries** remain in "Accepted Entries" table
-- **Archived entries** are moved to a new "Archived Entries (Rejected via Curation)" section
+- **Accepted entries** (status == "accepted") remain in "Accepted Entries" table
+- **Rejected entries** (status == "rejected") are moved to a new "Rejected Entries (via Curation)" section with their reject reasons
 - Add a "Curation Log" section at the end listing all actions taken:
   ```markdown
   ### Curation Log
   | Action | Entry ID | Details | Timestamp |
   |--------|----------|---------|-----------|
-  | Archived | entry-x | Reason: reviewer said ... | 2026-03-24T12:00:00Z |
+  | Rejected | entry-x | Reason: reviewer said ... | 2026-03-24T12:00:00Z |
   | Updated | entry-y | Changed: claim | 2026-03-24T12:00:00Z |
   ```
 
@@ -125,8 +124,8 @@ Also update the PR body's "Summary" table metrics (accepted count, etc.) to refl
 ### Step 8: Commit and Push
 
 ```bash
-git add .knowledge/vault.db .knowledge/reports/
-git commit -m "knowledge: curate batch YYYY-MM-DD — N archived, M updated"
+git add .knowledge/changesets/ .knowledge/reports/
+git commit -m "knowledge: curate batch YYYY-MM-DD — N rejected, M updated"
 git push origin <branch>
 ```
 
@@ -145,7 +144,7 @@ Use GitHub MCP to post a comment on the PR:
 
 | Action | Entry ID | Details |
 |--------|----------|---------|
-| Archived | `entry-x` | Reason: ... |
+| Rejected | `entry-x` | Reason: ... |
 | Updated | `entry-y` | Changed: claim |
 | Kept | `entry-z` | No changes requested |
 
@@ -155,7 +154,7 @@ The following comments could not be processed automatically:
 - "{original comment text}" — Reason: ambiguous / entry not in batch / conflicting feedback
 
 ---
-Report regenerated. Please review the updated diff.
+Changeset updated. Please review the updated diff.
 Run `/curate` again after leaving additional feedback, or merge when satisfied.
 ```
 
@@ -173,8 +172,9 @@ To provide feedback, leave comments referencing specific entry IDs and run `/cur
 |-------------|----------|
 | Not a Report PR branch | Post comment explaining this, exit |
 | PR is merged/closed | Post comment explaining this, exit |
+| Changeset file not found | Post error comment, exit |
 | No actionable feedback | Post "no changes" comment, exit |
-| Single archive/update fails | Log error, continue with remaining actions, report failure in summary |
+| Single reject/update fails | Log error, continue with remaining actions, report failure in summary |
 | All actions fail | Post summary with all failures, suggest manual intervention |
 | git push fails after rebase | Post error comment, output manual instructions |
 | GitHub MCP unavailable | Abort — cannot read comments or post summary without it |
@@ -184,7 +184,8 @@ To provide feedback, leave comments referencing specific entry IDs and run `/cur
 - MUST operate on the PR branch, not main
 - MUST NOT auto-merge the PR
 - MUST NOT modify entries that are not in this batch's whitelist
+- MUST NOT modify vault.db — all changes go to the changeset file
 - MUST post a summary comment after each curation run
-- MUST regenerate the report to reflect current vault state
+- MUST regenerate the report to reflect current changeset state
 - MUST handle partial failures (one failed action does not block others)
 - MUST treat ambiguous feedback as UNRESOLVED rather than guessing
