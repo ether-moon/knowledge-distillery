@@ -14,9 +14,10 @@ Run `/knowledge-distillery:init` once in a new project to set up the Knowledge D
 2. `.knowledge/reports/` — Directory for batch report files
 3. `.github/workflows/mark-evidence.yml` — Stage A workflow (merge-time marking)
 4. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
-5. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
-6. `.knowledge/` entries in `.gitignore`
-7. CLI permissions in `.claude/settings.json`
+5. `.github/workflows/curate-report.yml` — Report PR curation workflow (comment-triggered)
+6. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
+7. `.knowledge/` entries in `.gitignore`
+8. CLI permissions in `.claude/settings.json`
 
 ## Execution Steps
 
@@ -222,6 +223,100 @@ jobs:
         run: rm -f .mcp.json
 ```
 
+#### `.github/workflows/curate-report.yml`
+
+If this file already exists, skip (idempotent).
+
+Write the following content:
+
+```yaml
+name: Knowledge Distillery — Curate Report
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  curate-report:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/curate')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const branch = pr.data.head.ref;
+            if (!branch.startsWith('knowledge/batch-')) {
+              core.setFailed('Not a Report PR branch: ' + branch);
+              return;
+            }
+            core.setOutput('branch', branch);
+            core.setOutput('pr_number', context.issue.number);
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Write dynamic MCP config
+        run: |
+          cat > .mcp.json << 'MCPEOF'
+          {
+            "mcpServers": {
+              "github": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
+                  "X-MCP-Toolsets": "pull_requests,issues"
+                }
+              }
+            }
+          }
+          MCPEOF
+
+      - name: Configure git identity
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Use skill /knowledge-distillery:curate-report.
+            Process reviewer feedback on Report PR #${{ steps.pr.outputs.pr_number }}
+            (branch: ${{ steps.pr.outputs.branch }}).
+            Read all PR comments, classify feedback into archive/update/keep actions,
+            execute changes on vault.db, regenerate the batch report, commit, and post summary.
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f .mcp.json
+```
+
 ### Step 4: Add Directive Sections
 
 Two sections need to be added: **Knowledge Vault** and **Memento**. The target file depends on the project's existing directive pattern.
@@ -317,6 +412,7 @@ Knowledge Distillery initialized:
   [created|exists] .knowledge/reports/
   [created|exists] .github/workflows/mark-evidence.yml
   [created|exists] .github/workflows/batch-refine.yml
+  [created|exists] .github/workflows/curate-report.yml
   [updated|exists] <target file> (Knowledge Vault + Memento sections)
   [updated|exists] .gitignore
   [updated|exists] .claude/settings.json (CLI permissions)
