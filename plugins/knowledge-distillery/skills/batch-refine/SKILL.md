@@ -1,6 +1,6 @@
 ---
 name: batch-refine
-description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, inserts accepted entries into vault.db, and creates a report PR for human review. Triggered on schedule (weekly/biweekly) or manual dispatch. Use when you need to process accumulated knowledge from merged PRs, run the refinement pipeline, or manually trigger a batch distillation cycle."
+description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, writes a changeset file for accepted entries, and creates a report PR for human review. Triggered on schedule (weekly/biweekly) or manual dispatch. Use when you need to process accumulated knowledge from merged PRs, run the refinement pipeline, or manually trigger a batch distillation cycle."
 ---
 
 # batch-refine — Stage B Pipeline Orchestrator
@@ -15,8 +15,6 @@ description: "Orchestrates the Stage B distillation pipeline: discovers merged P
 
 - GitHub MCP server configured with `pull_requests,issues,labels` toolsets
 - `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
-- `.knowledge/vault.db` accessible
-- `sqlite3` CLI available
 - `jq` CLI available
 - `git` with push access
 - Linear MCP server (graceful degradation if unavailable)
@@ -71,58 +69,63 @@ For PRs where collect-evidence returned `insufficient`:
 2. Record in report under "Insufficient Evidence" section
 3. Retry on a later batch run after more evidence accumulates
 
-### Step 5: Vault INSERT — Accepted Candidates
+### Step 5: Write Changeset — Accepted Candidates
 
-For all passed candidates, construct a JSON array and insert via the pipeline CLI:
+For all passed candidates, construct a changeset JSON file. Entries are NOT inserted into vault.db at this stage — they are recorded in a changeset that will be applied after the Report PR is merged.
 
 ```bash
-echo '<json_array>' | GATE _pipeline-insert
+mkdir -p .knowledge/changesets
+# Write changeset to .knowledge/changesets/batch-YYYY-MM-DD.json
 ```
 
-The JSON format for `_pipeline-insert`:
+**Changeset format:**
 
 ```json
-[
-  {
-    "id": "kebab-case-slug",
-    "type": "fact|anti-pattern",
-    "title": "...",
-    "claim": "...",
-    "body": "...",
-    "alternative": "...|null",
-    "considerations": "...",
-    "applies_to": {
-      "domains": ["domain-a", "domain-b"]
-    },
-    "evidence": [{"type": "pr", "ref": "#1234"}],
-    "curation": [{"related_id": "existing-id", "reason": "conflict description"}],
-    "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}]
-  }
-]
+{
+  "version": 1,
+  "batch_date": "YYYY-MM-DD",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "kebab-case-slug",
+        "type": "fact|anti-pattern",
+        "title": "...",
+        "claim": "...",
+        "body": "...",
+        "alternative": "...|null",
+        "considerations": "...",
+        "applies_to": {
+          "domains": ["domain-a", "domain-b"]
+        },
+        "evidence": [{"type": "pr", "ref": "#1234"}],
+        "curation": [{"related_id": "existing-id", "reason": "conflict description"}],
+        "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}]
+      }
+    }
+  ]
+}
 ```
 
 **Entry ID generation rules:**
 - Format: kebab-case slug, 3-5 words describing the knowledge entry
-- On UNIQUE constraint collision, append numeric suffix (e.g., `payment-service-object-2`)
 - `curation_queue.id` format: `cq-{entry_id}-{timestamp}`
 
 Notes:
-- `_pipeline-insert` handles entries, entry_domains, evidence, curation_queue in a single transaction
-- Every accepted candidate passed to `_pipeline-insert` MUST include at least one evidence item
-- FTS5 triggers auto-update the search index
-- Unknown domains are auto-created by `_pipeline-insert`
+- The `data` object for each entry uses the same format as `_pipeline-insert` JSON
+- Every accepted candidate MUST include at least one evidence item
+- Unknown domains will be auto-created when the changeset is applied after merge
 - Map quality-gate `curation_queue_entry` to the `curation` field when present
-- Preserve `_proposed_domain` annotations from extract-candidates in the JSON passed to `_pipeline-insert`. Suggested patterns must already satisfy the CLI path-pattern contract (`*` or directory prefix ending with `/`).
+- Preserve `_proposed_domain` annotations from extract-candidates. Suggested patterns must already satisfy the CLI path-pattern contract (`*` or directory prefix ending with `/`).
 
-### Step 6: Domain Health Report
+### Step 6: Domain Change Summary
 
-```bash
-GATE domain-report
-```
+Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data:
 
-Capture output for inclusion in the report PR.
-Also review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping. This "uncovered pattern" check is performed at the skill/report level, not by the CLI.
-Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up based on the report.
+- List new domains referenced in `_proposed_domain` annotations
+- List suggested path patterns for new domains
+- Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
+- Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
 ### Step 7: Generate Batch Report File and Commit
 
@@ -131,7 +134,7 @@ Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorg
 ```bash
 mkdir -p .knowledge/reports
 # Write report content to .knowledge/reports/batch-YYYY-MM-DD.md
-git add .knowledge/vault.db .knowledge/reports/
+git add .knowledge/changesets/ .knowledge/reports/
 git commit -m "knowledge: batch YYYY-MM-DD — N entries added"
 git push -u origin knowledge/batch-YYYY-MM-DD
 ```
@@ -161,7 +164,7 @@ Use GitHub MCP to remove the `knowledge:pending` label and add the `knowledge:co
 Verify:
 - All successfully processed PRs have `knowledge:collected` label
 - PRs with insufficient evidence remain `knowledge:pending`
-- `sqlite3 .knowledge/vault.db "SELECT count(*) FROM entries"` succeeds
+- Changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` is valid JSON with correct structure
 - Report PR exists and is open
 
 ## Report PR Format
@@ -201,8 +204,7 @@ Verify:
 {If empty: "No conflicts detected."}
 
 ### Domain Changes
-{New domains auto-created during this batch, if any}
-{domain-report highlights from Step 6}
+{New domains from _proposed_domain annotations in this batch, if any}
 {Repeated unmapped path prefixes observed across this batch, if any}
 {Manual follow-up suggestions for domain merge/split/path cleanup, if any}
 
@@ -220,7 +222,7 @@ Verify:
 
 ### How to Curate This Report
 
-This PR contains new knowledge entries already inserted into `vault.db`. You can selectively accept, reject, or modify entries before merging.
+This PR contains a **changeset** with new knowledge entry candidates. Entries are **not yet in vault.db** — they will be applied automatically when this PR is merged.
 
 **To provide feedback:**
 1. Leave comments on this PR referencing entry IDs from the Accepted Entries table:
@@ -228,14 +230,18 @@ This PR contains new knowledge entries already inserted into `vault.db`. You can
    - Modify: "Change the claim of `entry-id` to: new text"
    - Update domains: "Move `entry-id` to domain `new-domain`"
 2. Post a comment with **`/curate`** to trigger automated processing
-3. Review the updated diff after curation completes
+3. Review the updated changeset after curation completes
 4. Merge when satisfied, or run `/curate` again for further changes
 
 **What `/curate` does:**
-- Rejected entries are archived in vault.db (preserves history, not deleted)
-- Modified entries are updated in-place
+- Rejected entries are marked as `rejected` in the changeset (excluded from vault insertion)
+- Modified entries are updated in the changeset
 - The batch report is regenerated to reflect current state
 - A summary comment is posted with all actions taken
+
+**What happens on merge:**
+- A post-merge workflow applies the changeset to vault.db on main
+- Only entries with `status: "accepted"` are inserted
 ```
 
 ## Error Handling
@@ -244,7 +250,7 @@ This PR contains new knowledge entries already inserted into `vault.db`. You can
 |-------------|----------|
 | No pending PRs | Exit 0. No branch, no PR. |
 | Subagent fails | Skip that PR. Record error in report. Continue with remaining. |
-| vault.db INSERT fails | Log error, skip that candidate. Record as "INSERT failed" in report. |
+| Changeset write fails | Log error. Record in report. |
 | `git push` fails | Retry once. If still fails, output manual instructions and abort. |
 | GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. |
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
@@ -253,9 +259,10 @@ This PR contains new knowledge entries already inserted into `vault.db`. You can
 ## Constraints
 
 - MUST NOT auto-merge the report PR
-- MUST NOT modify existing vault entries (INSERT only, append-only principle)
+- MUST NOT modify existing vault entries (append-only principle)
+- MUST NOT insert entries into vault.db directly — write changeset file only
 - MUST NOT skip the report PR even when all candidates are rejected
 - MUST process PRs in `mergedAt` order (oldest first)
 - MUST handle partial failures gracefully
-- MUST verify vault.db integrity after INSERTs
 - MUST create report file `.knowledge/reports/batch-YYYY-MM-DD.md` always (even 0 entries)
+- MUST create changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` always (with empty entries array if 0 candidates)

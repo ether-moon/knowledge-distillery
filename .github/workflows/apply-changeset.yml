@@ -1,0 +1,77 @@
+name: Knowledge Distillery — Apply Changeset
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+jobs:
+  apply-changeset:
+    if: >-
+      github.event.pull_request.merged &&
+      startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v6
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Configure git identity
+        run: |
+          git config user.name "knowledge-distillery[bot]"
+          git config user.email "knowledge-distillery[bot]@users.noreply.github.com"
+
+      - name: Extract batch date from branch name
+        id: batch
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          DATE="${BRANCH#knowledge/batch-}"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+          echo "Batch date: ${DATE}"
+
+      - name: Find and apply changeset
+        run: |
+          GATE=$(find .knowledge-distillery-plugin -name knowledge-gate -path '*/scripts/*' -type f | head -1)
+          if [ -z "$GATE" ]; then
+            echo "::error::knowledge-gate script not found in plugin checkout"
+            exit 1
+          fi
+          chmod +x "$GATE"
+
+          CHANGESET=".knowledge/changesets/batch-${{ steps.batch.outputs.date }}.json"
+
+          if [ ! -f "$CHANGESET" ]; then
+            echo "::warning::No changeset file found at ${CHANGESET} — skipping"
+            exit 0
+          fi
+
+          ACCEPTED=$(jq '[.entries[] | select(.status == "accepted")] | length' "$CHANGESET")
+          echo "Accepted entries to apply: ${ACCEPTED}"
+
+          if [ "$ACCEPTED" -eq 0 ]; then
+            echo "No accepted entries — skipping vault update"
+            exit 0
+          fi
+
+          "$GATE" _changeset-apply "$CHANGESET"
+
+      - name: Commit and push vault.db
+        run: |
+          if git diff --quiet .knowledge/vault.db 2>/dev/null; then
+            echo "No vault.db changes — skipping commit"
+            exit 0
+          fi
+
+          git add .knowledge/vault.db
+          git commit -m "knowledge: apply batch ${{ steps.batch.outputs.date }} changeset"
+          git push origin ${{ github.event.pull_request.base.ref }}
