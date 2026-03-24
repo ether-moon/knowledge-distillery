@@ -8,7 +8,8 @@ jobs:
   curate-report:
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/curate')
+      contains(github.event.comment.body, '/curate') &&
+      github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -28,18 +29,22 @@ jobs:
             });
             const branch = pr.data.head.ref;
             if (!branch.startsWith('knowledge/batch-')) {
-              core.setFailed('Not a Report PR branch: ' + branch);
+              core.notice('Skipping: not a Report PR branch (' + branch + ')');
+              core.setOutput('skip', 'true');
               return;
             }
+            core.setOutput('skip', 'false');
             core.setOutput('branch', branch);
             core.setOutput('pr_number', context.issue.number);
 
       - uses: actions/checkout@v6
+        if: steps.pr.outputs.skip != 'true'
         with:
           ref: ${{ steps.pr.outputs.branch }}
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
+        if: steps.pr.outputs.skip != 'true'
         uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
@@ -47,6 +52,7 @@ jobs:
           path: .knowledge-distillery-plugin
 
       - name: Write dynamic MCP config
+        if: steps.pr.outputs.skip != 'true'
         run: |
           cat > .mcp.json << 'MCPEOF'
           {
@@ -64,11 +70,13 @@ jobs:
           MCPEOF
 
       - name: Configure git identity
+        if: steps.pr.outputs.skip != 'true'
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - uses: anthropics/claude-code-action@v1
+        if: steps.pr.outputs.skip != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
@@ -81,5 +89,5 @@ jobs:
           show_full_output: true
 
       - name: Cleanup sensitive files
-        if: always()
+        if: always() && steps.pr.outputs.skip != 'true'
         run: rm -f .mcp.json
