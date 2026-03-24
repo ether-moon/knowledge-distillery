@@ -1,5 +1,7 @@
 ---
-description: Queries team-verified knowledge from the Knowledge Vault before code modification. Must be used when modifying files, creating new modules, or making architectural decisions.
+name: knowledge-gate
+description: "Queries team-verified knowledge from the Knowledge Vault before code modification. Must be used when modifying files, creating new modules, or making architectural decisions. Always consult this before writing or changing code — it surfaces MUST/MUST-NOT constraints that could otherwise be violated unknowingly."
+argument-hint: "[file-path or keyword]"
 ---
 
 # knowledge-gate

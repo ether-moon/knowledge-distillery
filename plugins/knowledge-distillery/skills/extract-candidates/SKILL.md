@@ -1,5 +1,7 @@
 ---
+name: extract-candidates
 description: "Analyzes an Evidence Bundle and extracts knowledge candidates — the core LLM extraction step of the distillation pipeline. Stage B step 2. Transforms raw evidence into structured vault entry candidates by identifying confirmed team decisions, anti-patterns from incidents, and established conventions."
+user-invocable: false
 ---
 
 # extract-candidates — Stage B-2 Candidate Extraction
