@@ -734,13 +734,15 @@ pipeline_update() {
   local field value
 
   for field in title claim body alternative considerations; do
-    value=$(echo "$json" | jq -r ".${field} // empty")
-    if [ -n "$value" ]; then
+    if [ "$(echo "$json" | jq "has(\"${field}\")")" = "true" ]; then
+      value=$(echo "$json" | jq -r ".${field} // empty")
       # R3: anti-pattern must keep alternative
-      if [ "$field" = "alternative" ] && [ "$current_type" = "anti-pattern" ] && [ "$value" = "null" ]; then
+      if [ "$field" = "alternative" ] && [ "$current_type" = "anti-pattern" ] && [ -z "$value" ]; then
         echo "ERROR: Cannot remove alternative from anti-pattern entry '${entry_id}'" >&2; return 1
       fi
-      set_parts="${set_parts:+${set_parts}, }${field}='$(esc "$value")'"
+      if [ -n "$value" ]; then
+        set_parts="${set_parts:+${set_parts}, }${field}='$(esc "$value")'"
+      fi
     fi
   done
 
