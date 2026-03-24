@@ -31,3 +31,10 @@ The current implementation serves as a proof of concept. Do not over-engineer fo
 - The summary follows the 5-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context
 - See `/knowledge-distillery:memento-commit` for the full workflow and format specification
 - If the PostToolUse hook fires a reminder, follow it — generate the summary and attach the note
+
+## Decision Recording
+- When a clear project decision is made during the session, automatically record it using `/knowledge-distillery:record-decision`
+- Trigger conditions: scope decisions ("X is out of scope"), architectural choices ("use Y for Z"), established constraints ("we can't do X because Y"), direction confirmations after deliberation
+- Do NOT trigger for: user preferences (use auto-memory instead), temporary debugging choices, implementation details obvious from code
+- Decision commits do not require a memento note — the decision file itself provides the session context
+- Decision files are committed on the current branch and enter the vault through the normal pipeline (PR merge → mark-evidence → batch-refine)
