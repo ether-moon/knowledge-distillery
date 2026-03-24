@@ -1,5 +1,6 @@
 ---
-description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, inserts accepted entries into vault.db, and creates a report PR for human review. Triggered on schedule (weekly/biweekly) or manual dispatch."
+name: batch-refine
+description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, inserts accepted entries into vault.db, and creates a report PR for human review. Triggered on schedule (weekly/biweekly) or manual dispatch. Use when you need to process accumulated knowledge from merged PRs, run the refinement pipeline, or manually trigger a batch distillation cycle."
 ---
 
 # batch-refine — Stage B Pipeline Orchestrator

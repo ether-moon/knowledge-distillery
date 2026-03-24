@@ -1,5 +1,7 @@
 ---
+name: collect-evidence
 description: "Collects the actual content of all evidence sources identified in a PR's Evidence Bundle Manifest and produces a structured Evidence Bundle. Stage B step 1 — transforms identifier references into full content for downstream candidate extraction. Called by batch-refine orchestrator per PR."
+user-invocable: false
 ---
 
 # collect-evidence — Stage B-1 Evidence Collection
@@ -135,7 +137,7 @@ For each entry in `identifiers.linear`:
    - `description` (full body)
    - `comments` — array of `{ author, body, created_at }`
    - `labels` — array of label names
-   - `status_changes` — status transition history (e.g., `[{ "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }]`). Use Linear MCP `getIssueHistory` or extract from issue activity/audit log. If the API does not expose a dedicated history endpoint, reconstruct transitions from issue comments or activity entries where status changes are logged.
+   - `status_changes` — status transition history (e.g., `[{ "from": "In Progress", "to": "Done", "changed_at": "ISO 8601", "actor": "username" }]`). Best-effort collection: try Linear MCP `getIssueHistory` or issue activity/audit log. Most Linear MCP implementations do not expose a dedicated history endpoint — if unavailable, set `status_changes: []` and move on. The evidence bundle remains valuable without transition history.
 2. If Linear MCP is unavailable or the specific issue is not found:
    - Record: `{ "id": "...", "title": null, "description": null, "comments": [], "labels": [], "status_changes": [], "retrieved": false }`
 

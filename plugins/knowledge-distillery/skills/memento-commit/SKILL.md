@@ -1,5 +1,6 @@
 ---
-description: "Commits changes with an auto-generated message and attaches a structured session summary as a git note for the Knowledge Distillery evidence pipeline. Use for all commits in knowledge-distillery-enabled projects."
+name: memento-commit
+description: "Commits changes with an auto-generated message and attaches a structured session summary as a git note for the Knowledge Distillery evidence pipeline. Replaces the default commit workflow in knowledge-distillery-enabled projects. Use whenever the user says 'commit', 'save changes', 'git commit', or invokes any commit action — this ensures every commit carries session context for downstream knowledge extraction."
 ---
 
 # memento-commit
@@ -25,11 +26,15 @@ Replaces the default commit workflow when the knowledge-distillery plugin is ins
 git status --porcelain; echo "---LOG---"; git log --oneline -10; echo "---DIFF---"; git diff HEAD --stat; echo "---BRANCH---"; git branch --show-current
 ```
 
-Parse into 4 sections:
+Parse into 5 sections:
 1. **Status**: File changes — empty means nothing to commit
 2. **Log**: Recent commit patterns and style
 3. **Diff stat**: Summary of what changed
 4. **Branch**: Current branch name for ticket extraction
+5. **Staging plan**: From the status output, determine which files to stage:
+   - Modified/deleted tracked files (lines starting with ` M`, ` D`, `M `, `D `, etc.): always include
+   - New untracked files (lines starting with `??`): include UNLESS they match sensitive patterns (`.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`)
+   - If excluding any untracked files, note them for the user
 
 **Exit if:** Status is empty. Report "Nothing to commit." and stop.
 
@@ -51,10 +56,16 @@ For trivial changes (typo fixes, formatting, single-line changes with no technic
 
 ### Step 4: Stage, Commit, and Attach Note (Bash call 2 of 2)
 
-Combine commit and note attachment in a single Bash call. This ensures the PostToolUse hook sees the note already attached when it fires.
+Combine staging, commit, and note attachment in a single Bash call. This ensures the PostToolUse hook sees the note already attached when it fires.
+
+**Staging rules — never use `git add -A` or `git add .`:**
+- Stage specific files by name from the staging plan in Step 1
+- If all changes are to tracked files only (no untracked), `git add -u` is acceptable as shorthand
+- If untracked files should be committed, add them by name alongside `git add -u`
+- NEVER stage files matching: `.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`
 
 ```bash
-git add -A && git commit -m "$(cat <<'COMMIT_EOF'
+git add <file1> <file2> ... && git commit -m "$(cat <<'COMMIT_EOF'
 <generated message>
 COMMIT_EOF
 )" && SHA=$(git log --format=%h -1) && cat <<'MEMENTO_EOF' | git notes --ref=refs/notes/commits add --force --file=- $SHA
@@ -63,6 +74,7 @@ MEMENTO_EOF
 echo "$SHA $(git log --format=%s -1)"
 ```
 
+- `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
 - `--force`: Ensures idempotency if rerun on the same SHA.
 - `--file=-`: Avoids shell quoting issues with multi-line markdown.
 - `refs/notes/commits`: Matches the ref that mark-evidence and collect-evidence expect.

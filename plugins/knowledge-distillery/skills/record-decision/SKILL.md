@@ -1,5 +1,6 @@
 ---
-description: "Records a project decision as a committed markdown file under .knowledge/decisions/ for the knowledge distillery pipeline. Auto-triggered when clear project decisions are detected during a session."
+name: record-decision
+description: "Records a project decision as a committed markdown file under .knowledge/decisions/ for the knowledge distillery pipeline. Auto-triggered when clear project decisions are detected during a session — scope decisions, architectural choices, confirmed constraints, or direction after deliberation all qualify. Do not wait for the user to ask; invoke proactively when a decision moment is observed."
 ---
 
 # record-decision
@@ -57,7 +58,7 @@ mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.m
 
 **Rationale**: <rationale>
 DECISION_EOF
-git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" && git commit -m "$(cat <<'COMMIT_EOF'
+git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" && git commit --only ".knowledge/decisions/YYYY-MM-DD-<slug>.md" -m "$(cat <<'COMMIT_EOF'
 decision: <slug>
 COMMIT_EOF
 )"
@@ -66,7 +67,7 @@ COMMIT_EOF
 Key details:
 - `test -d .knowledge` fails fast if the distillery is not initialized, matching the error handling table.
 - `mkdir -p` ensures the `decisions/` subdirectory exists (idempotent).
-- `git add` targets ONLY the decision file — never stages other working changes.
+- `git add` + `git commit --only` ensures ONLY the decision file is committed — even if other files are already staged from the user's work in progress, they won't be swept into this commit.
 - Commit message uses the `decision:` prefix for pipeline discoverability.
 
 ### Step 3: Report Result (no Bash)
