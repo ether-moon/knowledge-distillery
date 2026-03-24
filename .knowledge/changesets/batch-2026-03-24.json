@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-24",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "record-decision-trigger-taxonomy",
+        "type": "fact",
+        "title": "Record-decision trigger taxonomy: what counts as a recordable decision",
+        "claim": "Use /knowledge-distillery:record-decision for scope decisions, architectural choices, confirmed constraints, and direction-after-deliberation — not for user preferences, temporary debugging choices, or implementation details obvious from code.",
+        "body": "## Background\nThe record-decision skill was introduced because project decisions made during sessions were only captured in auto-memory and never reached the distillery pipeline. To prevent both over-triggering (recording noise) and under-triggering (missing real decisions), the PR established an explicit taxonomy of what qualifies as a recordable decision.\n\n## Details\nTrigger record-decision for: scope decisions (\"X is out of scope\"), architectural choices (\"use approach A for Z\"), confirmed constraints (\"we can't do X because Y\"), direction confirmed after deliberating alternatives.\n\nDo NOT trigger for: user preferences such as editor settings, communication style, or workflow habits (use auto-memory instead); temporary choices like debugging workarounds or local-only configuration; implementation details that are obvious from reading the code (naming a variable, choosing a loop construct); situations where the user is still deliberating and has not committed to a direction.\n\n## Rejected Alternatives\nNot applicable — this is a taxonomy fact, not an anti-pattern.\n\n## Open Questions\nThe boundary between \"architectural choice\" and \"implementation detail obvious from code\" may require judgment in edge cases. The current guidance relies on agent discretion.\n\n## Stop Conditions\nRevisit if the false-positive rate (too many trivial decisions recorded) or false-negative rate (missed decisions) becomes problematic in practice.",
+        "alternative": null,
+        "considerations": "This taxonomy was established for a solo-developer project where the owner is the entire team. In multi-person teams, the bar for what constitutes an explicit team decision may be higher and additional review signals may be required before triggering.",
+        "applies_to": {
+          "domains": ["knowledge-distillery"]
+        },
+        "evidence": [{"type": "pr", "ref": "#11"}]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "pr-template-enforcement-out-of-scope",
+        "type": "fact",
+        "title": "PR body template enforcement is out of scope for knowledge-distillery",
+        "claim": "Do not provide PR body templates or format guidelines as part of knowledge-distillery — rely on pipeline prompt improvements if extraction accuracy needs to increase.",
+        "body": "## Background\nThe question arose whether knowledge-distillery should provide a PR description template to improve the quality of evidence available to extract-candidates. The team reviewed whether structured PR body sections were necessary for the pipeline to function.\n\n## Details\nThe extract-candidates stage is LLM-based and can extract signal from free-form PR descriptions without requiring structured sections. Because every project has its own PR body conventions, knowledge-distillery imposing a specific format would be inappropriate. If extraction accuracy becomes insufficient, the correct remedy is to improve the pipeline-side prompts, not to mandate a PR format.\n\nThis also keeps the tool vendor-neutral and non-prescriptive about project conventions.\n\n## Rejected Alternatives\nConsidered adding a PR description template to the repository or documenting a recommended PR body format. Rejected because LLM-based extraction already handles free-form descriptions adequately.\n\n## Open Questions\nNone identified. If extraction accuracy degrades significantly with unusual PR formats, revisit whether lightweight guidance (not enforcement) is warranted.\n\n## Stop Conditions\nRevisit if the pipeline extraction quality drops noticeably on real-world PRs that lack any descriptive body text.",
+        "alternative": null,
+        "considerations": "This decision was made in the context of a project that dogfoods its own pipeline. The conclusion that free-form PR bodies are sufficient may need re-evaluation if knowledge-distillery is applied to projects with very terse or low-quality PR descriptions.",
+        "applies_to": {
+          "domains": ["knowledge-distillery"]
+        },
+        "evidence": [{"type": "pr", "ref": "#11"}]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "archive-rejected-vault-entries",
+        "type": "fact",
+        "title": "Archive rejected vault entries rather than deleting",
+        "claim": "MUST archive rejected vault entries using _pipeline-archive rather than deleting them, to preserve history.",
+        "body": "## Background\nWhen the /curate workflow processes reviewer feedback on a Report PR, rejected entries must not be permanently removed. The PR body explicitly states: \"Rejected entries are archived in vault.db (preserves history, not deleted)\". The `_pipeline-archive` CLI command was introduced specifically to set `status='archived'` with a timestamp and reason while leaving the row intact.\n\n## Details\nThe `pipeline_archive` function sets `status='archived'`, `archived_at=datetime('now')`, and `archive_reason` on the entry row — it does NOT execute a DELETE. The `_pipeline-archive` command validates that the entry exists and is not already archived before proceeding. When querying for active knowledge, all queries filter on `archived_at IS NULL` or `status='active'`, so archived entries are invisible to agents but recoverable for audit.\n\n## Rejected Alternatives\nDeleting rows was rejected in favor of archiving. Deletion would make audit history impossible and prevent understanding why certain entries were removed. The append-only approach allows the pipeline to track the full lifecycle of each entry.\n\n## Stop Conditions\nReconsider if vault storage becomes a concern at scale and a separate archive table is introduced.",
+        "alternative": null,
+        "considerations": "The archive-only approach means the vault grows monotonically. Re-running curation on an already-archived entry is a no-op (CLI returns 'already archived'). This is a deliberate append-only design choice consistent with the project's philosophy of preserving evidence trails.",
+        "applies_to": {
+          "domains": ["cli", "pipeline"]
+        },
+        "evidence": [{"type": "pr", "ref": "#10"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "구현 디테일 수준으로 vault에 넣을 만큼의 가치가 없음",
+      "data": {
+        "id": "decision-commits-skip-memento-note",
+        "type": "fact",
+        "title": "Decision commits do not require a memento note",
+        "claim": "Do not attach a memento git note after a decision: commit — the decision file itself serves as the session context.",
+        "body": "",
+        "alternative": null,
+        "considerations": "This exception applies specifically to decision: commits.",
+        "applies_to": {
+          "domains": ["knowledge-distillery"]
+        },
+        "evidence": [{"type": "pr", "ref": "#11"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "워크플로우 트리거 조건은 코드에서 자명한 구현 디테일",
+      "data": {
+        "id": "curate-workflow-branch-prefix-gate",
+        "type": "fact",
+        "title": "Restrict /curate trigger to knowledge/batch-* branches only",
+        "claim": "MUST validate that the target PR branch starts with 'knowledge/batch-' before executing any curation actions.",
+        "body": "",
+        "alternative": null,
+        "considerations": "The branch name format is the established convention.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [{"type": "pr", "ref": "#10"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "컨벤션에 따른 당연한 동작으로 별도 지식으로 관리할 필요 없음",
+      "data": {
+        "id": "slash-command-trigger-case-sensitive",
+        "type": "fact",
+        "title": "The /curate slash command trigger is intentionally case-sensitive",
+        "claim": "MUST use lowercase '/curate' exactly to trigger curation.",
+        "body": "",
+        "alternative": null,
+        "considerations": "This is an explicit convention alignment decision.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [{"type": "pr", "ref": "#10"}]
+      }
+    }
+  ]
+}
