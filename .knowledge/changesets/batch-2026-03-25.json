@@ -19,7 +19,8 @@
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
       "data": {
         "id": "record-decision-isolated-commit",
         "type": "fact",
@@ -35,7 +36,8 @@
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
       "data": {
         "id": "vault-hook-reminder-not-auto-query",
         "type": "fact",
@@ -51,7 +53,8 @@
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
       "data": {
         "id": "pre-commit-blocker-over-postcommit-reminder",
         "type": "fact",
@@ -89,7 +92,8 @@
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
       "data": {
         "id": "mark-evidence-skip-batch-branches",
         "type": "fact",
