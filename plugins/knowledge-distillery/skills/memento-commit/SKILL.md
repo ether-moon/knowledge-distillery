@@ -77,7 +77,7 @@ echo "$SHA $(git log --format=%s -1)"
 After the commit+note command succeeds, push the notes ref so that the downstream pipeline (mark-evidence in CI) can access them:
 
 ```bash
-git push origin refs/notes/commits 2>&1 || echo "NOTES_PUSH_FAILED"
+PUSH_OUT=$(git push origin refs/notes/commits 2>&1) && echo "Notes push: synced to origin" || echo "FAILED — $PUSH_OUT"
 ```
 
 - `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
