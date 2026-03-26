@@ -1,0 +1,19 @@
+name: Knowledge Distillery — Test Harness
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Ensure jq is available
+        run: jq --version
+
+      - name: Run local regression harnesses
+        run: bash tests/all.sh

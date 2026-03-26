@@ -1,0 +1,44 @@
+{
+  "batch_date": "2026-03-31",
+  "prs": [
+    {
+      "number": 1240,
+      "title": "Cleanup callback rules",
+      "outcome": "processed",
+      "candidate_results": [
+        {
+          "candidate": {
+            "id": "duplicate-callback-rule",
+            "type": "anti-pattern",
+            "title": "Duplicate Callback Rule",
+            "claim": "MUST-NOT call external APIs from callbacks.",
+            "body": "## Background\nDuplicate guidance.\n\n## Details\nThis rule already exists.\n\n## Rejected Alternatives\nNone.\n",
+            "alternative": "Use explicit services.",
+            "considerations": "Re-evaluate if the existing rule is deprecated.",
+            "applies_to": {
+              "domains": [
+                "activerecord"
+              ]
+            },
+            "evidence": [
+              {
+                "type": "pr",
+                "ref": "#1240"
+              }
+            ],
+            "_source_pr": 1240
+          },
+          "verdict": {
+            "candidate_id": "duplicate-callback-rule",
+            "verdict": "fail",
+            "rejection_codes": [
+              "R6_DUPLICATE"
+            ],
+            "curation_queue_entry": null,
+            "notes": "Duplicate of existing callback rule."
+          }
+        }
+      ]
+    }
+  ]
+}
