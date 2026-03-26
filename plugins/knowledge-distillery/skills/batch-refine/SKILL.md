@@ -100,7 +100,8 @@ mkdir -p .knowledge/changesets
         },
         "evidence": [{"type": "pr", "ref": "#1234"}],
         "curation": [{"related_id": "existing-id", "reason": "conflict description"}],
-        "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}]
+        "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}],
+        "_domain_maintenance": [{"domain": "pipeline", "issue": "too-broad", "suggestion": "split", "reason": "..."}]
       }
     }
   ]
@@ -117,13 +118,21 @@ Notes:
 - Unknown domains will be auto-created when the changeset is applied after merge
 - Map quality-gate `curation_queue_entry` to the `curation` field when present
 - Preserve `_proposed_domain` annotations from extract-candidates. Suggested patterns must already satisfy the CLI path-pattern contract (`*` or directory prefix ending with `/`).
+- Preserve `_domain_maintenance` annotations from extract-candidates so the report can surface follow-up domain cleanup suggestions.
 
 ### Step 6: Domain Change Summary
 
 Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data:
 
+```bash
+GATE domain-list --ids-only
+```
+
+- Use the current registry as the comparison baseline, not just the batch-local proposals
 - List new domains referenced in `_proposed_domain` annotations
 - List suggested path patterns for new domains
+- Read `_domain_maintenance` annotations from accepted candidates and summarize them by domain / issue / suggestion
+- Highlight suspicious near-duplicates among newly proposed domain names and existing registry names, especially when `_domain_maintenance` marks `near-duplicate`
 - Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
 - Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
@@ -205,6 +214,8 @@ Verify:
 
 ### Domain Changes
 {New domains from _proposed_domain annotations in this batch, if any}
+{Structured `_domain_maintenance` findings from this batch, grouped by domain and suggestion, if any}
+{Near-duplicate domain names or merge/split candidates surfaced by this batch, if any}
 {Repeated unmapped path prefixes observed across this batch, if any}
 {Manual follow-up suggestions for domain merge/split/path cleanup, if any}
 

@@ -66,10 +66,13 @@ GATE get "<id>"
 When the relevant domain or keyword is unknown:
 
 ```bash
+# Load a lightweight navigation-only domain index
+GATE domain-list --ids-only
+
 # Browse all active entries
 GATE list
 
-# Browse all domains
+# Browse full domain metadata only when needed
 GATE domain-list
 ```
 
