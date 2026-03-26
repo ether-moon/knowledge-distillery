@@ -8,20 +8,25 @@
         "id": "push-notes-ref-after-commit",
         "type": "fact",
         "title": "Push notes ref to remote after memento note attachment",
-        "claim": "MUST push `refs/notes/commits` to origin after attaching a memento note, or the CI mark-evidence pipeline will always report 0 git sessions.",
-        "body": "## Background\nThe `memento-commit` skill attaches structured session summaries as git notes on `refs/notes/commits` locally. The `mark-evidence` CI workflow fetches notes from the remote to count git sessions in the evidence bundle. Before PR #20, the skill never pushed the notes ref to origin — it only ran `git notes add`. This meant the remote ref never existed, so every evidence bundle showed 0 git sessions regardless of actual memento coverage.\n\n## Details\nAfter `git notes add --force --file=- <sha>` succeeds, execute:\n```bash\nPUSH_OUT=$(git push origin refs/notes/commits 2>&1) && echo \"Notes push: synced to origin\" || echo \"FAILED — $PUSH_OUT\"\n```\nA push failure must be reported separately; it does not undo the local commit or note. The user should be instructed to run `git push origin refs/notes/commits` manually before merging if push fails. This is a separate Bash call because push failure is recoverable and should not block commit reporting.\n\n## Rejected Alternatives\nIncluding the notes push in the same Bash call as the commit was considered but rejected: a push failure could then be misinterpreted as a commit failure, masking what succeeded.\n\n## Stop Conditions\nReconsider if the project switches to a push strategy that automatically syncs custom refs (e.g., a CI step that mirrors all refs), making the explicit push redundant.",
+        "claim": "MUST push `refs/notes/commits` to origin after memento note attachment; omitting this silently breaks the CI evidence pipeline (mark-evidence reports 0 git sessions because it reads notes from the remote, not local).",
+        "body": "## Background\nThe `memento-commit` skill attaches session summaries as git notes on `refs/notes/commits` locally. The `mark-evidence` CI workflow fetches notes from the remote to count git sessions. Before PR #20, the skill never pushed the notes ref — the remote ref never existed, so every evidence bundle showed 0 git sessions regardless of actual memento coverage.\n\n## Details\n`refs/notes/commits` is a non-standard ref excluded from normal `git push`. This makes it easy to forget. The failure is silent — commits succeed, notes are saved locally, but the CI pipeline loses all session evidence. Projects using read-only remote tokens may need an alternative sync mechanism.\n\n## Rejected Alternatives\nIncluding the notes push in the same Bash call as the commit was rejected: a push failure could be misinterpreted as a commit failure.\n\n## Stop Conditions\nReconsider if a CI step or push hook automatically mirrors custom refs.",
         "alternative": null,
         "considerations": "A push failure does not indicate a broken commit or note — both are preserved locally. The pipeline impact is recoverable by manually pushing before merging. The notes ref (`refs/notes/commits`) is a non-standard ref and must be pushed explicitly; it is not included in a normal `git push`. Projects using read-only remote tokens or CI-only push permissions may need an alternative mechanism to sync notes.",
         "applies_to": {
-          "domains": ["skills"]
+          "domains": [
+            "skills"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#20"}
+          {
+            "type": "pr",
+            "ref": "#20"
+          }
         ]
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "memento-commit-mandatory-over-bare-git",
         "type": "fact",
@@ -31,15 +36,21 @@
         "alternative": null,
         "considerations": "This constraint applies to commits made in this repository dogfooding the distillery. Downstream projects deploying the plugin are not subject to this constraint unless they adopt it themselves. Automated commits (e.g., CI-generated commits) cannot use the skill and require a documented exception or separate handling. The memento-commit skill adds overhead per commit (LLM call for summary generation); developers who find this too slow should raise the issue rather than silently bypassing it.",
         "applies_to": {
-          "domains": ["skills"]
+          "domains": [
+            "skills"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#20"}
+          {
+            "type": "pr",
+            "ref": "#20"
+          }
         ]
-      }
+      },
+      "reject_reason": "Already codified in CLAUDE.md/AGENTS.md Memento section and auto-memory. Directly derivable from current artifacts with no residual value."
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "domain-list-ids-only-lightweight-index",
         "type": "fact",
@@ -49,13 +60,23 @@
         "alternative": null,
         "considerations": "The index is a navigation aid only — agents must still call `query-domain` or `domain-resolve-path` to retrieve actual rules. The flag returns a JSON array, so callers must handle the empty array case gracefully.",
         "applies_to": {
-          "domains": ["cli", "skills"]
+          "domains": [
+            "cli",
+            "skills"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#21"},
-          {"type": "memento", "ref": "f1a7247"}
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
         ]
-      }
+      },
+      "reject_reason": "Describes a CLI feature directly derivable from code and --help output. No residual value beyond what reading the implementation provides."
     },
     {
       "status": "accepted",
@@ -68,16 +89,26 @@
         "alternative": null,
         "considerations": "This rule applies at domain creation and refinement time, not retroactively to existing domains. Existing imperfect names should be flagged via `_domain_maintenance` annotations rather than immediately renamed. 'Slightly longer' is relative — names should still be concise enough to appear in a compact list; avoid function-name-level specificity.",
         "applies_to": {
-          "domains": ["skills", "docs", "pipeline"]
+          "domains": [
+            "skills",
+            "docs",
+            "pipeline"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#21"},
-          {"type": "memento", "ref": "f1a7247"}
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
         ]
       }
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "refinement-reuses-domain-registry",
         "type": "fact",
@@ -87,16 +118,26 @@
         "alternative": null,
         "considerations": "This applies to both extract-candidates and batch-refine stages. The registry consulted is the active registry at batch time — entries added in the same batch are not yet in the registry. If no existing domain fits even approximately, proposing a new domain is correct. The reuse rule should not force poor domain assignments just to avoid creating new domains.",
         "applies_to": {
-          "domains": ["skills", "pipeline"]
+          "domains": [
+            "skills",
+            "pipeline"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#21"},
-          {"type": "memento", "ref": "f1a7247"}
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
         ]
-      }
+      },
+      "reject_reason": "Procedure fully codified in extract-candidates SKILL.md checklist items 10-12. Directly derivable from current artifacts."
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "domain-maintenance-annotation-structured",
         "type": "fact",
@@ -106,13 +147,23 @@
         "alternative": null,
         "considerations": "The annotation is optional — omit it when no domain registry issues are observed. Domain reorganization actions (merge, split, rename) remain manual follow-ups; `_domain_maintenance` only surfaces signals, it does not trigger automatic changes. The four issue types and four suggestion values are an enumerated set; extensions to the enum should go through the normal decision process.",
         "applies_to": {
-          "domains": ["skills", "pipeline"]
+          "domains": [
+            "skills",
+            "pipeline"
+          ]
         },
         "evidence": [
-          {"type": "pr", "ref": "#21"},
-          {"type": "memento", "ref": "f1a7247"}
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
         ]
-      }
+      },
+      "reject_reason": "Schema and contract fully documented in extract-candidates SKILL.md _domain_maintenance section. Directly derivable from current artifacts."
     }
   ]
 }
