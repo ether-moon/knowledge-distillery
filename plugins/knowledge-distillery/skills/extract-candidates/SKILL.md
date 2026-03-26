@@ -124,10 +124,27 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 - "We chose React" → not actionable for daily coding (too broad)
 - "Use React Server Components for data-fetching pages" → actionable
 
-**4d. Not self-evident** — An experienced developer in this codebase couldn't trivially derive it.
+**4d. Not directly derivable** — The knowledge adds value beyond what current repo artifacts already convey.
 
-- "JavaScript files use .js extension" → self-evident, skip
-- "Payments service must use idempotency keys for all mutations" → not self-evident
+Apply two questions in sequence:
+
+- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
+- **Q2 — Residual value:** Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves don't explain?
+
+| Q1 | Q2 | Decision |
+|----|-----|----------|
+| yes | no | **Skip** — vault adds no value over reading the code |
+| yes | yes | **Keep candidate** — artifact shows *what*, entry preserves *why* |
+| no | — | **Keep candidate** — knowledge is not visible in artifacts |
+
+> **Important:** "Traceable via `git log` / `git blame`" is NOT a reject reason. Historical rationale buried in commit history is exactly what the vault should surface — it is not readily visible during normal development.
+
+**Fact-type filter:** A `fact` candidate that merely describes current state ("X uses Y") without rationale is directly derivable — skip it. Only extract facts that carry a rule or constraint with reasoning ("When touching X, keep Y because Z").
+
+Examples:
+- "The `/curate` workflow checks branch prefix `knowledge/batch-*`" → Q1=yes (YAML file), Q2=no → **skip**
+- "Archive rejected vault entries instead of deleting to preserve audit history" → Q1=partially (function exists), Q2=yes (preserves *why*) → **keep**
+- "PR body template enforcement is out of scope for knowledge-distillery" → Q1=no (scope decisions aren't in code), Q2=yes (boundary + rejected alternative) → **keep**
 
 **When in doubt, leave it out.** If confidence in any criterion is low, do NOT extract.
 
@@ -153,7 +170,7 @@ For each validated extraction, produce a candidate object:
 [Why this rule exists. Context that led to the decision. 2-4 sentences from the evidence.]
 
 ## Details
-[Specific guidance. Implementation notes. Scope boundaries.]
+[Specific guidance. Scope boundaries, exceptions, operational guidance.]
 
 ## Rejected Alternatives
 [Optional for facts. REQUIRED for anti-patterns. Approaches tried and failed, or considered and dismissed.]
@@ -252,3 +269,4 @@ Before returning candidates, verify:
 6. Does every candidate cite at least one `evidence` source?
 7. Are domains derived via `domain-resolve-path`, not hardcoded?
 8. Does the skill return `[]` gracefully when no candidates are found?
+9. Does each `fact` candidate preserve rationale, constraint, or boundary — not just describe current state?

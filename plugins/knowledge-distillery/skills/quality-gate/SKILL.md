@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, conflict identification)."
+description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, R7 directly-derivable heuristic)."
 user-invocable: false
 ---
 
@@ -137,6 +137,25 @@ Compare the candidate against existing vault entries in the same domains:
 
 - **When unsure**: Classify as `conflict` (safer — routes to human review) rather than `duplicate` (auto-reject).
 
+#### R7: Directly Derivable Knowledge (Heuristic)
+
+> **Scope limitation:** This skill does not have direct artifact inspection capability. R7 is a **secondary smell test**, not a substitute for the primary derivability filter in extract-candidates criterion 4d. Reject only when the candidate *plainly restates* current implementation without residual value — do not attempt to verify derivability claims against actual files.
+
+Evaluate whether the candidate reads like an obvious codified restatement:
+
+1. **Q1 — Derivability (heuristic):** Based on the candidate's claim, body, and evidence, does this appear to describe something directly readable from current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
+2. **Q2 — Residual value:** Does the entry preserve *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves wouldn't explain?
+
+| Q1 | Q2 | Verdict |
+|----|-----|---------|
+| yes | no | FAIL (`R7_DIRECTLY_DERIVABLE`) |
+| yes | yes | PASS — artifact shows *what*, entry preserves *why* |
+| no | — | PASS — knowledge is not visible in artifacts |
+
+**Fact-type heuristic:** A `fact` that merely restates what the code does ("X uses Y") without explaining *why* or defining a *boundary* → likely R7 fail. A `fact` that carries rationale or constraint ("When touching X, keep Y because Z") → likely R7 pass.
+
+**Borderline R7 decisions:** Err on the side of rejecting. The vault should contain only knowledge that is invisible to artifact readers or that preserves reasoning they would otherwise lose.
+
 ### Compose Verdicts
 
 For each candidate, produce a verdict:
@@ -156,6 +175,7 @@ For each candidate, produce a verdict:
 | `R5_UNCONSIDERED` | 1 (Rule) | Considerations field empty or trivially dismissed |
 | `R1_EVIDENCE_INSUFFICIENT` | 2 (LLM) | Claim not adequately supported by cited evidence |
 | `R6_DUPLICATE` | 2 (LLM) | Semantically identical to existing vault entry |
+| `R7_DIRECTLY_DERIVABLE` | 2 (LLM, heuristic) | Candidate plainly restates current implementation with no residual value |
 
 ## Error Handling
 
@@ -223,6 +243,18 @@ For each candidate, produce a verdict:
 }
 ```
 
+### Directly Derivable Knowledge (R7)
+
+```json
+{
+  "candidate_id": "curate-workflow-branch-prefix-gate",
+  "verdict": "fail",
+  "rejection_codes": ["R7_DIRECTLY_DERIVABLE"],
+  "curation_queue_entry": null,
+  "notes": "Claim describes a branch naming convention visible in workflow YAML. Q1=yes (derivable from current artifact), Q2=no (no rationale, boundary, or failure context preserved)."
+}
+```
+
 ### Multiple Failures
 
 ```json
@@ -245,6 +277,7 @@ For each candidate, produce a verdict:
 - MUST err toward rejection on borderline R1 evidence checks
 - MUST return empty array for empty input (not error)
 - MUST run both Layer 1 and Layer 2 for every candidate (Layer 2 provides feedback even on Layer 1 failures)
+- R7 is a secondary heuristic smell test — the primary derivability filter is extract-candidates criterion 4d, which has artifact inspection capability
 
 ## Validation Checklist
 
@@ -257,4 +290,5 @@ Before returning verdicts, verify:
 5. Are ALL applicable rejection codes reported per candidate (not just first)?
 6. Does the skill return empty array for empty candidate input?
 7. Does the skill handle `knowledge-gate` CLI unavailability gracefully?
-8. Are borderline cases handled conservatively (reject R1, queue R6)?
+8. Are borderline cases handled conservatively (reject R1, queue R6, reject R7)?
+9. Does R7 check whether knowledge is directly derivable from current artifacts with no residual value?
