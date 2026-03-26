@@ -62,7 +62,7 @@ require_ordered() {
 
   while IFS= read -r needle; do
     line="$(
-      grep -n -F -- "${needle}" "${doc_path}" |
+      { grep -n -F -- "${needle}" "${doc_path}" || true; } |
         awk -F: -v last_line="${last_line}" '$1 > last_line { print $1; exit }'
     )"
     [ -n "${line}" ] || fail "${scenario_id}: expected '${doc_path#${ROOT}/}' to contain ordered snippet: ${needle}"
@@ -78,6 +78,13 @@ while IFS= read -r scenario; do
 
   while IFS= read -r check; do
     doc_alias="$(jq -r '.doc' <<<"${check}")"
+    check_key_count="$(
+      jq '[has("contains"), has("absent"), has("ordered_contains")] | map(select(. == true)) | length' <<<"${check}"
+    )"
+
+    if [ "${check_key_count}" -ne 1 ]; then
+      fail "${scenario_id}: check must define exactly one of contains, absent, or ordered_contains: ${check}"
+    fi
 
     if jq -e 'has("contains")' >/dev/null <<<"${check}"; then
       require_contains \
