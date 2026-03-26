@@ -59,7 +59,7 @@ The `knowledge-gate` CLI is the sole access path to the knowledge vault (`.knowl
 | Command | Purpose |
 |---|---|
 | `domain-info <domain>` | Domain details (description, patterns, entry count) |
-| `domain-list [--status X]` | List domains (active\|deprecated\|all) |
+| `domain-list [--status X] [--ids-only]` | List domains or emit a lightweight domain ID index |
 | `domain-resolve-path <filepath>` | Reverse-lookup file path to domains |
 | `domain-add`, `domain-merge`, `domain-split`, `domain-deprecate` | Registry lifecycle |
 | `domain-paths-set`, `domain-paths-add`, `domain-paths-remove` | Path pattern management |
@@ -89,6 +89,9 @@ knowledge-gate query-paths src/api/auth/login.ts
 
 # Check which domains a file belongs to
 knowledge-gate domain-resolve-path src/services/payment.rb
+
+# Preload a lightweight domain ID index for navigation
+knowledge-gate domain-list --ids-only
 
 # Search for rules by keyword
 knowledge-gate search "callback"
