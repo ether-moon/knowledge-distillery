@@ -1,0 +1,22 @@
+Decisions Made
+- Added shell-based regression harnesses for skill orchestration contracts instead of introducing a Python-only test dependency.
+- Added fixture-driven structure tests for batch-refine and curate-report so deterministic changeset/report behavior is validated separately from prompt-contract checks.
+- Added a dedicated GitHub Actions workflow to run all local regression harnesses on pull requests and pushes to main.
+
+Problems Encountered
+- The working workspace already contained unrelated modifications on a non-main branch, so a separate worktree from origin/main was used to isolate this PR.
+- The CLI `curate` command reads operator input from an interactive loop, which made full non-interactive action execution brittle in automation.
+- A couple of assertions were initially too literal and had to be relaxed to match stable CLI behavior rather than exact formatting details.
+
+Constraints Identified
+- Tests should remain shell/jq-based to align with the repository's current tooling and avoid adding a new Python test dependency.
+- PR content must exclude unrelated uncommitted workspace changes.
+- Interactive CLI flows can only be smoke-tested unless the command grows a non-interactive mode.
+
+Open Questions
+- Whether `mark-evidence` should get the same structure-test treatment as batch-refine and curate-report.
+- Whether the `curate` command should gain a non-interactive mode for deeper automated testing.
+- Whether README or adoption docs should explicitly mention the new regression harness workflow.
+
+Context
+- Implemented a full regression test stack covering knowledge-gate CLI commands, orchestration contract fixtures for batch-refine and curate-report, deterministic structure tests for their changeset/report outputs, and CI execution via tests/all.sh and .github/workflows/test-harness.yml.
