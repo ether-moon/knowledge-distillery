@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-26",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "push-notes-ref-after-commit",
+        "type": "fact",
+        "title": "Push notes ref to remote after memento note attachment",
+        "claim": "MUST push `refs/notes/commits` to origin after memento note attachment; omitting this silently breaks the CI evidence pipeline (mark-evidence reports 0 git sessions because it reads notes from the remote, not local).",
+        "body": "## Background\nThe `memento-commit` skill attaches session summaries as git notes on `refs/notes/commits` locally. The `mark-evidence` CI workflow fetches notes from the remote to count git sessions. Before PR #20, the skill never pushed the notes ref — the remote ref never existed, so every evidence bundle showed 0 git sessions regardless of actual memento coverage.\n\n## Details\n`refs/notes/commits` is a non-standard ref excluded from normal `git push`. This makes it easy to forget. The failure is silent — commits succeed, notes are saved locally, but the CI pipeline loses all session evidence. Projects using read-only remote tokens may need an alternative sync mechanism.\n\n## Rejected Alternatives\nIncluding the notes push in the same Bash call as the commit was rejected: a push failure could be misinterpreted as a commit failure.\n\n## Stop Conditions\nReconsider if a CI step or push hook automatically mirrors custom refs.",
+        "alternative": null,
+        "considerations": "A push failure does not indicate a broken commit or note — both are preserved locally. The pipeline impact is recoverable by manually pushing before merging. The notes ref (`refs/notes/commits`) is a non-standard ref and must be pushed explicitly; it is not included in a normal `git push`. Projects using read-only remote tokens or CI-only push permissions may need an alternative mechanism to sync notes.",
+        "applies_to": {
+          "domains": [
+            "skills"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#20"
+          }
+        ]
+      }
+    },
+    {
+      "status": "rejected",
+      "data": {
+        "id": "memento-commit-mandatory-over-bare-git",
+        "type": "fact",
+        "title": "Use memento-commit skill for every project commit",
+        "claim": "MUST use `/knowledge-distillery:memento-commit` skill instead of bare `git commit` for every commit in this project.",
+        "body": "## Background\nA commit was made using bare `git commit` without invoking the `memento-commit` skill. This omitted the structured 5-section session summary that the skill attaches as a git note on `refs/notes/commits`. The downstream `mark-evidence` pipeline detected 0 git sessions for PR #18's evidence bundle because no notes existed on the commits. The issue was discovered while investigating the always-zero git sessions count.\n\n## Details\nEvery commit must carry session context (decisions, problems, constraints, open questions) as a git note on `refs/notes/commits`. The `/knowledge-distillery:memento-commit` skill automates:\n1. Generating the structured 5-section memento summary\n2. Running `git commit` with staged files\n3. Attaching the summary via `git notes add --force --file=- <sha>`\n4. Pushing `refs/notes/commits` to origin\n\nUsing bare `git commit` bypasses all four steps, silently breaking the evidence chain without any immediate error. The knowledge distillery pipeline loses visibility into the reasoning behind code changes, degrading extraction quality.\n\n## Rejected Alternatives\nAdding a post-commit hook to auto-generate the memento was considered but rejected: hooks run synchronously and cannot call the LLM-backed skill without additional wrapper infrastructure.\n\n## Stop Conditions\nReconsider if the memento-commit skill becomes fully automated via a post-commit hook, making the manual invocation requirement redundant.",
+        "alternative": null,
+        "considerations": "This constraint applies to commits made in this repository dogfooding the distillery. Downstream projects deploying the plugin are not subject to this constraint unless they adopt it themselves. Automated commits (e.g., CI-generated commits) cannot use the skill and require a documented exception or separate handling. The memento-commit skill adds overhead per commit (LLM call for summary generation); developers who find this too slow should raise the issue rather than silently bypassing it.",
+        "applies_to": {
+          "domains": [
+            "skills"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#20"
+          }
+        ]
+      },
+      "reject_reason": "Already codified in CLAUDE.md/AGENTS.md Memento section and auto-memory. Directly derivable from current artifacts with no residual value."
+    },
+    {
+      "status": "rejected",
+      "data": {
+        "id": "domain-list-ids-only-lightweight-index",
+        "type": "fact",
+        "title": "Use domain-list --ids-only for lightweight domain index preload",
+        "claim": "Use `knowledge-gate domain-list --ids-only` to preload a lightweight domain ID index for navigation before querying specific domains.",
+        "body": "## Background\nContext Gate agents need to discover which domains are relevant to a task before querying rules. Loading full domain metadata (descriptions, patterns, entry counts) on every navigation step is heavyweight. PR #21 introduced the `--ids-only` flag to `domain-list` as a lightweight preload step.\n\n## Details\nThe `--ids-only` flag emits a JSON array of active domain IDs sorted alphabetically, without descriptions or other metadata. This compact index lets an agent determine which domain(s) to query without incurring the cost of full domain metadata retrieval. It is the recommended first step when the relevant domain is unknown. The extract-candidates and batch-refine skills were updated to load this index before proposing or assigning domains. The output excludes deprecated domains by default; use `--status all` to include them.\n\n## Stop Conditions\nReconsider if domain descriptions become short enough that a full index load is no longer significantly heavier than an ids-only load.",
+        "alternative": null,
+        "considerations": "The index is a navigation aid only — agents must still call `query-domain` or `domain-resolve-path` to retrieve actual rules. The flag returns a JSON array, so callers must handle the empty array case gracefully.",
+        "applies_to": {
+          "domains": [
+            "cli",
+            "skills"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
+        ]
+      },
+      "reject_reason": "Describes a CLI feature directly derivable from code and --help output. No residual value beyond what reading the implementation provides."
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "domain-names-prioritize-trigger-quality",
+        "type": "fact",
+        "title": "Domain names must prioritize trigger quality over brevity",
+        "claim": "Domain names MUST prioritize trigger quality and boundary clarity over brevity; self-explanatory names are preferred even if longer.",
+        "body": "## Background\nDomain IDs can be exposed as a lightweight navigation index (via `domain-list --ids-only`) without descriptions. In this context, the domain name itself becomes the primary signal for agents to infer when to query the domain. Short but ambiguous names degrade routing accuracy.\n\n## Details\nThe team decided that domain names are a trigger interface for agents, not merely storage identifiers. A strong domain name must answer both: (1) what tasks/files should trigger it, and (2) what adjacent tasks/files should NOT. Names like `core`, `system`, `misc`, `general`, `processing`, or `utils` are considered weak unless the repository already gives them a precise stable meaning. Examples: `batch-refinement` is better than `batch`; `vault-schema` is better than `schema`. The naming rubric was codified in extract-candidates/SKILL.md and the design implementation doc. When proposing a new domain, an internal 3-step naming pass is required: draft 2-3 candidates, compare against existing registry, test each against likely trigger phrases, choose the most discriminative name.\n\n## Stop Conditions\nReconsider if domain IDs are always shown with descriptions in every consumer context, making the trigger-quality constraint less critical.",
+        "alternative": null,
+        "considerations": "This rule applies at domain creation and refinement time, not retroactively to existing domains. Existing imperfect names should be flagged via `_domain_maintenance` annotations rather than immediately renamed. 'Slightly longer' is relative — names should still be concise enough to appear in a compact list; avoid function-name-level specificity.",
+        "applies_to": {
+          "domains": [
+            "skills",
+            "docs",
+            "pipeline"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
+        ]
+      }
+    },
+    {
+      "status": "rejected",
+      "data": {
+        "id": "refinement-reuses-domain-registry",
+        "type": "fact",
+        "title": "Refinement must consult domain registry before proposing new domains",
+        "claim": "During extraction and refinement, MUST consult the full active domain registry as a controlled vocabulary and reuse existing domains before proposing new ones.",
+        "body": "## Background\nBefore PR #21, extraction LLMs could propose new domain names based solely on local batch context, leading to registry churn and near-duplicate naming across batches. The team decided to treat the domain registry as a controlled vocabulary that extraction must consult first.\n\n## Details\nThe extract-candidates skill was updated to call `domain-list --ids-only` at the start of Step 1 (before `domain-resolve-path`) to load the full active registry as a baseline. The rule: reuse an existing domain when it fits, even if imperfect; only propose a new domain when no existing domain cleanly covers the changed work's boundary. If reusing a domain reveals a naming or scope issue, capture that as a `_domain_maintenance` annotation rather than creating an ad hoc replacement domain. This prevents naming drift and keeps the registry stable across batches.\n\n## Stop Conditions\nReconsider if the registry grows large enough that a full load becomes prohibitively slow, warranting a search-first approach instead.",
+        "alternative": null,
+        "considerations": "This applies to both extract-candidates and batch-refine stages. The registry consulted is the active registry at batch time — entries added in the same batch are not yet in the registry. If no existing domain fits even approximately, proposing a new domain is correct. The reuse rule should not force poor domain assignments just to avoid creating new domains.",
+        "applies_to": {
+          "domains": [
+            "skills",
+            "pipeline"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
+        ]
+      },
+      "reject_reason": "Procedure fully codified in extract-candidates SKILL.md checklist items 10-12. Directly derivable from current artifacts."
+    },
+    {
+      "status": "rejected",
+      "data": {
+        "id": "domain-maintenance-annotation-structured",
+        "type": "fact",
+        "title": "Capture domain registry improvement signals as _domain_maintenance annotations",
+        "claim": "Domain registry improvement signals MUST be captured as structured `_domain_maintenance` annotations in extraction output, not left as prose, so batch reports can surface them deterministically.",
+        "body": "## Background\nBefore PR #21, domain improvement signals (merge candidates, naming issues, scope problems) existed only in prose descriptions or implicit in commit messages, making them invisible to downstream automated reporting. The team decided to structure these signals explicitly.\n\n## Details\nThe `_domain_maintenance` annotation is an optional array field on each candidate object in extraction output. Each element has four required fields:\n- `domain`: the affected domain ID\n- `issue`: one of `too-broad`, `too-narrow`, `ambiguous-name`, `near-duplicate`\n- `suggestion`: one of `split`, `merge`, `rename`, `scope-cleanup`\n- `reason`: why this batch surfaces the follow-up need\n\nThe batch-refine skill was updated to: (1) preserve `_domain_maintenance` annotations from extract-candidates, (2) fetch the current registry baseline via `domain-list --ids-only` before generating the domain change summary, and (3) group and surface `_domain_maintenance` findings in the batch report under the Domain Changes section.\n\n## Stop Conditions\nReconsider the enum values if new issue or suggestion types emerge that don't fit the current four-option sets.",
+        "alternative": null,
+        "considerations": "The annotation is optional — omit it when no domain registry issues are observed. Domain reorganization actions (merge, split, rename) remain manual follow-ups; `_domain_maintenance` only surfaces signals, it does not trigger automatic changes. The four issue types and four suggestion values are an enumerated set; extensions to the enum should go through the normal decision process.",
+        "applies_to": {
+          "domains": [
+            "skills",
+            "pipeline"
+          ]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#21"
+          },
+          {
+            "type": "memento",
+            "ref": "f1a7247"
+          }
+        ]
+      },
+      "reject_reason": "Schema and contract fully documented in extract-candidates SKILL.md _domain_maintenance section. Directly derivable from current artifacts."
+    }
+  ]
+}
