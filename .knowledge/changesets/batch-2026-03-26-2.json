@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-26-2",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "derivability-two-question-test",
+        "type": "fact",
+        "title": "Two-question derivability test for extraction criterion 4d",
+        "claim": "MUST apply a two-question derivability test (Q1: derivable from artifacts? Q2: residual value?) before extracting a candidate — skip only when Q1=yes AND Q2=no.",
+        "body": "## Background\nThe previous extraction criterion 4d ('not self-evident') was too abstract to reliably filter implementation details. In the 2026-03-24 batch, 3 candidates passed the automated pipeline but were rejected during human curation as 'obvious implementation details.' This motivated replacing the single heuristic with a two-question decision table.\n\n## Details\nQ1 — Derivability: Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)? Q2 — Residual value: Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves don't explain? Decision table: (Q1=yes, Q2=no) → Skip; (Q1=yes, Q2=yes) → Keep (artifact shows *what*, entry preserves *why*); (Q1=no, Q2=any) → Keep. The fact-type filter also applies: a `fact` that merely describes current state ('X uses Y') without rationale is directly derivable and must be skipped.\n\n## Rejected Alternatives\nThe previous single-question 'not self-evident' criterion was rejected because it was too abstract and subjective — reviewers could not reliably apply it to distinguish rationale-bearing entries from obvious implementation restatements.\n\n## Stop Conditions\nIf false positives persist after this change, revisit by adding artifact inspection capability to the quality-gate in a future iteration.",
+        "alternative": null,
+        "considerations": "This test applies at extraction time (extract-candidates criterion 4d), not at quality-gate time. The quality-gate's R7 is a secondary heuristic that cannot inspect artifacts directly. The Q1/Q2 test requires human judgment about what 'current repo artifacts' convey — this judgment can drift as the codebase evolves. The conservative-extraction-principle entry in the vault references the older '(4) not self-evident' criterion in its body, which may need updating to reference the Q1/Q2 test.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#23" }
+        ],
+        "curation": [
+          {
+            "related_id": "conservative-extraction-principle",
+            "reason": "The existing conservative-extraction-principle entry lists '(4) not self-evident' as one of the extraction criteria in its body. This candidate replaces that criterion with the Q1/Q2 test, making the existing entry's body partially stale."
+          }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "git-history-not-derivability-reject",
+        "type": "fact",
+        "title": "Git log/blame traceability is not a rejection reason for vault candidates",
+        "claim": "MUST NOT reject a knowledge candidate solely because its rationale is traceable via git log or git blame — historical rationale buried in commit history is exactly what the vault should surface.",
+        "body": "## Background\nWhen evaluating criterion 4d (not directly derivable), there was ambiguity about whether 'derivable via git history' counted as 'derivable from current repo artifacts.' The team explicitly resolved this: git log and git blame are not normal development reading paths, so rationale buried there is a valid vault target.\n\n## Details\nThe derivability test (Q1) is scoped to current repo artifacts: source code, configuration, tests, README, CLAUDE.md, and design docs. Git history (commits, blame, notes) is explicitly excluded from this list — it is not 'readily visible during normal development.' A candidate whose rationale is only discoverable via git log/blame SHOULD be extracted, not rejected. This preserves rationale that would otherwise be invisible to agents reading the codebase at a point in time.\n\n## Rejected Alternatives\nTreating git history as 'derivable' would have caused valid rationale-bearing candidates to be rejected on the grounds that 'someone could look it up.' This was rejected because agents do not routinely traverse commit history during coding tasks.\n\n## Stop Conditions\nReconsider if agents are given routine commit history access as part of their normal context window.",
+        "alternative": null,
+        "considerations": "This rule clarifies a boundary condition of the Q1 derivability test. It applies to both extract-candidates criterion 4d and quality-gate R7. If the definition of 'current repo artifacts' expands to include git history (e.g., agents with richer context), this rule would need revisiting.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#23" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "tests-must-be-shell-jq-based",
+        "type": "fact",
+        "title": "Tests must remain shell/jq-based; no Python test dependency",
+        "claim": "Tests in this repository MUST remain shell/jq-based to align with current tooling; do not add a Python test dependency.",
+        "body": "## Background\nWhen adding regression harnesses for skills and knowledge-gate in PR #24, the team evaluated test tooling options. Python was considered (e.g., for richer assertion libraries or subprocess management) but explicitly rejected to keep the stack consistent with the repository's existing shell-based CLI and skill tooling.\n\n## Details\nThe shell/jq approach is sufficient for both structure tests (deterministic changeset/report behavior via jq assertions) and orchestration fixture tests (prompt-contract checks). Adding Python would introduce a new runtime dependency inconsistent with the rest of the project. All new test harnesses should be `.sh` files using jq for JSON assertions.\n\n## Rejected Alternatives\nPython test harnesses (pytest, unittest) were considered for richer assertion and subprocess control but rejected due to dependency overhead and inconsistency with the shell-based tool stack.\n\n## Stop Conditions\nReconsider if the project ever adopts Python as a first-class runtime dependency for non-test purposes, making Python tests consistent with the overall stack.",
+        "alternative": null,
+        "considerations": "This constraint applies to the knowledge-distillery repository and its dogfooding test suite. Downstream projects deploying the plugin may choose different testing tooling. The shell/jq constraint should not block adding useful tests — if a scenario genuinely cannot be tested with shell/jq, that limitation should be surfaced rather than silently abandoning coverage.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#24" },
+          { "type": "memento", "ref": "0ff6bd6" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "interactive-cli-smoke-test-only",
+        "type": "fact",
+        "title": "Interactive CLI flows can only be smoke-tested in automation",
+        "claim": "Interactive CLI flows (e.g., the `curate` command's operator input loop) can only be smoke-tested in automation; deeper automated testing requires the command to gain a non-interactive mode.",
+        "body": "## Background\nWhen building regression coverage for the knowledge-gate CLI in PR #24, the curate command's interactive operator input loop could not be meaningfully covered by automated tests. The team identified this as a current architectural boundary: shell-based automation cannot drive interactive prompts reliably.\n\n## Details\nInteractive commands that read from stdin in a loop are fundamentally hard to automate. The current test harness can invoke such commands and check exit codes (smoke test), but cannot assert on branching behavior or simulate complex input sequences. To unlock deeper coverage, the command would need a non-interactive execution mode (e.g., `--dry-run`, `--input-file`, or `--batch` flags) that accepts structured input without requiring stdin interaction.\n\n## Rejected Alternatives\nUsing `expect` or similar tools for interactive automation was not pursued — they add complexity and are fragile.\n\n## Stop Conditions\nReconsider once the curate command (or other interactive commands) gains a non-interactive mode.",
+        "alternative": null,
+        "considerations": "This is a current boundary constraint, not a permanent design limitation. Test authors should document when they are writing a smoke test rather than deeper behavioral coverage, to make the testing gap visible. Until non-interactive modes exist, do not attempt to assert on interactive flow outcomes beyond surface-level invocation.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#24" },
+          { "type": "memento", "ref": "0ff6bd6" }
+        ]
+      }
+    }
+  ]
+}
