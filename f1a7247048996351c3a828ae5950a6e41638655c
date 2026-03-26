@@ -1,0 +1,22 @@
+## Decisions Made
+- Context Gate에서 도메인 목록을 경량 인덱스로 활용할 수 있도록 `knowledge-gate domain-list --ids-only`를 추가했다. 도메인 전체 메타데이터를 항상 로드하지 않고도 탐색 네비게이션을 시작할 수 있게 하려는 선택이다.
+- 도메인 naming은 짧음보다 트리거 품질과 경계 명확성을 우선하도록 정제 프롬프트를 강화했다. 이름만 보고도 언제 조회해야 하는지 추론 가능한 자기 설명적 도메인명을 기본값으로 삼는다.
+- refinement 단계는 전체 active domain registry를 controlled vocabulary로 먼저 조회해 기존 도메인을 우선 재사용하고, 새 도메인은 clean fit이 없을 때만 제안하도록 방향을 고정했다.
+- 도메인 개선 신호는 서술형 기억에 남기지 않고 `_domain_maintenance` annotation으로 구조화해 downstream report까지 전달하도록 했다. 이로써 merge/split/rename/scope cleanup 제안이 프롬프트 간에 결정적으로 이어진다.
+
+## Problems Encountered
+- 문서와 스킬은 “도메인 개선 신호를 남긴다”고 설명했지만, 초기 상태에서는 이를 넘길 명시적 schema가 없었다. `_domain_maintenance` 필드를 추가하고 batch report에서 읽도록 바꿔 handoff를 복구했다.
+- `batch-refine`는 현재 registry를 비교 기준으로 쓰라고 하면서도 실제 fetch 명령을 명시하지 않았다. Step 6에 `GATE domain-list --ids-only`를 넣어 실행 경로를 닫았다.
+- 한글 문서 패치가 영문판과 문맥 차이로 한 번 빗나갔다. 실제 문단을 다시 읽고 동일한 의미가 유지되도록 별도로 맞췄다.
+
+## Constraints Identified
+- vault 관련 정보는 계속 `knowledge-gate` CLI를 통해서만 다뤄야 하며, `.knowledge/` 직접 읽기는 피해야 한다. 이 제약 때문에 domain discovery 개선도 모두 CLI/프롬프트 계층에서 해결해야 했다.
+- 도메인 ID는 `domain-list --ids-only`처럼 설명 없이 노출될 수 있다. 그래서 naming 규칙은 저장 편의보다 triggerability와 boundary clarity를 우선해야 한다.
+- decision record는 별도 커밋으로 남기되, 일반 기능 커밋에는 memento note가 필요하다. 이번 브랜치에서는 결정 커밋 2개와 기능 커밋 1개를 분리 유지했다.
+
+## Open Questions
+- `--compact` 같은 중간 밀도의 domain index 포맷이 실제 사용에서 필요한지는 아직 미정이다. 현재는 `ids-only`와 full metadata 사이를 비워 둔 상태다.
+- 프롬프트 회귀용 시나리오 harness는 별도 세션에서 진행하기로 미뤄져 있다. 지금 추가한 `prompt-contracts.sh`는 정적 계약 검증만 수행한다.
+
+## Context
+이번 세션에서는 Context Gate의 도메인 탐색 품질을 높이는 방향으로 `knowledge-gate`, `extract-candidates`, `batch-refine`, 설계 문서를 함께 조정했다. 초기에는 도메인명을 더 잘 짓는 프롬프트와 refinement의 registry-aware reuse 원칙을 넣었고, 이어서 문서·스킬·프롬프트 사이의 불일치를 리뷰한 뒤 `_domain_maintenance` handoff와 batch baseline fetch를 구조화했다. 마지막으로 CLI 회귀 테스트와 prompt contract 테스트를 추가해 현재 변경의 핵심 계약이 깨지지 않도록 검증했다.
