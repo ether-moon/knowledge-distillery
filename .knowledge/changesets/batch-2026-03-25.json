@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-25",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "memento-commit-no-glob-staging",
+        "type": "anti-pattern",
+        "title": "MUST NOT use git add -A in memento-commit",
+        "claim": "MUST NOT use `git add -A` in memento-commit — derive the file list from `git status --porcelain` and exclude sensitive file patterns (`.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`).",
+        "body": "## Background\nThe memento-commit skill was originally using `git add -A` to stage all changes before committing. This risks accidentally staging secrets, credentials, or sensitive configuration files that should never be committed to a repository. PR #13 replaced this with selective staging to prevent accidental secret exposure.\n\n## Details\nThe staging workflow must:\n1. Run `git status --porcelain` to enumerate modified/new files\n2. Filter out files matching sensitive patterns: `.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`\n3. Stage only the explicitly listed, non-sensitive files\n4. Proceed with commit only if there are staged files\n\nThis approach prevents secret files from leaking into the commit even if they are accidentally modified or created in the working tree during a session.\n\n## Rejected Alternatives\n`git add -A` was used originally for convenience but was rejected because it indiscriminately stages all working tree changes including potential secrets. Using `.gitignore` alone is insufficient because sensitive files may not always be listed there.\n\n## Stop Conditions\nRevisit if the exclusion list proves too aggressive (excluding necessary files) or if a more principled credential-detection approach is adopted.",
+        "alternative": "Enumerate files via `git status --porcelain`, filter out sensitive file name patterns, and pass the explicit safe list to `git add`.",
+        "considerations": "The exclusion list is pattern-based and relies on file naming conventions for sensitive files. Files with unusual names storing secrets would not be caught. This is a defense-in-depth measure, not a complete solution. The exclusion list may need expansion as new sensitive file conventions are adopted in a project.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#13"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
+      "data": {
+        "id": "record-decision-isolated-commit",
+        "type": "fact",
+        "title": "Use git commit --only in record-decision to isolate the decision file",
+        "claim": "Use `git commit --only <decision-file-path>` in record-decision to ensure only the decision file is committed, preventing pre-staged user changes from leaking into decision commits.",
+        "body": "## Background\nThe record-decision skill creates a decision file and commits it. If there are pre-staged user files in the index (from the user's in-progress work), a plain `git commit` would include those unrelated changes in the decision commit. PR #13 changed this to `git commit --only <file>` which scopes the commit precisely to the decision file.\n\n## Details\n`git commit --only <path>` temporarily stages only the specified path for this commit, regardless of what is already staged. After the commit, the pre-staged changes are restored to the index. This ensures decision commits contain exactly one file: the `.knowledge/decisions/<date>-<topic>.md` file.\n\n## Open Questions\nNone identified.\n\n## Stop Conditions\nRevisit if the record-decision skill is extended to commit multiple files at once.",
+        "alternative": null,
+        "considerations": "This applies specifically to the record-decision skill. Other skills that commit files (e.g., memento-commit) serve different purposes and may need different staging strategies. The `--only` flag behavior is specific to Git's index management — the target Git version must support it (available since Git 1.5.3).",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#13"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
+      "data": {
+        "id": "vault-hook-reminder-not-auto-query",
+        "type": "fact",
+        "title": "Vault UserPromptSubmit hook must only remind, not auto-query",
+        "claim": "The UserPromptSubmit vault reminder hook MUST only emit reminder text — it MUST NOT automatically query the vault; the agent decides whether to query based on task nature.",
+        "body": "## Background\nThe knowledge vault reminder hook fires on every UserPromptSubmit event to remind the agent to query the vault before planning code changes. The design decision was to make this a reminder only, not an automatic query. This is consistent with the convention-based air gap philosophy: the agent retains the judgment call about whether a vault query is warranted for the current task.\n\n## Details\nThe hook checks if vault.db exists and has active entries. If so, it emits a reminder message as `additionalContext`. It does NOT call `knowledge-gate query-domain` or `knowledge-gate search` automatically. The agent, upon receiving the reminder, decides:\n- Is this task a code modification that could be affected by vault rules?\n- What domain or file is involved?\n- Should I query before planning?\n\n## Rejected Alternatives\nAuto-querying (having the hook invoke knowledge-gate and inject results directly) was rejected because: (1) not every user prompt initiates a code-modifying task — injecting vault content into every prompt regardless of relevance creates noise; (2) this would violate the convention-based air gap principle where the agent exercises judgment rather than receiving automatic context injection.\n\n## Stop Conditions\nRevisit if the reminder-only approach proves insufficient — i.e., agents consistently ignore the reminder and produce vault-rule violations in practice.",
+        "alternative": null,
+        "considerations": "This design relies on the agent being responsive to the reminder. If the agent's behavior does not change in response to reminders (e.g., it proceeds with code modifications without querying), the reminder-only design fails silently. Per-task once querying is the intended behavior: the agent queries once per task before planning, not per every individual tool use.",
+        "applies_to": {
+          "domains": ["skills", "knowledge-distillery"]
+        },
+        "evidence": [{"type": "pr", "ref": "#14"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
+      "data": {
+        "id": "pre-commit-blocker-over-postcommit-reminder",
+        "type": "fact",
+        "title": "Use PreToolUse blocker for commit enforcement, not PostToolUse reminder",
+        "claim": "Use a PreToolUse hook to block direct `git commit` calls and redirect to the memento-commit skill, rather than a PostToolUse hook that reminds after the commit has already occurred.",
+        "body": "## Background\nThe initial implementation used a PostToolUse hook to remind the agent to attach memento notes after committing. This proved insufficient in practice: agents bypassed the memento-commit skill and committed directly, receiving the reminder only after the commit was already in history without a note. PR #15 replaced this with a PreToolUse blocker that intercepts git commit before it executes.\n\n## Details\nThe PreToolUse hook detects `git commit` commands in the Bash tool input. If the command contains `git commit` but does NOT also contain `git notes` (indicating the commit and note are combined in a single call as the memento-commit skill does), the hook blocks execution and emits a redirect message. Commands that include both `git commit` and `git notes` in the same Bash invocation are allowed through — these are skill-generated commits.\n\nDetection logic:\n- `git commit` (without `git notes`) → block → redirect to /memento-commit\n- `git commit` + `git notes` (same Bash invocation) → allow (skill-generated)\n- Bash commands without `git commit` → hook is silent\n\n## Rejected Alternatives\nPostToolUse reminder was rejected because it fires after the fact — the commit already exists without a note. The agent then needs to amend or add a note separately, which is error-prone. The PreToolUse approach prevents the undesired situation entirely.\n\n## Stop Conditions\nRevisit if PreToolUse hooks become unavailable or if the memento-commit workflow changes to a pattern that cannot be detected by checking for combined git commit + git notes in one Bash call.",
+        "alternative": null,
+        "considerations": "This changes the enforcement from PostToolUse reminder to PreToolUse blocker. The detection relies on the skill combining `git commit` and `git notes` in a single Bash invocation; if the skill changes this pattern, the detection logic must be updated. The existing vault entry `dual-enforcement-agent-behavioral-requirements` references PostToolUse hooks and may need updating to reflect the PreToolUse transition.",
+        "applies_to": {
+          "domains": ["skills", "plugin-infra"]
+        },
+        "evidence": [{"type": "pr", "ref": "#15"}],
+        "curation": [
+          {
+            "related_id": "dual-enforcement-agent-behavioral-requirements",
+            "reason": "Existing entry prescribes PostToolUse hook for enforcement; this entry prescribes PreToolUse blocker instead. The existing entry's claim references 'PostToolUse hook' specifically and may be outdated."
+          }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "vault-changeset-not-direct-db",
+        "type": "fact",
+        "title": "Write vault entries to changeset JSON, not vault.db directly",
+        "claim": "MUST write accepted vault entries to `.knowledge/changesets/batch-YYYY-MM-DD.json` in batch branches instead of modifying vault.db directly; vault.db is only ever modified on main via the `apply-changeset` workflow after a Report PR is merged.",
+        "body": "## Background\nvault.db is a binary SQLite file that Git cannot auto-merge. When batch branches modified vault.db directly and main also had vault.db updates, Report PRs always encountered unresolvable merge conflicts on the binary file. PR #17 restructured the flow: batch branches now write changeset JSON files (text, auto-mergeable) instead of modifying vault.db.\n\n## Details\nThe changeset file format is `.knowledge/changesets/batch-YYYY-MM-DD.json` and uses the schema `{version, batch_date, entries[]}` where each entry has `{status: accepted|rejected, data: {...}}`. On Report PR merge, the `apply-changeset.yml` workflow calls `knowledge-gate _changeset-apply` which reads the JSON, filters accepted entries, and inserts them into vault.db on main.\n\nThis structural change means:\n- Binary merge conflicts on vault.db are **structurally impossible** in batch branches\n- vault.db is modified only on main, by the apply-changeset workflow\n- The /curate workflow modifies the changeset JSON in the PR branch, not vault.db\n- `batch-refine` skill writes to changeset JSON (not `_pipeline-insert` directly)\n- `curate-report` skill modifies changeset JSON (not `_pipeline-archive`/`_pipeline-update` on vault.db)\n\n## Rejected Alternatives\nDirect vault.db modification in batch branches was the original design. It was rejected because binary merge conflicts are unresolvable automatically, requiring manual intervention on every Report PR once main's vault.db diverged.\n\n## Stop Conditions\nRevisit if the changeset format changes or if the apply-changeset workflow is replaced by a different mechanism.",
+        "alternative": null,
+        "considerations": "The changeset file is the authoritative record for a batch until it is applied to vault.db on main. If a batch branch is abandoned without merging, the changeset entries are never applied. The `_changeset-apply` command filters to `status: accepted` entries only — rejected entries in the changeset are silently skipped during application.",
+        "applies_to": {
+          "domains": ["pipeline", "cli", "skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#17"}]
+      }
+    },
+    {
+      "status": "rejected",
+      "reject_reason": "Reviewer requested to keep only memento-commit-no-glob-staging and vault-changeset-not-direct-db; all other entries removed.",
+      "data": {
+        "id": "mark-evidence-skip-batch-branches",
+        "type": "fact",
+        "title": "mark-evidence workflow must skip knowledge/batch-* branch PRs",
+        "claim": "The mark-evidence workflow MUST skip PRs merged from `knowledge/batch-*` branches — Report PRs are pipeline-generated artifacts, not team code changes, and running mark-evidence on them creates a meaningless evidence feedback loop.",
+        "body": "## Background\nReport PRs (knowledge/batch-* branches) carry changeset JSON files generated by the batch-refine pipeline. If mark-evidence runs on a merged Report PR, it marks the changeset JSON as evidence, then the next batch-refine run would find the changeset file as evidence for knowledge entries — creating a circular pipeline where the pipeline marks its own outputs as inputs for the next cycle.\n\n## Details\nThe mark-evidence workflow job condition must check `github.head_ref` (the source branch of the PR) and skip execution if it starts with `knowledge/batch-`. The job should exit as **skipped** (not failed) when this guard fires — use `if:` at the job level or a skip output flag, not `core.setFailed()`.\n\nReason for skip vs. fail distinction: guard conditions are intentional exceptions, not errors. Skipped status is visually distinguishable from failures in the GitHub Actions UI, making it easier to diagnose real failures.\n\n## Rejected Alternatives\nRunning mark-evidence on all merged PRs (including Report PRs) was the original behavior. It was rejected after observing that changeset JSON changes were being marked as evidence, which would pollute the next batch's evidence bundle with pipeline artifacts.\n\n## Stop Conditions\nRevisit if the branch naming convention for batch branches changes from `knowledge/batch-*`.",
+        "alternative": null,
+        "considerations": "This guard is branch-name-based, relying on the `knowledge/batch-*` naming convention being consistently applied to all Report PRs. If a Report PR is created on a differently named branch, mark-evidence would incorrectly run on it. The convention enforcement is in the batch-refine skill's instructions.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [{"type": "pr", "ref": "#18"}]
+      }
+    }
+  ]
+}

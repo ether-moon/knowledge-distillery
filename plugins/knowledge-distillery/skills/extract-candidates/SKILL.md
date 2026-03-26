@@ -21,6 +21,7 @@ user-invocable: false
 ## Allowed Tools
 
 - `GATE domain-resolve-path` — resolve changed files to domains
+- `GATE domain-list` — inspect the existing domain registry as a controlled vocabulary
 - `GATE query-domain` — fetch existing entries for relevant domains
 - `GATE search` — keyword search for potential duplicates
 - `GATE get` — full entry details for conflict check
@@ -45,6 +46,17 @@ Do NOT filter candidates — that is the quality gate's job. Return all candidat
 
 ### Step 1: Derive Target Domains
 
+Before proposing any new domains, load the existing active registry once as a lightweight controlled vocabulary:
+
+```bash
+GATE domain-list --ids-only
+```
+
+Use this list to:
+- Reuse existing domains whenever a changed file or extracted rule clearly fits one
+- Avoid inventing near-duplicate names for concepts the registry already covers
+- Compare any proposed new domain against neighboring existing domains for overlap, over-breadth, or over-specificity
+
 For each file path in the Evidence Bundle's root-level `changed_files` array:
 
 ```bash
@@ -58,7 +70,7 @@ If no domains match any file (aside from global domains), note this — the cand
 ```json
 {
   "name": "proposed-domain-name",
-  "description": "Brief description of what this domain covers",
+  "description": "One-sentence scope statement describing what this domain covers and, when helpful, what it excludes",
   "suggested_patterns": ["path/prefix/"]
 }
 ```
@@ -69,6 +81,34 @@ Deduplicate the final domain list.
 - **Granularity:** The unit at which a team makes independent decisions. "payment" is appropriate; over-splitting into "payment-refund" and "payment-charge" is not.
 - **Cross-cutting concerns:** Rules not confined to a specific directory (security policies, testing practices, error handling) are classified as technical cross-cutting domains.
 - **Naming convention:** Lowercase kebab-case. Distinguish business domains from technical domains (e.g., `payment` vs `activerecord`).
+
+**Domain naming rubric:**
+- Optimize for **trigger quality**, not brevity. The domain ID may later be shown in a lightweight index such as `domain-list --ids-only`, so an agent must be able to infer when to query it from the name alone.
+- Prefer a slightly longer but self-explanatory name over a short ambiguous one. `batch-refinement` is better than `batch`; `vault-schema` is better than `schema`.
+- Use durable responsibility or workflow terms, not transient implementation details. Prefer `evidence-collection` over `collect-evidence-step`; prefer `plugin-runtime` over `bash-wrapper`.
+- Include the main noun plus the distinguishing qualifier needed to separate it from neighboring domains.
+- Avoid vague container names such as `core`, `system`, `misc`, `general`, `processing`, or `utils` unless the repository already uses that term as a stable, well-bounded concept.
+- Avoid names that are so narrow they only fit one file, one class, or one sub-step. If the best name sounds like a function name or ticket title, it is probably too narrow.
+- A strong domain name should answer both questions from the ID alone:
+  1. "What kinds of tasks or files should trigger this domain?"
+  2. "What adjacent tasks or files should NOT trigger this domain?"
+
+**When proposing a new domain, do this internal naming pass before finalizing it:**
+1. Draft 2-3 candidate names from the evidence and changed paths.
+2. Compare each candidate against the existing registry from `domain-list --ids-only`. Eliminate names that would duplicate, shadow, or barely specialize an existing domain.
+3. For each surviving candidate, mentally test a few likely trigger phrases or files that SHOULD map to it and a few nearby ones that SHOULD NOT.
+4. Choose the most discriminative name, even if it is longer.
+5. If none of the candidates has a clear boundary, prefer an existing broader domain instead of inventing a weak new one.
+
+**Registry reuse and improvement rules:**
+- If an existing domain already covers the responsibility or workflow with acceptable precision, reuse it.
+- If the work clearly falls under an existing domain but the current name looks too broad, too narrow, or otherwise weak, still reuse it for the candidate now. Do NOT invent a replacement domain just because the existing name is imperfect.
+- Instead, record the improvement need in a `_domain_maintenance` annotation so merge, split, rename, or scope cleanup can be considered deliberately later in the batch report.
+- Only propose a new domain when the existing registry lacks a domain whose boundary cleanly fits the changed work.
+
+**Examples:**
+- Good: `batch-refinement`, `evidence-collection`, `vault-schema`, `plugin-runtime`
+- Weak: `batch`, `collection`, `schema`, `runtime`, `processing`, `core`
 
 ### Step 2: Fetch Existing Vault Entries
 
@@ -184,6 +224,7 @@ For each validated extraction, produce a candidate object:
 
 6. **`applies_to`**: The applicability scope from Step 1
    - `applies_to.domains`: domain list derived in Step 1
+   - If proposing a new domain, prefer names that remain understandable when shown without description in a compact domain index.
 
 7. **`evidence`**: Array citing specific sources:
    - `{ "type": "pr", "ref": "#1234" }`
@@ -201,6 +242,24 @@ For each validated extraction, produce a candidate object:
 
 10. **`considerations`**: Explicit concerns, conditions, or caveats. **NEVER empty.**
     - Even if no obvious caveats: "None identified from current evidence. Re-evaluate if [condition]."
+
+11. **`_domain_maintenance`**: Optional structured hints for later domain registry cleanup when reusing or proposing domains reveals naming/scope issues.
+    - Use only when the evidence suggests follow-up domain maintenance.
+    - Format:
+
+```json
+[
+  {
+    "domain": "existing-or-proposed-domain",
+    "issue": "too-broad | too-narrow | ambiguous-name | near-duplicate",
+    "suggestion": "split | merge | rename | scope-cleanup",
+    "reason": "Why this batch suggests a follow-up review"
+  }
+]
+```
+    - Examples:
+      - Reused `pipeline` but evidence shows repeated orchestration-vs-worker confusion → `{ "domain": "pipeline", "issue": "too-broad", "suggestion": "split", ... }`
+      - Proposed `batch-runtime` looks very close to existing `plugin-runtime` → `{ "domain": "batch-runtime", "issue": "near-duplicate", "suggestion": "merge", ... }`
 
 ### Step 6: Return Candidate Array
 
@@ -226,11 +285,12 @@ Each candidate MUST conform to this schema:
   "alternative": "<required for anti-pattern, null for fact>",
   "conflict_check": "<existing vault entry ID if potential conflict, null otherwise>",
   "considerations": "<explicit concerns, conditions, or caveats — NEVER empty>",
-  "_proposed_domain": [{"name": "<new-domain>", "description": "...", "suggested_patterns": ["path/"]}]
+  "_proposed_domain": [{"name": "<new-domain>", "description": "...", "suggested_patterns": ["path/"]}],
+  "_domain_maintenance": [{"domain": "<domain>", "issue": "...", "suggestion": "...", "reason": "..."}]
 }
 ```
 
-Note: `_proposed_domain` is only present when new domains are proposed (see Step 1). Omit when all domains already exist in the vault.
+Note: `_proposed_domain` is only present when new domains are proposed (see Step 1). Omit when all domains already exist in the vault. `_domain_maintenance` is only present when this batch reveals a follow-up registry improvement need.
 
 ## Error Handling
 
@@ -270,3 +330,7 @@ Before returning candidates, verify:
 7. Are domains derived via `domain-resolve-path`, not hardcoded?
 8. Does the skill return `[]` gracefully when no candidates are found?
 9. Does each `fact` candidate preserve rationale, constraint, or boundary — not just describe current state?
+10. If a new domain is proposed, is the name self-explanatory enough to be recognized from the ID alone in `domain-list --ids-only`?
+11. If a new domain is proposed, does its `description` define the scope clearly enough to distinguish it from adjacent domains?
+12. Before proposing a new domain, did the skill check whether an existing domain could be reused instead?
+13. If a reused or proposed domain revealed a naming/scope problem, was that follow-up captured in `_domain_maintenance` rather than left implicit?

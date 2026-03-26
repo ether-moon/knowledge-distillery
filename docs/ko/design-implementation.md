@@ -205,6 +205,11 @@ PR 변경 맥락 (커밋 메시지, 리뷰 논의, Linear 이슈)
 + 기존 도메인 레지스트리 (domain_registry)
 + 경로 패턴 참조 (domain_paths)
     ↓
+  추출 LLM은 먼저 registry를 controlled vocabulary로 보고,
+  맞는 기존 도메인이 있으면 우선 재사용하며, 현재 registry로는
+  경계가 맞지 않을 때만 새 도메인을 제안한다. 또한 merge/split/
+  rename/scope cleanup 필요성도 후속 검토 신호로 남긴다.
+    ↓
   추출 LLM이 종합적으로 판단하여 도메인 배정
     예: 결제 서비스 리팩토링 PR → domain: payment
     예: AR callback 장애 수정 PR → domain: payment, activerecord
@@ -215,6 +220,9 @@ PR 변경 맥락 (커밋 메시지, 리뷰 논의, Linear 이슈)
     → LLM이 {name, description, suggested_patterns}를 제안
     → knowledge-gate domain-add + domain-paths-set으로 반영
     → 이후 수동 검토에서 merge/deprecate/path cleanup 필요 여부 판단
+  기존 도메인을 재사용했지만 naming/scope 문제가 드러난 경우:
+    → LLM이 `_domain_maintenance` annotation을 남김
+    → batch report가 merge/split/rename/scope cleanup 후속 과제로 요약
 ```
 
 **도메인 정의 가이드라인 (추출 프롬프트에 포함):**
@@ -222,6 +230,12 @@ PR 변경 맥락 (커밋 메시지, 리뷰 논의, Linear 이슈)
 - **입도(granularity):** 팀이 독립적으로 의사결정하는 단위. "payment"은 적절하지만 "payment-refund"와 "payment-charge"로의 과분할은 지양
 - **횡단 관심사:** 특정 디렉토리에 국한되지 않는 규칙(보안 정책, 테스트 관행, 에러 처리 등)은 기술적 횡단 도메인으로 분류
 - **명명 규칙:** 소문자 kebab-case, 비즈니스 도메인과 기술 도메인을 구분 (예: `payment` vs `activerecord`)
+- **짧음보다 트리거 품질 우선:** 경량 인덱스에서 ID만 보여도 의미를 추론할 수 있는 이름을 우선한다. 조금 길더라도 자기 설명적인 이름이 짧지만 모호한 이름보다 낫다.
+- **경계 명확성:** 어떤 작업/파일이 이 도메인을 트리거해야 하고, 인접한 어떤 관심사는 제외되어야 하는지가 이름만으로도 어느 정도 드러나야 한다. `core`, `system`, `processing` 같은 이름은 저장소에서 이미 정밀한 의미를 갖는 경우가 아니라면 약하다.
+- **지속성 있는 용어:** 일시적인 구현 세부나 특정 단계 이름보다, 오래 유지될 책임/워크플로 용어를 우선한다.
+- **registry-aware reuse:** 정제 시 전체 active domain registry를 controlled vocabulary로 조회하고, 맞는 도메인이 있으면 먼저 재사용한 뒤 부족할 때만 새 도메인을 제안한다.
+- **개선 신호는 churn이 아니라 후속 정비로:** 기존 도메인 이름이나 범위가 완벽하지 않더라도 현재 배치에서 가장 가까운 도메인이라면 우선 재사용하고, merge/split/rename/scope cleanup 필요성은 후속 검토 신호로 남긴다.
+- **구조화된 후속 신호:** 이런 후속 신호가 서술형 기억에만 머물지 않도록, 추출 출력에 명시적 annotation을 담아 downstream report가 같은 내용을 결정적으로 요약할 수 있어야 한다.
 
 매 정제 배치 후 도메인 셋업에서 `domain-report` 결과를 참조하여 도메인 레지스트리와 `domain_paths` 패턴을 함께 검토·갱신한다.
 

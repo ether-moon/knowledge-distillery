@@ -211,6 +211,11 @@ PR change context (commit messages, review discussions, Linear issues)
 + Existing domain registry (domain_registry)
 + Path pattern reference (domain_paths)
     ↓
+  The extraction LLM first treats the registry as a controlled vocabulary,
+  reuses existing domains when they fit, and proposes new ones only when the
+  current registry lacks a clean boundary match. It also surfaces merge/split/
+  rename/scope-cleanup signals for later review.
+    ↓
   The extraction LLM makes a comprehensive judgment to assign domains
     e.g.: Payment service refactoring PR → domain: payment
     e.g.: AR callback failure fix PR → domain: payment, activerecord
@@ -221,6 +226,9 @@ PR change context (commit messages, review discussions, Linear issues)
     → LLM proposes {name, description, suggested_patterns}
     → Applied via knowledge-gate domain-add + domain-paths-set
     → Reviewed manually later if merge/deprecate/path cleanup is needed
+  When existing domains are reused but reveal naming/scope issues:
+    → LLM emits `_domain_maintenance` annotations
+    → Batch report summarizes merge/split/rename/scope-cleanup follow-up
 ```
 
 **Domain definition guidelines (included in the extraction prompt):**
@@ -228,6 +236,12 @@ PR change context (commit messages, review discussions, Linear issues)
 - **Granularity:** The unit at which a team makes independent decisions. "payment" is appropriate, but over-splitting into "payment-refund" and "payment-charge" should be avoided
 - **Cross-cutting concerns:** Rules not confined to a specific directory (security policies, testing practices, error handling, etc.) are classified as technical cross-cutting domains
 - **Naming convention:** Lowercase kebab-case, distinguishing business domains from technical domains (e.g., `payment` vs `activerecord`)
+- **Trigger quality over brevity:** Prefer domain names that remain understandable when shown as IDs alone in a lightweight index. Slightly longer but self-explanatory names are better than short ambiguous ones.
+- **Boundary clarity:** A domain name should make it reasonably clear which tasks/files should trigger it and which adjacent concerns should not. Names like `core`, `system`, or `processing` are weak unless the repository already gives them a precise meaning.
+- **Durable terminology:** Prefer stable responsibility/workflow terms over transient implementation details or one-off step names.
+- **Registry-aware reuse:** During refinement, the model should consult the full active domain registry as a controlled vocabulary, reusing existing domains whenever they fit before proposing a new one.
+- **Improvement signals, not churn:** If an existing domain is imperfect but still the closest fit, reuse it for the current batch and surface merge/split/rename/scope-cleanup suggestions as follow-up review signals rather than creating ad hoc replacement domains immediately.
+- **Structured follow-up:** Those follow-up signals should not live only in prose. The extraction output should carry explicit annotations so downstream reporting can summarize the same signals deterministically.
 
 After each refinement batch, the domain setup references `domain-report` results to review both the domain registry and `domain_paths` patterns. In the current PoC, those adjustments are performed manually.
 

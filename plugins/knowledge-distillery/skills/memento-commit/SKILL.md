@@ -74,24 +74,39 @@ MEMENTO_EOF
 echo "$SHA $(git log --format=%s -1)"
 ```
 
+After the commit+note command succeeds, push the notes ref so that the downstream pipeline (mark-evidence in CI) can access them:
+
+```bash
+PUSH_OUT=$(git push origin refs/notes/commits 2>&1) && echo "Notes push: synced to origin" || echo "FAILED — $PUSH_OUT"
+```
+
 - `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
 - `--force`: Ensures idempotency if rerun on the same SHA.
 - `--file=-`: Avoids shell quoting issues with multi-line markdown.
 - `refs/notes/commits`: Matches the ref that mark-evidence and collect-evidence expect.
+- `git push origin refs/notes/commits`: Pushes notes to remote. Without this, notes exist only locally and the CI pipeline (mark-evidence) cannot detect them. This is a separate Bash call because a push failure should not affect the commit result.
 
-If `git commit` fails (hooks, conflicts, empty), the chain stops — no note is attempted. If `git notes add` fails, the commit is preserved — report the note failure separately.
+If `git commit` fails (hooks, conflicts, empty), the chain stops — no note is attempted. If `git notes add` fails, the commit is preserved — report the note failure separately. If `git push` of notes fails, the commit and local note are preserved — report the push failure separately.
 
 ### Step 5: Report Result (no Bash)
 
 ```
 Committed: <sha> <first line of message>
 Memento:   attached to refs/notes/commits
+Notes push: synced to origin
 ```
 
 If note attachment failed:
 ```
 Committed: <sha> <first line of message>
 Memento:   FAILED — <reason>. Commit succeeded without session note.
+```
+
+If notes push failed:
+```
+Committed: <sha> <first line of message>
+Memento:   attached to refs/notes/commits
+Notes push: FAILED — <reason>. Run `git push origin refs/notes/commits` manually before merging.
 ```
 
 ---
@@ -157,6 +172,7 @@ For the complete extraction specification with examples, see `/knowledge-distill
 | Nothing to commit (clean working tree) | Report "Nothing to commit." Stop. |
 | `git commit` fails (hooks, conflicts, empty) | Report error. Do not proceed to note attachment. |
 | `git notes add` fails | Report error. Confirm the commit succeeded. |
+| `git push origin refs/notes/commits` fails | Report error. Confirm commit and note succeeded. Instruct user to push notes manually. |
 | Session context too minimal to summarize | Produce minimal summary (all "None" + one-sentence Context). |
 
 ## Constraints

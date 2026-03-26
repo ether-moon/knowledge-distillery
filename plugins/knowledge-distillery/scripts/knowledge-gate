@@ -216,8 +216,52 @@ domain_info() {
   "
 }
 
+resolve_directive_target() {
+  local repo_root="$1"
+
+  if [ -f "${repo_root}/CLAUDE.md" ] && grep -Fq "@AGENTS.md" "${repo_root}/CLAUDE.md"; then
+    printf '%s\n' "${repo_root}/AGENTS.md"
+    return
+  fi
+
+  if [ -f "${repo_root}/AGENTS.md" ]; then
+    printf '%s\n' "${repo_root}/AGENTS.md"
+    return
+  fi
+
+  printf '%s\n' "${repo_root}/CLAUDE.md"
+}
+
 domain_list() {
   local status_filter="${1:-active}"
+  local ids_only="${2:-false}"
+
+  if [ "$ids_only" = "true" ]; then
+    if [ "$status_filter" = "all" ]; then
+      sqlite3 "$VAULT" "
+        SELECT COALESCE(json_group_array(domain), '[]')
+        FROM (
+          SELECT dr.domain
+          FROM domain_registry dr
+          ORDER BY dr.status, dr.domain
+        );
+      "
+    else
+      local esc_status
+      esc_status="$(esc "$status_filter")"
+      sqlite3 "$VAULT" "
+        SELECT COALESCE(json_group_array(domain), '[]')
+        FROM (
+          SELECT dr.domain
+          FROM domain_registry dr
+          WHERE dr.status = '${esc_status}'
+          ORDER BY dr.domain
+        );
+      "
+    fi
+    return
+  fi
+
   if [ "$status_filter" = "all" ]; then
     sql_json "
       SELECT dr.domain, dr.description, dr.status,
@@ -917,10 +961,12 @@ doctor() {
     fail "batch-refine workflow is missing"
   fi
 
-  if [ -f "${repo_root}/CLAUDE.md" ] && grep -Fq "## Knowledge Vault" "${repo_root}/CLAUDE.md"; then
-    pass "CLAUDE.md contains the Knowledge Vault section"
+  local directive_target
+  directive_target="$(resolve_directive_target "$repo_root")"
+  if [ -f "$directive_target" ] && grep -Fq "## Knowledge Vault" "$directive_target"; then
+    pass "$(basename "$directive_target") contains the Knowledge Vault section"
   else
-    fail "CLAUDE.md is missing the Knowledge Vault section"
+    fail "Directive file is missing the Knowledge Vault section"
   fi
 
   if [ -f "${repo_root}/.gitignore" ] && grep -Fq ".knowledge/tmp/" "${repo_root}/.gitignore"; then
@@ -1323,13 +1369,15 @@ case "$CMD" in
     domain_info "$1" ;;
   domain-list)
     status_filter=""
+    ids_only="false"
     while [[ $# -gt 0 ]]; do
       case "$1" in
+        --ids-only) ids_only="true"; shift ;;
         --status) status_filter="$2"; shift 2 ;;
         *) status_filter="$1"; shift ;;
       esac
     done
-    domain_list "${status_filter:-active}" ;;
+    domain_list "${status_filter:-active}" "$ids_only" ;;
   domain-resolve-path)
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate domain-resolve-path <filepath>" >&2; exit 1; }
     domain_resolve_path "$1" ;;
@@ -1410,7 +1458,7 @@ case "$CMD" in
     echo ""
     echo "Domain Queries:"
     echo "  domain-info <domain>          Domain details (description, patterns, entry count)"
-    echo "  domain-list [--status X]      List domains (active|deprecated|all)"
+    echo "  domain-list [--status X] [--ids-only]  List domains or emit a lightweight domain ID index"
     echo "  domain-resolve-path <filepath> Reverse-lookup file path to domains"
     echo ""
     echo "Domain Management:"
