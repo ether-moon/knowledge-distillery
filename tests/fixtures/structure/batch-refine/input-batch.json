@@ -1,0 +1,105 @@
+{
+  "batch_date": "2026-03-24",
+  "prs": [
+    {
+      "number": 1234,
+      "title": "Refactor payment orchestration",
+      "outcome": "processed",
+      "changed_files": [
+        "app/services/payment/orchestrator.rb"
+      ],
+      "candidate_results": [
+        {
+          "candidate": {
+            "id": "payment-service-object-pattern",
+            "type": "fact",
+            "title": "Use Service Objects for Payment Flows",
+            "claim": "Use Service Objects for payment orchestration.",
+            "body": "## Background\nThe team agreed to move payment orchestration into a service layer.\n\n## Details\nRetries and external API coordination belong in service objects.\n",
+            "alternative": null,
+            "considerations": "Re-evaluate if orchestration moves to an event-driven pipeline.",
+            "applies_to": {
+              "domains": [
+                "payment"
+              ]
+            },
+            "evidence": [
+              {
+                "type": "pr",
+                "ref": "#1234"
+              }
+            ],
+            "_source_pr": 1234,
+            "_proposed_domain": [
+              {
+                "name": "billing-integration",
+                "description": "Billing provider integration rules",
+                "suggested_patterns": [
+                  "app/services/billing/"
+                ]
+              }
+            ]
+          },
+          "verdict": {
+            "candidate_id": "payment-service-object-pattern",
+            "verdict": "pass",
+            "rejection_codes": [],
+            "curation_queue_entry": {
+              "type": "conflict",
+              "related_id": "legacy-payment-controller-pattern",
+              "reason": "Conflicts with the older controller-centric payment rule."
+            },
+            "notes": "Passes with human review required."
+          }
+        },
+        {
+          "candidate": {
+            "id": "callback-api-shortcut",
+            "type": "anti-pattern",
+            "title": "Do Not Call APIs from Callbacks",
+            "claim": "MUST-NOT call external APIs from callbacks.",
+            "body": "## Background\nCallback-triggered API calls caused retry storms.\n\n## Details\nMove API calls to explicit services.\n\n## Rejected Alternatives\nRetrying inside callbacks kept failing.\n",
+            "alternative": "Use explicit services or jobs.",
+            "considerations": "Re-evaluate if callback isolation changes.",
+            "applies_to": {
+              "domains": [
+                "activerecord"
+              ]
+            },
+            "evidence": [
+              {
+                "type": "pr",
+                "ref": "#1234"
+              }
+            ],
+            "_source_pr": 1234
+          },
+          "verdict": {
+            "candidate_id": "callback-api-shortcut",
+            "verdict": "fail",
+            "rejection_codes": [
+              "R6_DUPLICATE"
+            ],
+            "curation_queue_entry": null,
+            "notes": "Semantically identical to existing entry no-ar-callback-api."
+          }
+        }
+      ]
+    },
+    {
+      "number": 1235,
+      "title": "Capture missing evidence bundle",
+      "outcome": "insufficient",
+      "missing": [
+        "manifest"
+      ],
+      "reason": "No Evidence Bundle Manifest comment found on PR #1235."
+    },
+    {
+      "number": 1236,
+      "title": "Attempted refinement with flaky Linear context",
+      "outcome": "failed",
+      "error": "extract-candidates subagent crashed"
+    }
+  ]
+}

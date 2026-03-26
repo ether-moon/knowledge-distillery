@@ -1,0 +1,135 @@
+{
+  "name": "curate-report orchestration regression harness",
+  "documents": {
+    "curate_report_skill": "plugins/knowledge-distillery/skills/curate-report/SKILL.md",
+    "curate_report_workflow": ".github/workflows/curate-report.yml"
+  },
+  "scenarios": [
+    {
+      "id": "report-pr-branch-is-required",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "- **Validate**: branch starts with `knowledge/batch-` — if not, post a comment \"This is not a Report PR. Curation is only available on knowledge/batch-* branches.\" and exit"
+        },
+        {
+          "doc": "curate_report_workflow",
+          "contains": "if (!branch.startsWith('knowledge/batch-')) {"
+        }
+      ]
+    },
+    {
+      "id": "operate-on-pr-branch-and-changeset-only",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST operate on the PR branch, not main"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST NOT modify vault.db — all changes go to the changeset file"
+        },
+        {
+          "doc": "curate_report_workflow",
+          "contains": "Do NOT modify vault.db directly — operate on the changeset file only."
+        }
+      ]
+    },
+    {
+      "id": "whitelist-guards-batch-scope",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "Parse the \"Accepted Entries\" table from the PR body to build the **entry ID whitelist** — only these entries may be modified"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "- Entry IDs must match the whitelist from Step 1. If a comment references an entry not in this batch, classify as UNRESOLVED with note \"Entry not in this batch\""
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST NOT modify entries that are not in this batch's whitelist"
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-feedback-is-never-guessed",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "| **UNRESOLVED** | Ambiguous, unclear reference, contradictory | Flag for human clarification |"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST treat ambiguous feedback as UNRESOLVED rather than guessing"
+        }
+      ]
+    },
+    {
+      "id": "report-and-pr-body-are-regenerated-after-actions",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "ordered_contains": [
+            "### Step 6: Execute Update Actions",
+            "### Step 7: Regenerate Batch Report",
+            "### Step 8: Commit and Push",
+            "### Step 9: Post Summary Comment"
+          ]
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Also update the PR body's \"Summary\" table metrics (accepted count, etc.) to reflect the new state. Use GitHub MCP to update the PR body."
+        }
+      ]
+    },
+    {
+      "id": "summary-comment-is-always-posted",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST post a summary comment after each curation run"
+        },
+        {
+          "doc": "curate_report_workflow",
+          "contains": "update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary."
+        }
+      ]
+    },
+    {
+      "id": "partial-failures-do-not-block-remaining-actions",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST handle partial failures (one failed action does not block others)"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "| Single reject/update fails | Log error, continue with remaining actions, report failure in summary |"
+        }
+      ]
+    },
+    {
+      "id": "no-actionable-feedback-has-a-stable-no-changes-path",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "| No actionable feedback | Post \"no changes\" comment, exit |"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "## Curation Complete — No Changes"
+        }
+      ]
+    },
+    {
+      "id": "curation-never-auto-merges",
+      "checks": [
+        {
+          "doc": "curate_report_skill",
+          "contains": "- MUST NOT auto-merge the PR"
+        }
+      ]
+    }
+  ]
+}

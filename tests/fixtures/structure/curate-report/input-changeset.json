@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-24",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "payment-service-object-pattern",
+        "type": "fact",
+        "title": "Use Service Objects for Payment Flows",
+        "claim": "Use Service Objects for payment orchestration.",
+        "body": "## Background\nThe team agreed that payment orchestration should stay out of controllers.\n\n## Details\nService Objects coordinate retries and external calls.\n",
+        "alternative": null,
+        "considerations": "Re-evaluate if payment orchestration becomes event-driven.",
+        "applies_to": {
+          "domains": ["payment"]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#1234"
+          }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "no-api-in-callbacks",
+        "type": "anti-pattern",
+        "title": "Do Not Call APIs in Callbacks",
+        "claim": "MUST-NOT call external APIs from ActiveRecord callbacks.",
+        "body": "## Background\nA retry storm started from callback-driven API calls.\n\n## Details\nUse explicit service boundaries for external IO.\n\n## Rejected Alternatives\nRetrying inside callbacks kept failing silently.\n",
+        "alternative": "Use a service object or background job outside the callback lifecycle.",
+        "considerations": "None identified from current evidence. Re-evaluate if callbacks become async-safe.",
+        "applies_to": {
+          "domains": ["activerecord"]
+        },
+        "evidence": [
+          {
+            "type": "pr",
+            "ref": "#1235"
+          }
+        ]
+      }
+    }
+  ]
+}

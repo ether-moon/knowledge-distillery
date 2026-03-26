@@ -1,0 +1,123 @@
+{
+  "name": "batch-refine orchestration regression harness",
+  "documents": {
+    "batch_refine_skill": "plugins/knowledge-distillery/skills/batch-refine/SKILL.md",
+    "collect_evidence_skill": "plugins/knowledge-distillery/skills/collect-evidence/SKILL.md",
+    "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
+    "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
+    "batch_refine_workflow": ".github/workflows/batch-refine.yml"
+  },
+  "scenarios": [
+    {
+      "id": "no-pending-prs-short-circuit",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**If no results:** Log \"No pending PRs\" and exit 0. Do NOT create a branch, commit, or PR."
+        }
+      ]
+    },
+    {
+      "id": "per-pr-stage-sequence-is-stable",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "1. **`/knowledge-distillery:collect-evidence`** with the PR number → Evidence Bundle",
+            "2. **`/knowledge-distillery:extract-candidates`** with the Evidence Bundle → Candidate array",
+            "3. **`/knowledge-distillery:quality-gate`** with the Candidate array → Verdict array"
+          ]
+        },
+        {
+          "doc": "extract_candidates_skill",
+          "contains": "If the Evidence Bundle has `sufficiency.verdict == \"insufficient\"`, return an empty array immediately."
+        },
+        {
+          "doc": "quality_gate_skill",
+          "contains": "If the candidate array is empty, return an empty verdict array immediately. This is not an error."
+        }
+      ]
+    },
+    {
+      "id": "partial-failures-do-not-stop-the-batch",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**Partial failure handling:** One PR's failure MUST NOT block remaining PRs. Log the error and continue."
+        }
+      ]
+    },
+    {
+      "id": "insufficient-evidence-remains-pending",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "1. Keep the PR labeled `knowledge:pending`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "2. Record in report under \"Insufficient Evidence\" section"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "On insufficient evidence: leave label as 'knowledge:pending' and report the reason."
+        }
+      ]
+    },
+    {
+      "id": "changesets-not-direct-vault-writes",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Entries are NOT inserted into vault.db at this stage — they are recorded in a changeset that will be applied after the Report PR is merged."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up."
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Do NOT modify vault.db directly — the changeset will be applied on merge."
+        }
+      ]
+    },
+    {
+      "id": "report-pr-precedes-label-transition",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "### Step 8: Create Report PR",
+            "### Step 9: Label Transitions for Processed PRs"
+          ]
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**After** Report PR creation (to prevent orphaned label state):"
+        }
+      ]
+    },
+    {
+      "id": "report-is-still-generated-with-zero-accepted-entries",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**Always** generate `.knowledge/reports/batch-YYYY-MM-DD.md` — even with 0 accepted candidates. This guarantees a git diff for the Report PR."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-stays-read-only",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "No file writes. No vault.db access. No `knowledge-gate` CLI."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "MUST NOT create, modify, or delete any GitHub resources (comments, labels, PRs). Read operations only."
+        }
+      ]
+    }
+  ]
+}
