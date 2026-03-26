@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.2] - 2026-03-26
+
+### Added
+
+- **test**: Add shell/jq regression harnesses for knowledge-gate, batch-refine, and curate-report
+- **workflow**: Add CI workflow for running the local regression harness stack on PRs and pushes to main
+
+### Fixed
+
+- **test**: Harden skill orchestration harness validation for malformed checks and ordered-match failures under strict shell options
+
 ## [0.1.1] - 2026-03-24
 
 ### Added
