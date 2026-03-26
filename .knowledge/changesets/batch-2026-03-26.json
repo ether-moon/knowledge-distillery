@@ -27,6 +27,7 @@
     },
     {
       "status": "rejected",
+      "rejection_reason": "Already codified in CLAUDE.md/AGENTS.md Memento section and auto-memory. Directly derivable from current artifacts with no residual value.",
       "data": {
         "id": "memento-commit-mandatory-over-bare-git",
         "type": "fact",
@@ -46,11 +47,11 @@
             "ref": "#20"
           }
         ]
-      },
-      "reject_reason": "Already codified in CLAUDE.md/AGENTS.md Memento section and auto-memory. Directly derivable from current artifacts with no residual value."
+      }
     },
     {
       "status": "rejected",
+      "rejection_reason": "Describes a CLI feature directly derivable from code and --help output. No residual value beyond what reading the implementation provides.",
       "data": {
         "id": "domain-list-ids-only-lightweight-index",
         "type": "fact",
@@ -75,8 +76,7 @@
             "ref": "f1a7247"
           }
         ]
-      },
-      "reject_reason": "Describes a CLI feature directly derivable from code and --help output. No residual value beyond what reading the implementation provides."
+      }
     },
     {
       "status": "accepted",
@@ -109,6 +109,7 @@
     },
     {
       "status": "rejected",
+      "rejection_reason": "Procedure fully codified in extract-candidates SKILL.md checklist items 10-12. Directly derivable from current artifacts.",
       "data": {
         "id": "refinement-reuses-domain-registry",
         "type": "fact",
@@ -133,11 +134,11 @@
             "ref": "f1a7247"
           }
         ]
-      },
-      "reject_reason": "Procedure fully codified in extract-candidates SKILL.md checklist items 10-12. Directly derivable from current artifacts."
+      }
     },
     {
       "status": "rejected",
+      "rejection_reason": "Schema and contract fully documented in extract-candidates SKILL.md _domain_maintenance section. Directly derivable from current artifacts.",
       "data": {
         "id": "domain-maintenance-annotation-structured",
         "type": "fact",
@@ -162,8 +163,7 @@
             "ref": "f1a7247"
           }
         ]
-      },
-      "reject_reason": "Schema and contract fully documented in extract-candidates SKILL.md _domain_maintenance section. Directly derivable from current artifacts."
+      }
     }
   ]
 }
