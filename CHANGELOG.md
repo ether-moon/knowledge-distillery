@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- **hook**: Fix plugin hook load error by adding required top-level `hooks` key wrapper to hooks.json
+- **hook**: Fix plugin hook load error by removing explicit `hooks` manifest reference (convention-based auto-load)
 
 ## [0.1.2] - 2026-03-26
 

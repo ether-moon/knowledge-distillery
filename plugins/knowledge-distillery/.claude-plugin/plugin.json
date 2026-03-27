@@ -4,6 +4,5 @@
   "version": "0.1.3",
   "author": {
     "name": "ether-moon"
-  },
-  "hooks": "./hooks/hooks.json"
+  }
 }
