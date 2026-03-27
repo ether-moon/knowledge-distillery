@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-03-27
+
+### Fixed
+
+- **hook**: Fix plugin hook load error by adding required top-level `hooks` key wrapper to hooks.json
+
 ## [0.1.2] - 2026-03-26
 
 ### Added
