@@ -81,7 +81,11 @@ jobs:
             Use skill /knowledge-distillery:batch-refine.
             Find all PRs with 'knowledge:pending' label,
             collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
-            write accepted entries to a changeset file (.knowledge/changesets/).
+            write accepted entries to a changeset file.
+            Naming conventions (MUST follow exactly):
+            - Report branch: knowledge/batch-YYYY-MM-DD (e.g. knowledge/batch-2026-03-27)
+            - Changeset file: .knowledge/changesets/batch-YYYY-MM-DD.json
+            - Only entries with .entries[].status == "accepted" are included
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.

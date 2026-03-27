@@ -94,3 +94,6 @@ temp/
 # Knowledge Distillery — vault is committed as binary, reports are committed
 # Only ignore temporary/working files
 .knowledge/tmp/
+
+# Dynamic MCP config — contains secrets at runtime, must never be committed
+.mcp.json
