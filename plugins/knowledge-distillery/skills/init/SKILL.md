@@ -218,7 +218,11 @@ jobs:
             Use skill /knowledge-distillery:batch-refine.
             Find all PRs with 'knowledge:pending' label,
             collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
-            write accepted entries to a changeset file (.knowledge/changesets/).
+            write accepted entries to a changeset file.
+            Naming conventions (MUST follow exactly):
+            - Report branch: knowledge/batch-YYYY-MM-DD (e.g. knowledge/batch-2026-03-27)
+            - Changeset file: .knowledge/changesets/batch-YYYY-MM-DD.json
+            - Only entries with .entries[].status == "accepted" are included
             On success: update label to 'knowledge:collected'.
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
@@ -247,7 +251,8 @@ jobs:
   curate-report:
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/curate')
+      contains(github.event.comment.body, '/curate') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -367,8 +372,13 @@ jobs:
 
       - name: Extract batch date from branch name
         id: batch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
+          if [[ ! "$BRANCH" =~ ^knowledge/batch-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$ ]]; then
+            echo "::error::Unexpected branch format: ${BRANCH}"
+            exit 1
+          fi
           DATE="${BRANCH#knowledge/batch-}"
           echo "date=${DATE}" >> "$GITHUB_OUTPUT"
           echo "Batch date: ${DATE}"
@@ -462,6 +472,9 @@ If `.gitignore` does not exist, create it. Check if `.knowledge/` related entrie
 # Knowledge Distillery — vault is committed as binary, reports are committed
 # Only ignore temporary/working files
 .knowledge/tmp/
+
+# Dynamic MCP config — contains secrets at runtime, must never be committed
+.mcp.json
 ```
 
 Note: `.knowledge/vault.db` and `.knowledge/reports/` are intentionally NOT gitignored — they are committed to the repository. Only temporary working files are ignored.
