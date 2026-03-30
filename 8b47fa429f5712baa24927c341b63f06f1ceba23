@@ -1,0 +1,17 @@
+## Decisions Made
+- Self-evident rationale은 Q2 residual value로 인정하지 않기로 결정: 코드 패턴에서 추론 가능한 "왜"(input validation → injection 방지, fail-fast → silent failure 방지 등)는 vault에 저장할 가치가 없다
+- Q2=yes 기준을 "genuinely non-obvious context"로 강화: 과거 인시던트, 비자명한 트레이드오프, 외부 정책 제약, 직관에 반하는 경계 조건만 해당
+
+## Problems Encountered
+- PR #30에서 8개 entry가 모두 accepted되었으나 대부분 코드에 이미 구현된 동작을 재기술한 것: Q2 테스트가 ANY rationale을 residual value로 인정하여 발생
+- 이전 batch(2026-03-26)에서 R7 rejection이 있었으나 기준이 충분히 엄격하지 않아 재발
+
+## Constraints Identified
+- extract-candidates 4d가 primary filter(artifact inspection 가능), quality-gate R7은 secondary smell test(heuristic만 가능): 두 곳 모두 강화해야 효과적
+- "git log/blame으로 추적 가능"은 여전히 reject 사유가 아님: 커밋 히스토리에 묻힌 rationale은 vault가 표면화해야 할 대상
+
+## Open Questions
+- PR #30의 8개 entry 중 genuinely non-obvious한 것이 있는지 재평가 필요
+
+## Context
+PR #30 리뷰에서 코드에 이미 내포된 정보가 vault entry로 추가되는 재발 문제를 해결. extract-candidates SKILL.md의 criterion 4d와 quality-gate SKILL.md의 R7 섹션을 수정하여 4가지 false residual value 카테고리(pattern-inherent, standard practice, intent visible in code, behavior+obvious purpose)를 명시하고 구체적 skip 예시 5개를 추가. decision 파일도 함께 기록.
