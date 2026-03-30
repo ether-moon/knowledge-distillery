@@ -114,8 +114,40 @@ init_db() {
 # ============================================================
 
 query_by_path() {
-  local filepath
+  local filepath ids_only
   filepath="$(esc "$1")"
+  ids_only="${2:-false}"
+
+  if [ "$ids_only" = "true" ]; then
+    sqlite3 "$VAULT" "
+      PRAGMA foreign_keys = ON;
+      WITH RECURSIVE prefixes(p, rest) AS (
+        SELECT '', '${filepath}' || '/'
+        UNION ALL
+        SELECT p || substr(rest, 1, instr(rest, '/')),
+               substr(rest, instr(rest, '/') + 1)
+        FROM prefixes WHERE rest <> '' AND instr(rest, '/') > 0
+      ), filepath_prefixes AS (
+        SELECT p AS prefix FROM prefixes WHERE p <> ''
+      ), matched_domains AS (
+        SELECT dp.domain FROM domain_paths dp
+        JOIN filepath_prefixes fp ON fp.prefix = dp.pattern
+        UNION
+        SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '*'
+      )
+      SELECT COALESCE(json_group_array(id), '[]')
+      FROM (
+        SELECT DISTINCT e.id
+        FROM entries e
+        JOIN entry_domains ed ON ed.entry_id = e.id
+        WHERE e.status = 'active'
+          AND ed.domain IN (SELECT domain FROM matched_domains)
+        ORDER BY e.title
+      );
+    "
+    return
+  fi
+
   sql_json "
     PRAGMA foreign_keys = ON;
     WITH RECURSIVE prefixes(p, rest) AS (
@@ -132,32 +164,69 @@ query_by_path() {
       UNION
       SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '*'
     )
-    SELECT DISTINCT e.id, e.type, e.claim, e.alternative, e.considerations
+    SELECT DISTINCT e.id, e.type, e.title, e.claim
     FROM entries e
     JOIN entry_domains ed ON ed.entry_id = e.id
     WHERE e.status = 'active'
-      AND ed.domain IN (SELECT domain FROM matched_domains);
+      AND ed.domain IN (SELECT domain FROM matched_domains)
+    ORDER BY e.title;
   "
 }
 
 query_by_domain() {
-  local domain
+  local domain ids_only
   domain="$(esc "$1")"
+  ids_only="${2:-false}"
+
+  if [ "$ids_only" = "true" ]; then
+    sqlite3 "$VAULT" "
+      PRAGMA foreign_keys = ON;
+      SELECT COALESCE(json_group_array(id), '[]')
+      FROM (
+        SELECT DISTINCT e.id
+        FROM entries e
+        JOIN entry_domains ed ON ed.entry_id = e.id
+        WHERE e.status = 'active'
+          AND ed.domain = '${domain}'
+        ORDER BY e.title
+      );
+    "
+    return
+  fi
+
   sql_json "
     PRAGMA foreign_keys = ON;
-    SELECT DISTINCT e.id, e.type, e.claim, e.alternative, e.considerations
+    SELECT DISTINCT e.id, e.type, e.title, e.claim
     FROM entries e
     JOIN entry_domains ed ON ed.entry_id = e.id
     WHERE e.status = 'active'
-      AND ed.domain = '${domain}';
+      AND ed.domain = '${domain}'
+    ORDER BY e.title;
   "
 }
 
 search_entries() {
-  local keyword
+  local keyword ids_only
   keyword="$(esc "${1//\"/\"\"}")"
+  ids_only="${2:-false}"
+
+  if [ "$ids_only" = "true" ]; then
+    sqlite3 "$VAULT" "
+      SELECT COALESCE(json_group_array(id), '[]')
+      FROM (
+        SELECT e.id
+        FROM entries_fts fts
+        JOIN entries e ON e.rowid = fts.rowid
+        WHERE entries_fts MATCH '\"${keyword}\"'
+          AND e.status = 'active'
+        ORDER BY fts.rank
+      );
+    "
+    return
+  fi
+
   sql_json "
-    SELECT e.id, e.type, e.claim, e.alternative
+    SELECT e.id, e.type, e.title, e.claim
     FROM entries_fts fts
     JOIN entries e ON e.rowid = fts.rowid
     WHERE entries_fts MATCH '\"${keyword}\"'
@@ -166,26 +235,103 @@ search_entries() {
   "
 }
 
-get_entry() {
-  local item_id
-  item_id="$(esc "$1")"
+get_entries() {
+  local item_ids=("$@")
+
+  [ "${#item_ids[@]}" -gt 0 ] || { echo "[]"; return; }
+
+  local requested_values="" item_id index requested_sql
+  for index in "${!item_ids[@]}"; do
+    item_id="$(esc "${item_ids[$index]}")"
+    if [ -n "$requested_values" ]; then
+      requested_values="${requested_values}, "
+    fi
+    requested_values="${requested_values}('${item_id}', $((index + 1)))"
+  done
+
+  requested_sql="WITH requested(id, position) AS (VALUES ${requested_values})"
+
+  # Fail fast if any requested ID is missing from the vault
+  local missing
+  missing=$(sqlite3 "$VAULT" "
+    ${requested_sql}
+    SELECT GROUP_CONCAT(r.id, ', ')
+    FROM requested r
+    LEFT JOIN entries e ON e.id = r.id
+    WHERE e.id IS NULL;
+  ")
+  if [ -n "$missing" ]; then
+    echo "ERROR: entry IDs not found: ${missing}" >&2
+    return 1
+  fi
 
   # If jq is available, return enriched JSON with domains and evidence
   if command -v jq &>/dev/null; then
-    local entry domains evidence
-    entry=$(sql_json "SELECT * FROM entries WHERE id = '${item_id}';")
-    domains=$(sql_json "SELECT domain FROM entry_domains WHERE entry_id = '${item_id}';")
-    evidence=$(sql_json "SELECT type, ref FROM evidence WHERE entry_id = '${item_id}';")
+    local entries domains evidence
+    entries=$(sql_json "
+      ${requested_sql}
+      SELECT e.*, r.position
+      FROM requested r
+      JOIN entries e ON e.id = r.id
+      ORDER BY r.position;
+    ")
+    domains=$(sql_json "
+      ${requested_sql}
+      SELECT ed.entry_id, ed.domain, r.position
+      FROM requested r
+      JOIN entry_domains ed ON ed.entry_id = r.id
+      ORDER BY r.position, ed.domain;
+    ")
+    evidence=$(sql_json "
+      ${requested_sql}
+      SELECT ev.entry_id, ev.type, ev.ref, r.position
+      FROM requested r
+      JOIN evidence ev ON ev.entry_id = r.id
+      ORDER BY r.position, ev.type, ev.ref;
+    ")
 
-    echo "$entry" | jq --argjson domains "$domains" --argjson evidence "$evidence" \
-      'if length == 0 then [] else [.[0] + {domains: ($domains | map(.domain)), evidence: $evidence}] end'
+    jq -n --argjson entries "$entries" --argjson domains "$domains" --argjson evidence "$evidence" '
+      $entries
+      | map(
+          . as $entry
+          | ($entry + {
+              domains: ($domains | map(select(.entry_id == $entry.id) | .domain)),
+              evidence: ($evidence | map(select(.entry_id == $entry.id) | {type, ref}))
+            } | del(.position))
+        )
+    '
   else
-    sql_json "SELECT * FROM entries WHERE id = '${item_id}';"
+    sql_json "
+      ${requested_sql}
+      SELECT e.*
+      FROM requested r
+      JOIN entries e ON e.id = r.id
+      ORDER BY r.position;
+    "
   fi
 }
 
+get_entry() {
+  get_entries "$1"
+}
+
 list_entries() {
-  sql_json "SELECT id, type, claim FROM entries WHERE status = 'active'"
+  local ids_only="${1:-false}"
+
+  if [ "$ids_only" = "true" ]; then
+    sqlite3 "$VAULT" "
+      SELECT COALESCE(json_group_array(id), '[]')
+      FROM (
+        SELECT id
+        FROM entries
+        WHERE status = 'active'
+        ORDER BY title
+      );
+    "
+    return
+  fi
+
+  sql_json "SELECT id, type, title, claim FROM entries WHERE status = 'active' ORDER BY title"
 }
 
 # ============================================================
@@ -1349,19 +1495,56 @@ esac
 case "$CMD" in
   # Knowledge Query Commands
   query-paths)
-    [ $# -ge 1 ] || { echo "Usage: knowledge-gate query-paths <filepath>" >&2; exit 1; }
-    query_by_path "$1" ;;
+    ids_only="false"
+    filepath=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate query-paths [--ids-only] <filepath>" >&2; exit 1 ;;
+        *) filepath="$1"; shift ;;
+      esac
+    done
+    [ -n "$filepath" ] || { echo "Usage: knowledge-gate query-paths [--ids-only] <filepath>" >&2; exit 1; }
+    query_by_path "$filepath" "$ids_only" ;;
   query-domain)
-    [ $# -ge 1 ] || { echo "Usage: knowledge-gate query-domain <domain>" >&2; exit 1; }
-    query_by_domain "$1" ;;
+    ids_only="false"
+    domain=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate query-domain [--ids-only] <domain>" >&2; exit 1 ;;
+        *) domain="$1"; shift ;;
+      esac
+    done
+    [ -n "$domain" ] || { echo "Usage: knowledge-gate query-domain [--ids-only] <domain>" >&2; exit 1; }
+    query_by_domain "$domain" "$ids_only" ;;
   search)
-    [ $# -ge 1 ] || { echo "Usage: knowledge-gate search <keyword>" >&2; exit 1; }
-    search_entries "$1" ;;
+    ids_only="false"
+    keyword=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate search [--ids-only] <keyword>" >&2; exit 1 ;;
+        *) keyword="$1"; shift ;;
+      esac
+    done
+    [ -n "$keyword" ] || { echo "Usage: knowledge-gate search [--ids-only] <keyword>" >&2; exit 1; }
+    search_entries "$keyword" "$ids_only" ;;
   get)
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate get <id>" >&2; exit 1; }
     get_entry "$1" ;;
+  get-many)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate get-many <id>..." >&2; exit 1; }
+    get_entries "$@" ;;
   list)
-    list_entries ;;
+    ids_only="false"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --ids-only) ids_only="true"; shift ;;
+        *) echo "Usage: knowledge-gate list [--ids-only]" >&2; exit 1 ;;
+      esac
+    done
+    list_entries "$ids_only" ;;
 
   # Domain Query Commands
   domain-info)
@@ -1450,11 +1633,12 @@ case "$CMD" in
     echo "Usage: knowledge-gate <command> [arguments]"
     echo ""
     echo "Agent Runtime Commands:"
-    echo "  query-paths <filepath>        Query rules by file path (resolves domains automatically)"
-    echo "  query-domain <domain>         Query rules by domain name"
-    echo "  search <keyword>              FTS5 full-text keyword search"
+    echo "  query-paths [--ids-only] <filepath>  Query rules by file path (summary index by default)"
+    echo "  query-domain [--ids-only] <domain>   Query rules by domain name (summary index by default)"
+    echo "  search [--ids-only] <keyword>        FTS5 full-text keyword search (summary index by default)"
     echo "  get <id>                      Get full entry details (including body)"
-    echo "  list                          List all active entries (exploration/keyword discovery)"
+    echo "  get-many <id>...              Get full details for multiple entries in one call"
+    echo "  list [--ids-only]             List all active entries (summary index by default)"
     echo ""
     echo "Domain Queries:"
     echo "  domain-info <domain>          Domain details (description, patterns, entry count)"

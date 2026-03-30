@@ -360,23 +360,27 @@ description: Queries related rules from the knowledge vault before code modifica
 ## Query Protocol
 
 ### When modifying a single file
+# Returns a lightweight summary index by default
 knowledge-gate query-paths "<file path to modify>"
 
 ### When modifying multiple files (PR-scale changes)
 # 1. Identify related domains (a few representative files suffice)
 knowledge-gate domain-resolve-path "<file path>"
-# 2. Query rules by domain (efficient, no duplicates)
+# 2. Query rules by domain (efficient, no duplicates; summary index by default)
 knowledge-gate query-domain "<domain name>"
 
 ### Search by keyword (when path matching yields no results)
+# Returns a lightweight summary index by default
 knowledge-gate search "<keyword>"
 
 ### When detailed rule inspection is needed
 knowledge-gate get "<entry ID>"
+knowledge-gate get-many "<entry ID 1>" "<entry ID 2>"
 
 ### When the domain/keyword is unknown (exploration reference)
+knowledge-gate domain-list --ids-only
 knowledge-gate list
-# -> Summary list of all active entries. Identify relevant domains or keywords here,
+# -> Lightweight navigation indexes. Identify relevant domains or keywords here,
 #    then perform precise queries with query-paths / query-domain / search
 
 ### Domain lookup

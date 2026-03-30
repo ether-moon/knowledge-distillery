@@ -32,6 +32,7 @@ If the CLI or vault is not available, inform the user: "Knowledge vault not conf
 ### Modifying a single file
 
 ```bash
+# Returns a lightweight summary index by default
 GATE query-paths "<filepath>"
 ```
 
@@ -43,22 +44,24 @@ Resolve domains first to avoid duplicate queries:
 # 1. Resolve each file to its domain(s) -- a few representative files suffice
 GATE domain-resolve-path "<filepath>"
 
-# 2. Deduplicate the resolved domains, then query each one
+# 2. Deduplicate the resolved domains, then query each one (summary index by default)
 GATE query-domain "<domain>"
 ```
 
 ### Investigating a topic or concept
 
 ```bash
+# Returns a lightweight summary index by default
 GATE search "<keyword>"
 ```
 
 ### Getting full details for an entry
 
-When a query returns an entry ID and you need the complete body:
+When a query returns entry IDs and you need the complete body:
 
 ```bash
 GATE get "<id>"
+GATE get-many "<id-1>" "<id-2>" ...
 ```
 
 ### Exploring what knowledge exists
@@ -69,7 +72,7 @@ When the relevant domain or keyword is unknown:
 # Load a lightweight navigation-only domain index
 GATE domain-list --ids-only
 
-# Browse all active entries
+# Browse all active entries as a summary index
 GATE list
 
 # Browse full domain metadata only when needed
@@ -89,7 +92,7 @@ GATE domain-info "<domain>"
 
 ### 1. Query once before planning
 
-When the hook reminder fires and the task involves code changes, query relevant paths or domains before you start planning. One round of queries per task is sufficient -- you do not need to re-query before each individual file edit.
+When the hook reminder fires and the task involves code changes, query relevant paths or domains before you start planning. Prefer one broad summary-index query for the task, then fetch full bodies only for the specific entry IDs you need with `get` or `get-many`. You do not need to re-query before each individual file edit.
 
 ### 2. Respect MUST / MUST-NOT claims
 
@@ -148,6 +151,7 @@ User asks: "Refactor the batch-refine pipeline to support parallel PR processing
    GATE domain-resolve-path "plugins/knowledge-distillery/skills/batch-refine/SKILL.md"
    # → domain: distillation-pipeline
    GATE query-domain "distillation-pipeline"
+   GATE get-many "pipeline-stage-order" "parallelism-boundary"
    ```
 3. Vault returns an entry:
    ```
