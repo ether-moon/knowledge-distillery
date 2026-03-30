@@ -16,7 +16,7 @@ Replaces the default commit workflow when the knowledge-distillery plugin is ins
 
 ## Allowed Tools
 
-`Bash` (git commands only). No file writes, no MCP servers, no vault access.
+`Bash` (git commands only), `Read` (for reading `tmp/vault-refs.jsonl`). No other file writes, no MCP servers, no vault access.
 
 ## Execution Steps
 
@@ -36,6 +36,10 @@ Parse into 5 sections:
    - New untracked files (lines starting with `??`): include UNLESS they match sensitive patterns (`.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`)
    - If excluding any untracked files, note them for the user
 
+Also gather session metadata for memento sections 6-7:
+- Read `tmp/vault-refs.jsonl` (if it exists) to identify vault entries used this session
+- Check git log for any `decision:` prefix commits on the current branch from this session
+
 **Exit if:** Status is empty. Report "Nothing to commit." and stop.
 
 ### Step 2: Generate Commit Message (no Bash)
@@ -50,7 +54,9 @@ Parse into 5 sections:
 
 Reflect on the **current session** — what was discussed, decided, and encountered — NOT just the diff. The diff is the "what changed"; the memento is the "why and how it was decided."
 
-Generate a summary following the format and rules in [Memento Summary Format](#memento-summary-format) below.
+Generate a 7-section summary following the format and rules in [Memento Summary Format](#memento-summary-format) below. For sections 6-7:
+- **Recorded Decisions**: Reference `decision:` prefix commits found in Step 1 by slug and SHA. If none, use "None".
+- **Vault Entries Referenced**: Use `tmp/vault-refs.jsonl` entries from Step 1 combined with your assessment of how each entry was used (followed/outdated/conflicted/insufficient). If none, use "None".
 
 For trivial changes (typo fixes, formatting, single-line changes with no technical decisions): produce a minimal summary with "None" in all sections except Context.
 
@@ -78,6 +84,12 @@ After the commit+note command succeeds, push the notes ref so that the downstrea
 
 ```bash
 PUSH_OUT=$(git push origin refs/notes/commits 2>&1) && echo "Notes push: synced to origin" || echo "FAILED — $PUSH_OUT"
+```
+
+After the notes push, clear the vault-refs tmp file (best-effort, unconditional):
+
+```bash
+rm -f tmp/vault-refs.jsonl 2>/dev/null || true
 ```
 
 - `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
@@ -113,7 +125,7 @@ Notes push: FAILED — <reason>. Run `git push origin refs/notes/commits` manual
 
 ## Memento Summary Format
 
-The summary MUST follow this exact 5-section markdown structure. All five sections are required. Use "None" as a single item for any empty section.
+The summary MUST follow this exact 7-section markdown structure. All seven sections are required. Use "None" as a single item for any empty section.
 
 ```markdown
 ## Decisions Made
@@ -130,6 +142,14 @@ The summary MUST follow this exact 5-section markdown structure. All five sectio
 
 ## Context
 [2-4 sentence paragraph: what was being done, key files, outcome]
+
+## Recorded Decisions
+[If record-decision commits were made this session, list slug and SHA. Otherwise "None"]
+- `slug` (sha1234): Brief description
+
+## Vault Entries Referenced
+[If vault entries were used this session, list each with a signal. Otherwise "None"]
+- `entry-id` [signal]: How the entry related to this session's work
 ```
 
 ### Extraction Rules
@@ -152,6 +172,16 @@ The summary MUST follow this exact 5-section markdown structure. All five sectio
 
 **Context** — 2-4 sentence paragraph:
 - Session goal, key files/modules involved, outcome (completed/partial/blocked)
+
+**Recorded Decisions** — Decision commits from this session:
+- Reference `decision:` prefix commits by slug and SHA from git log
+- If no decision commits were made, use "None"
+
+**Vault Entries Referenced** — Vault entries that influenced this session:
+- Source: `tmp/vault-refs.jsonl` + your assessment of usage signal
+- Signals: `followed` (applied), `outdated` (stale), `conflicted` (contradicted), `insufficient` (incomplete)
+- Only list entries that influenced decisions, not every query result
+- If no vault entries were referenced, use "None"
 
 ### Formatting Rules
 
@@ -179,6 +209,6 @@ For the complete extraction specification with examples, see `/knowledge-distill
 
 - MUST NOT depend on the git-memento binary — uses `git notes` directly
 - MUST use `refs/notes/commits` as the notes ref (pipeline compatibility)
-- MUST produce all 5 sections in the memento summary (even if all are "None")
+- MUST produce all 7 sections in the memento summary (even if all are "None")
 - MUST NOT block on note failure — the commit is the primary deliverable
 - MUST match the language and style of recent commits for the commit message

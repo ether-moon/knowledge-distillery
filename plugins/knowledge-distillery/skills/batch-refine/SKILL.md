@@ -101,7 +101,8 @@ mkdir -p .knowledge/changesets
         "evidence": [{"type": "pr", "ref": "#1234"}],
         "curation": [{"related_id": "existing-id", "reason": "conflict description"}],
         "_proposed_domain": [{"name": "new-domain", "description": "...", "suggested_patterns": ["src/module/"]}],
-        "_domain_maintenance": [{"domain": "pipeline", "issue": "too-broad", "suggestion": "split", "reason": "..."}]
+        "_domain_maintenance": [{"domain": "pipeline", "issue": "too-broad", "suggestion": "split", "reason": "..."}],
+        "_vault_feedback": [{"entry_id": "existing-id", "signal": "outdated", "note": "description", "memento_sha": "a1b2c3d"}]
       }
     }
   ]
@@ -119,6 +120,7 @@ Notes:
 - Map quality-gate `curation_queue_entry` to the `curation` field when present
 - Preserve `_proposed_domain` annotations from extract-candidates. Suggested patterns must already satisfy the CLI path-pattern contract (`*` or directory prefix ending with `/`).
 - Preserve `_domain_maintenance` annotations from extract-candidates so the report can surface follow-up domain cleanup suggestions.
+- Preserve `_vault_feedback` annotations from extract-candidates so the report can surface feedback on existing vault entries.
 
 ### Step 6: Domain Change Summary
 
@@ -218,6 +220,12 @@ Verify:
 {Near-duplicate domain names or merge/split candidates surfaced by this batch, if any}
 {Repeated unmapped path prefixes observed across this batch, if any}
 {Manual follow-up suggestions for domain merge/split/path cleanup, if any}
+
+### Vault Feedback (Existing Entry Signals)
+{For each unique entry_id across all _vault_feedback annotations in accepted candidates:}
+- `{entry_id}`: {signal} — {note} (from #{source_pr}, commit {memento_sha})
+
+{If empty: "No feedback on existing entries."}
 
 ### Source PR Details
 {For each processed PR:}

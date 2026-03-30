@@ -171,6 +171,12 @@ For each entry in `identifiers.memento` where `has_notes` is `true`:
 
 2. If `git notes show` fails for a commit, skip that entry silently.
 
+3. **Parse structured sections** from the memento note (7-section format):
+   - Look for `## Recorded Decisions` section → extract decision slugs and commit SHAs as `decision_refs`
+   - Look for `## Vault Entries Referenced` section → extract entry IDs, signals, and notes as `vault_refs`
+   - If these sections are absent (5-section legacy format), set both to empty arrays: `vault_refs: []`, `decision_refs: []`
+   - Valid signals: `followed`, `outdated`, `conflicted`, `insufficient`
+
 Missing memento notes do NOT trigger `insufficient`.
 
 ### Step 6: Collect Greptile Evidence (Optional)
@@ -283,7 +289,13 @@ The final Evidence Bundle must follow this structure:
     "memento": [
       {
         "sha": "a1b2c3d",
-        "summary": "git notes content from refs/notes/commits"
+        "summary": "git notes content from refs/notes/commits",
+        "vault_refs": [
+          { "entry_id": "entry-id", "signal": "followed", "note": "description of usage" }
+        ],
+        "decision_refs": [
+          { "slug": "decision-slug", "commit_sha": "abc1234" }
+        ]
       }
     ],
     "greptile": [

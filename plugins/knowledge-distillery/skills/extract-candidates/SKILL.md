@@ -123,6 +123,18 @@ Collect all existing active entries for these domains. These are needed for:
 - Identifying conflicts with existing entries
 - Understanding existing coverage
 
+### Step 2.5: Aggregate Vault Feedback
+
+Collect `vault_refs` from all memento entries in the Evidence Bundle:
+
+1. Build a feedback map: `{ entry_id → [{signal, note, sha}] }`
+2. Filter to actionable signals only: `outdated`, `conflicted`, `insufficient`
+3. `followed` signals are informational and confirm entry validity — do not include in the feedback map
+
+This map is used in Step 4b to strengthen conflict detection when session evidence contradicts existing vault entries.
+
+If no memento entries have `vault_refs`, or all signals are `followed`, the feedback map is empty — proceed normally.
+
 ### Step 3: Analyze Evidence for Extractable Knowledge
 
 Read through the Evidence Bundle **holistically**. Look for:
@@ -158,6 +170,7 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 
 - If a semantically identical entry exists → skip (not a candidate)
 - If a related but different entry exists → set `conflict_check` to that entry's ID
+- If vault feedback from Step 2.5 shows `outdated`/`conflicted` signals for an existing entry, AND this candidate covers the same scope → strengthen the conflict signal. Attach a `_vault_feedback` annotation to the candidate with the relevant feedback entries.
 
 **4c. Actionable** — The knowledge can guide future coding decisions.
 
@@ -286,11 +299,12 @@ Each candidate MUST conform to this schema:
   "conflict_check": "<existing vault entry ID if potential conflict, null otherwise>",
   "considerations": "<explicit concerns, conditions, or caveats — NEVER empty>",
   "_proposed_domain": [{"name": "<new-domain>", "description": "...", "suggested_patterns": ["path/"]}],
-  "_domain_maintenance": [{"domain": "<domain>", "issue": "...", "suggestion": "...", "reason": "..."}]
+  "_domain_maintenance": [{"domain": "<domain>", "issue": "...", "suggestion": "...", "reason": "..."}],
+  "_vault_feedback": [{"entry_id": "existing-entry-id", "signal": "outdated|conflicted|insufficient", "note": "from memento", "memento_sha": "a1b2c3d"}]
 }
 ```
 
-Note: `_proposed_domain` is only present when new domains are proposed (see Step 1). Omit when all domains already exist in the vault. `_domain_maintenance` is only present when this batch reveals a follow-up registry improvement need.
+Note: `_proposed_domain` is only present when new domains are proposed (see Step 1). Omit when all domains already exist in the vault. `_domain_maintenance` is only present when this batch reveals a follow-up registry improvement need. `_vault_feedback` is only present when vault feedback from Step 2.5 exists for related existing entries — `followed` signals are excluded (no action needed).
 
 ## Error Handling
 

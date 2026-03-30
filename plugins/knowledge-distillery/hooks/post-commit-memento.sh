@@ -29,6 +29,6 @@ fi
 # Output reminder for the LLM via additionalContext
 cat <<EOF
 {
-  "additionalContext": "Commit ${SHA} has no memento session summary. Generate a 5-section memento summary (Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context) reflecting this session and attach it:\n\ngit notes --ref=refs/notes/commits add --force --file=- ${SHA} <<'MEMENTO_EOF'\n<summary>\nMEMENTO_EOF"
+  "additionalContext": "Commit ${SHA} has no memento session summary. Generate a 7-section memento summary (Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context, Recorded Decisions, Vault Entries Referenced) reflecting this session and attach it:\n\ngit notes --ref=refs/notes/commits add --force --file=- ${SHA} <<'MEMENTO_EOF'\n<summary>\nMEMENTO_EOF"
 }
 EOF

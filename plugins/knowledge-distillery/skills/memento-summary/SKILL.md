@@ -9,7 +9,7 @@ Produce a structured summary of the current AI coding session. This summary is s
 
 ## Output Structure
 
-The summary MUST follow this exact 5-section markdown structure. All five sections are required. Use "None" as the single item for any empty section.
+The summary MUST follow this exact 7-section markdown structure. All seven sections are required. Use "None" as the single item for any empty section.
 
 ```markdown
 ## Decisions Made
@@ -26,6 +26,14 @@ The summary MUST follow this exact 5-section markdown structure. All five sectio
 
 ## Context
 [Brief paragraph: what was being done and why, key files involved, outcome]
+
+## Recorded Decisions
+[If record-decision commits were made this session, list slug and SHA. Otherwise "None"]
+- `slug` (sha1234): Brief description of the decision
+
+## Vault Entries Referenced
+[If vault entries were used this session, list each with a signal. Otherwise "None"]
+- `entry-id` [signal]: How the entry related to this session's work
 ```
 
 ## Extraction Rules
@@ -93,10 +101,30 @@ Write a 2-4 sentence paragraph covering:
 - Key files and modules involved
 - Outcome (completed, partial, or blocked)
 
+### Recorded Decisions
+
+Reference decision commits made during this session via `/knowledge-distillery:record-decision`:
+
+- List each by slug and commit SHA (e.g., `pr-template-out-of-scope` (abc1234))
+- Content comes from git log — look for commits with `decision:` prefix messages on the current branch
+- If no decision commits were made this session, use "None"
+
+### Vault Entries Referenced
+
+For each vault entry meaningfully used in the session, record the entry ID and a signal:
+
+- `followed` — Entry guidance was applied successfully
+- `outdated` — Entry doesn't reflect current situation or codebase state
+- `conflicted` — Session evidence directly contradicts the entry's claim
+- `insufficient` — Entry is correct but missing guidance for the situation encountered
+
+**Only list entries that influenced your decisions**, not every entry returned by a query. Source data comes from `tmp/vault-refs.jsonl` (recorded by the knowledge-gate skill during the session) combined with your assessment of how each entry was used. If no vault entries were referenced, use "None".
+
 ## Formatting Rules
 
 - Each section item is a single bullet point -- concise, 1-2 sentences max.
 - Aim for 3-7 items per section for a typical 30-minute session. Longer sessions may have more. Very short sessions may have 1-2.
+- Recorded Decisions and Vault Entries Referenced may have 0 items — use "None" when the session had no decision commits or vault queries.
 - Write in the language primarily used during the session.
 - Do NOT include raw code blocks from the session transcript.
 - Do NOT include sensitive information (API keys, credentials, PII).
@@ -175,4 +203,37 @@ Fixed N+1 query performance issue in orders listing endpoint. Key files: app/con
 
 ## Context
 Fixed typo in README.md documentation. Minimal session with no significant technical decisions.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
+```
+
+### Session with vault usage and decisions
+
+```markdown
+## Decisions Made
+- Use separate cleanup step in apply-changeset workflow: Ensures artifacts are cleaned even when vault.db is unchanged
+- Keep decision commits on existing path: Preserves durability — decisions survive session crashes
+
+## Problems Encountered
+- Vault entry `pipeline-sequential-execution` conflicted with proposed parallel PR processing: Resolved by parallelizing across PRs while keeping intra-PR stages sequential
+
+## Constraints Identified
+- `.knowledge/` directory must not be read directly by agents: All access through knowledge-gate CLI
+
+## Open Questions
+- None
+
+## Context
+Implemented vault usage tracking and memento channel integration. Key files: memento-summary/SKILL.md, memento-commit/SKILL.md, knowledge-gate/SKILL.md, collect-evidence/SKILL.md. Feature complete across 11 files.
+
+## Recorded Decisions
+- `vault-refs-best-effort` (a1b2c3d): Vault reference tracking is best-effort — data loss on note failure is acceptable
+
+## Vault Entries Referenced
+- `pipeline-sequential-execution` [followed]: Maintained sequential per-PR processing as required
+- `conservative-extraction-principle` [insufficient]: Entry covers extraction but lacks guidance on vault feedback signals
 ```
