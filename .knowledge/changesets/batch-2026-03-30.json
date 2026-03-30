@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "batch_date": "2026-03-30",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "apply-changeset-branch-regex",
+        "type": "fact",
+        "title": "apply-changeset validates branch name against strict regex to prevent shell injection",
+        "claim": "The apply-changeset workflow MUST capture `head.ref` into an environment variable and validate it against `^knowledge/batch-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$` before any shell use — direct interpolation of `head.ref` into shell commands is a shell injection vector.",
+        "body": "## Background\nCodeRabbit security review on ether-moon/skill-set#11 identified that the original apply-changeset workflow interpolated `github.event.pull_request.head.ref` directly into shell commands. A branch name containing shell metacharacters could execute arbitrary commands in the workflow runner.\n\n## Details\nThe fix has two parts: (1) assign `head.ref` to an environment variable (`BRANCH: ${{ github.event.pull_request.head.ref }}`), and (2) validate it with a bash regex guard before use:\n```bash\nif [[ ! \"$BRANCH\" =~ ^knowledge/batch-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$ ]]; then\n  echo \"::error::Unexpected branch format: ${BRANCH}\"\n  exit 1\nfi\n```\nThis pattern must be replicated in any workflow that uses `head.ref` or other user-controllable values in shell commands.\n\n## Constraint Alignment\nThe regex must remain in sync with the branch naming convention produced by the batch-refine skill (`knowledge/batch-YYYY-MM-DD` or `knowledge/batch-YYYY-MM-DD-N`). If the naming convention changes, both the skill and this validation must be updated together.\n\n## Rejected Alternatives\nUsing `startsWith()` alone (as in the `if:` condition) is insufficient for shell safety — it only gates job execution but does not sanitize the value for use inside `run:` steps.",
+        "alternative": null,
+        "considerations": "This pattern applies to any GitHub Actions workflow that uses user-controlled values (branch names, PR titles, comment bodies) in `run:` steps. Always prefer env-var assignment + validation over direct interpolation.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#27" },
+          { "type": "memento", "ref": "5877ccf" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "curate-report-author-association-gate",
+        "type": "fact",
+        "title": "curate-report gates /curate trigger on author_association, not bot-identity check",
+        "claim": "The curate-report workflow MUST use `contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.comment.author_association)` to gate `/curate` triggers — a 'not a bot' check alone is insufficient and allows any authenticated GitHub user to trigger curation.",
+        "body": "## Background\nThe original curate-report trigger checked that the commenter was not a bot. CodeRabbit identified this as insufficient: any authenticated non-bot GitHub user could post `/curate` and trigger the workflow, potentially injecting curated entries into the vault.\n\n## Details\nThe fix replaces the bot-exclusion check with an explicit author association allowlist using the GitHub Actions `fromJSON` array idiom:\n```yaml\ncontains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.comment.author_association)\n```\nThis restricts triggering to repository owners, organization members, and explicitly added collaborators. CONTRIBUTOR (one-time committers) and NONE (public users) are excluded.\n\n## Why fromJSON\n`fromJSON(...)` is required because GitHub Actions `if:` expressions do not support array literals natively. The pattern `contains(fromJSON('[\"A\",\"B\"]'), value)` is the idiomatic membership check.\n\n## Rejected Alternatives\nChecking `github.event.comment.author_association != 'NONE'` was considered but rejected — it would still allow CONTRIBUTOR-level users who had one merged PR but no ongoing relationship with the project.",
+        "alternative": null,
+        "considerations": "The three allowed associations (OWNER, MEMBER, COLLABORATOR) cover all intentional maintainers. If guest curators are needed, they must be added as explicit COLLABORATOR rather than relaxing the gate.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#27" },
+          { "type": "memento", "ref": "5877ccf" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "mcp-json-must-be-gitignored",
+        "type": "fact",
+        "title": ".mcp.json must be gitignored — it is generated at runtime and may contain API secrets",
+        "claim": "`.mcp.json` MUST be listed in `.gitignore` in any project using Claude Code MCP tooling — the file is generated at runtime by Claude Code and may contain API keys, connection strings, or other secrets that must not be version-controlled.",
+        "body": "## Background\nThe init template previously did not exclude `.mcp.json` from version control. CodeRabbit flagged this during the skill-set#11 review: projects initializing the Knowledge Distillery plugin might accidentally commit `.mcp.json` if they ran `git add .` after an MCP configuration step.\n\n## Details\n`.mcp.json` is a local runtime configuration file created by Claude Code to store MCP server configurations, which can include API keys and authentication tokens. It is analogous to `.env` for environment secrets — it should never be committed. The init template now includes this entry in its generated `.gitignore`:\n```\n.mcp.json\n```\n\n## Rejected Alternatives\nRelying on users to manually gitignore `.mcp.json` was rejected because the init workflow generates project scaffolding and should produce a safe configuration by default.",
+        "alternative": null,
+        "considerations": "This applies to the init template and any project created by the init skill. Existing projects without this `.gitignore` entry should add it manually. Check `git status` for `.mcp.json` before committing.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#27" },
+          { "type": "memento", "ref": "5877ccf" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "knowledge-gate-summary-index-default",
+        "type": "fact",
+        "title": "knowledge-gate queries return summary index by default; full bodies require explicit get/get-many",
+        "claim": "All knowledge-gate query commands (query-paths, query-domain, search, list) MUST return a lightweight summary index (id, type, title, claim) by default — full entry bodies are only available via `get <id>` or `get-many <id...>`.",
+        "body": "## Background\nAnalysis of the codenamev/claude_memory project identified progressive disclosure (cheap summary → targeted detail fetch) as the highest-value adoptable pattern. The previous knowledge-gate had inconsistent output policies: some commands returned summaries, others returned full bodies, with no explicit design intent.\n\n## Details\nAfter PR #28, the summary-first workflow is:\n1. Run a query command (query-paths, query-domain, search, or list) → receive lightweight summary index\n2. Review summaries to identify relevant entries by id\n3. Run `get <id>` or `get-many <id1> <id2> ...` to fetch full bodies only for the relevant subset\n\nThis reduces per-query token cost while keeping the context-gate intact. The summary index fields are: `id`, `type`, `title`, `claim`.\n\n## Rejected Alternatives\nReturning full bodies by default was the previous inconsistent behavior. It was rejected because large vaults would flood agent context with irrelevant content on every query.\n\n## Stop Conditions\nIf a query reliably returns ≤2 entries (e.g., `get` by exact ID), full-body output may be appropriate. A future `--full` flag for small-result cases is an open question.",
+        "alternative": null,
+        "considerations": "AGENTS.md and the knowledge-gate SKILL.md document this workflow. The pre-prompt hook now emits summary-first guidance. Any skill or hook that queries knowledge-gate must follow the discovery-then-fetch flow.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#28" },
+          { "type": "memento", "ref": "2f89d35" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "summary-index-claim-field-required",
+        "type": "fact",
+        "title": "Summary index MUST include the claim field — omitting it forces full-body fetches for all entries",
+        "claim": "The summary index returned by knowledge-gate queries MUST include the `claim` field (minimum: id, type, title, claim) — without `claim`, an agent cannot judge entry relevance from the summary alone and is forced to fetch full bodies for every result, negating the purpose of the summary-first design.",
+        "body": "## Background\nWhen designing the summary index field set, there was a question of whether `id + title` alone was sufficient for agents to decide which entries needed full bodies. The team identified that `title` alone is often ambiguous (e.g., 'Constraint on X behavior') and that the claim — which is the prescriptive statement of the rule — is what an agent actually needs to judge whether the entry is relevant to a given task.\n\n## Details\nWithout `claim` in the summary, an agent seeing the title 'Tests must remain shell/jq-based' cannot determine whether the full body is needed for a JavaScript-related task — it must fetch the full body to be sure. With `claim` in the summary, the agent can read 'MUST remain shell/jq-based to align with current tooling; do not add a Python test dependency' and immediately determine relevance.\n\nThe minimum summary index fields are: `id` (for fetch), `type` (for filtering), `title` (for human readability), `claim` (for relevance judgment).\n\n## Rejected Alternatives\nId-only and id+title outputs exist as lighter modes (`--ids-only` and implicit narrow output), but neither is the default because both require an extra round-trip to judge relevance.",
+        "alternative": null,
+        "considerations": "If the claim field becomes excessively long in future entry types, a `short_claim` or `claim_preview` truncation may be needed. For now, the full claim is the right field.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#28" },
+          { "type": "memento", "ref": "2f89d35" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "get-many-fail-fast-missing-ids",
+        "type": "fact",
+        "title": "get-many must fail fast when any requested ID is absent",
+        "claim": "`knowledge-gate get-many` MUST exit with status 1 and emit `ERROR: entry IDs not found: <ids>` when any requested entry ID is not in the vault — silently returning a shorter array causes agents to proceed on incomplete information without detecting the gap.",
+        "body": "## Background\nThe initial implementation of `get-many` fetched all available entries for the requested IDs and returned whatever was found. CodeRabbit flagged that this silent drop of missing IDs was misleading: if an agent requests 3 IDs and receives 2 entries, it has no way to know whether the third was intentionally absent or a bug in the ID list.\n\n## Details\nThe implementation uses a LEFT JOIN between the requested IDs and the vault entries, then checks for NULLs:\n```bash\nif any_null_found; then\n  echo \"ERROR: entry IDs not found: $missing_ids\" >&2\n  exit 1\nfi\n```\nThis makes get-many behave like a strict batch fetch: either all requested entries are returned, or the command fails with a clear error identifying which IDs were missing.\n\n## Rejected Alternatives\nBest-effort / partial return was rejected because it trades correctness for leniency. An agent that asks for 3 entries and receives 2 silently is likely to build on the assumption all 3 were present.",
+        "alternative": null,
+        "considerations": "This fail-fast behavior means callers should only request IDs they expect to exist in the vault. If an entry may have been removed or renamed, use `search` or `list` first to confirm the ID before using `get-many`.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#28" },
+          { "type": "memento", "ref": "623d05d" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "query-unknown-flags-rejected",
+        "type": "fact",
+        "title": "knowledge-gate query commands reject unknown flags with a usage error",
+        "claim": "knowledge-gate query commands (query-paths, query-domain, search) MUST reject unrecognized flags with a usage message via a `-*)` catch-all case — previously, unknown flags like `--id-only` (a typo for `--ids-only`) were silently accepted as the positional argument, returning empty results with no indication of error.",
+        "body": "## Background\nThe original query parsers in the knowledge-gate script used option-parsing loops that handled known flags but had no catch-all for unknown flags. If a user typed `--id-only` instead of `--ids-only`, the misspelled flag was treated as the positional argument (domain/path/keyword), causing the query to return empty results silently.\n\n## Details\nEach query parser now includes a catch-all case:\n```bash\n-*)\n  echo \"Unknown flag: $1\" >&2\n  echo \"Usage: knowledge-gate query-domain [--ids-only] <domain>\" >&2\n  exit 1\n  ;;\n```\nThis turns a silent empty-results failure into an explicit error that identifies the unrecognized flag and exits with non-zero status.\n\n## Rejected Alternatives\nWarning-but-continue was considered but rejected — if the flag was intended to change behavior (e.g., `--ids-only`), continuing without it silently produces wrong output.",
+        "alternative": null,
+        "considerations": "The catch-all must be placed after all known flag cases in the option-parsing loop. This pattern should be applied to any new flags or commands added to knowledge-gate in the future.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#28" },
+          { "type": "memento", "ref": "623d05d" }
+        ]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "ids-only-opt-in-not-default",
+        "type": "fact",
+        "title": "--ids-only is opt-in ultra-light mode; summary index is the correct default",
+        "claim": "`--ids-only` MUST remain an opt-in flag for bulk candidate pre-filtering, not the default output mode — summary index (id+type+title+claim) is the correct default because IDs alone require an additional full round-trip to judge relevance.",
+        "body": "## Background\nWhen designing the two lightweight output modes — summary index and `--ids-only` — the team evaluated whether `--ids-only` should be the default to maximize token savings. It was explicitly rejected as default.\n\n## Details\nThe two modes serve different use cases:\n- **Summary index (default)**: Returns id + type + title + claim. Sufficient for most relevance judgments without a second fetch. Use for typical query → judge → selective fetch flows.\n- **--ids-only (opt-in)**: Returns only IDs. Useful when the caller already knows what IDs it wants to pass to `get-many` for filtering large candidate sets, or when minimal output is critical.\n\nMaking `--ids-only` the default would force every agent query to require an additional `get-many` call just to see the claim, doubling the round-trips for the common case.\n\n## Rejected Alternatives\n`--ids-only` as default was considered and rejected. The token savings from returning only IDs do not justify the mandatory extra round-trip for claim lookup in the typical use case.",
+        "alternative": null,
+        "considerations": "If vault entries grow very large and summary index tokens become a concern, consider claim truncation before reverting to id-only defaults. The claim field is load-bearing for single-pass relevance judgment.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#28" },
+          { "type": "memento", "ref": "2f89d35" }
+        ]
+      }
+    }
+  ]
+}
