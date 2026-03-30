@@ -375,11 +375,11 @@ jobs:
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          if [[ ! "$BRANCH" =~ ^knowledge/batch-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$ ]]; then
+          if [[ ! "$BRANCH" =~ ^knowledge/batch-([0-9]{4}-[0-9]{2}-[0-9]{2})(-[0-9]+)?$ ]]; then
             echo "::error::Unexpected branch format: ${BRANCH}"
             exit 1
           fi
-          DATE="${BRANCH#knowledge/batch-}"
+          DATE="${BASH_REMATCH[1]}"
           echo "date=${DATE}" >> "$GITHUB_OUTPUT"
           echo "Batch date: ${DATE}"
 
@@ -419,6 +419,30 @@ jobs:
           git add .knowledge/vault.db
           git commit -m "knowledge: apply batch ${{ steps.batch.outputs.date }} changeset"
           git push origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Clean up batch artifacts
+        env:
+          BATCH_DATE: ${{ steps.batch.outputs.date }}
+        run: |
+          CHANGESET=".knowledge/changesets/batch-${BATCH_DATE}.json"
+          REPORT=".knowledge/reports/batch-${BATCH_DATE}.md"
+          CHANGED=false
+
+          if [ -f "$CHANGESET" ]; then
+            git rm "$CHANGESET"
+            CHANGED=true
+          fi
+
+          if [ -f "$REPORT" ]; then
+            git rm "$REPORT"
+            CHANGED=true
+          fi
+
+          if [ "$CHANGED" = true ]; then
+            git pull --rebase origin ${{ github.event.pull_request.base.ref }}
+            git commit -m "knowledge: clean up batch ${BATCH_DATE} artifacts"
+            git push origin ${{ github.event.pull_request.base.ref }}
+          fi
 ```
 
 ### Step 4: Add Directive Sections
@@ -460,7 +484,7 @@ For each section below, check if it already exists in the target file (search fo
 ```markdown
 ## Memento
 - After every git commit, attach a memento session summary as a git note on `refs/notes/commits`
-- The summary follows the 5-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context
+- The summary follows the 7-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context, Recorded Decisions, Vault Entries Referenced
 - See `/knowledge-distillery:memento-commit` for the full workflow and format specification
 - If the PostToolUse hook fires a reminder, follow it — generate the summary and attach the note
 ```
@@ -473,6 +497,9 @@ If `.gitignore` does not exist, create it. Check if `.knowledge/` related entrie
 # Knowledge Distillery — vault is committed as binary, reports are committed
 # Only ignore temporary/working files
 .knowledge/tmp/
+
+# Vault usage tracking (consumed and cleared by memento-commit)
+tmp/
 
 # Dynamic MCP config — contains secrets at runtime, must never be committed
 .mcp.json

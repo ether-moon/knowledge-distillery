@@ -127,6 +127,16 @@ Compare the candidate against existing vault entries in the same domains:
 | `conflict` | Related but contradictory — different conclusion for overlapping scope | PASS + `curation_queue_entry` |
 | `unrelated` | Different topic or non-overlapping scope | PASS (no action) |
 
+4. If the candidate has a `_vault_feedback` annotation, use the feedback signals as additional context when classifying the relationship:
+
+   | Signal | Classification bias | Usage |
+   |--------|-------------------|-------|
+   | `outdated` | Strengthens `conflict` | Include in `curation_queue_entry.reason` |
+   | `conflicted` | Strengthens `conflict` | Include in `curation_queue_entry.reason` |
+   | `insufficient` | None | Explanatory context in `curation_queue_entry.reason` only, no influence on `duplicate` vs `conflict` decision |
+
+   Include the vault feedback context in `curation_queue_entry.reason` when generating curation queue entries. Preserve `_vault_feedback` annotations on candidates that pass — downstream stages (batch-refine) consume them for reporting.
+
 #### Duplicate vs Conflict Heuristics
 
 - **Duplicate**: Both entries would give an agent the **same behavioral guidance**. Wording differs but intent is identical.

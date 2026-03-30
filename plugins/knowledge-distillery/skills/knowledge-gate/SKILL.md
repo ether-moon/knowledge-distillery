@@ -131,6 +131,10 @@ evidence_link:
 - `conflict` -- Planned change contradicts an existing vault entry
 - `risk_check` -- Change touches a domain with existing constraints and needs human confirmation
 
+### 6. Record vault usage
+
+After using a vault entry's guidance in your work, append a usage record to `tmp/vault-refs.jsonl` (project root). Only record entries that influenced your decisions — not every queried result. See [Vault Usage Tracking](#vault-usage-tracking) below.
+
 ## Presenting Results
 
 When vault queries return entries, present them as follows:
@@ -170,3 +174,18 @@ User asks: "Refactor the batch-refine pipeline to support parallel PR processing
 | `vault.db` not found | Same as CLI not found -- degrade gracefully. |
 | Query returns no results | Normal. Apply the Soft Miss Principle (see Behavioral Rules section 4). |
 | Query returns an error | Log a warning, proceed without vault constraints. Do NOT block work. |
+
+## Vault Usage Tracking
+
+After querying the vault and **using** the results to guide your work, record the usage in `tmp/vault-refs.jsonl` (project root, gitignored):
+
+```bash
+mkdir -p tmp && echo '{"entry_id":"<entry-id>","queried_at":"<ISO-8601>","command":"<command-used>"}' >> tmp/vault-refs.jsonl
+```
+
+**Rules:**
+- Only record entries you actually used to make decisions — do not record every query result
+- Append one JSONL line per entry used
+- Create the `tmp/` directory if it doesn't exist
+- This file is consumed by `memento-commit` and cleared after each commit
+- If the file cannot be written (permissions, disk), proceed normally — vault tracking is best-effort
