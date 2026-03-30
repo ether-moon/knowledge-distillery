@@ -1,0 +1,20 @@
+## Decisions Made
+- None
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Bumped plugin version from 0.1.3 to 0.1.4. Updated CHANGELOG.md with all changes from origin/main: vault usage tracking, 7-section memento format, pipeline vault feedback flow, doctor checks, workflow fixes.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
