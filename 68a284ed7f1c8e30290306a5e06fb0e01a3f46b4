@@ -1,0 +1,23 @@
+## Decisions Made
+- Sync init/SKILL.md workflow template with actual apply-changeset.yml: User chose to keep templates in sync so fresh adopters get correct behavior out of the box
+- Add git pull --rebase before cleanup push: User chose rebase over combining commits or accepting risk, balancing safety with simplicity
+
+## Problems Encountered
+- Codex and Claude reviews surfaced 9 actionable findings (2 High, 4 Medium, 3 Low): Resolved all in a single pass across 7 files
+- Gemini 429 rate limit during review: Not fixable — relied on Codex + Claude results
+
+## Constraints Identified
+- quality-gate must preserve _vault_feedback annotations on passing candidates: Without explicit passthrough, downstream batch-refine loses feedback data mid-pipeline
+- init .gitignore template must include tmp/: Without this, adopting projects could accidentally commit vault-refs.jsonl tracking data
+
+## Open Questions
+- None
+
+## Context
+Applied peer review fixes from Codex and Claude code reviews on the vault-usage-tracking PR. Key changes: init/SKILL.md template sync (batch date regex + cleanup step + gitignore), apply-changeset.yml race condition mitigation, collect-evidence parsing format spec, quality-gate table formatting and passthrough note, memento-summary example updates to 7-section. 7 files modified, all review findings addressed.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
