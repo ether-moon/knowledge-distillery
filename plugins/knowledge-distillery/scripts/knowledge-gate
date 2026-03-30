@@ -251,6 +251,20 @@ get_entries() {
 
   requested_sql="WITH requested(id, position) AS (VALUES ${requested_values})"
 
+  # Fail fast if any requested ID is missing from the vault
+  local missing
+  missing=$(sqlite3 "$VAULT" "
+    ${requested_sql}
+    SELECT GROUP_CONCAT(r.id, ', ')
+    FROM requested r
+    LEFT JOIN entries e ON e.id = r.id
+    WHERE e.id IS NULL;
+  ")
+  if [ -n "$missing" ]; then
+    echo "ERROR: entry IDs not found: ${missing}" >&2
+    return 1
+  fi
+
   # If jq is available, return enriched JSON with domains and evidence
   if command -v jq &>/dev/null; then
     local entries domains evidence
@@ -1486,6 +1500,7 @@ case "$CMD" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate query-paths [--ids-only] <filepath>" >&2; exit 1 ;;
         *) filepath="$1"; shift ;;
       esac
     done
@@ -1497,6 +1512,7 @@ case "$CMD" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate query-domain [--ids-only] <domain>" >&2; exit 1 ;;
         *) domain="$1"; shift ;;
       esac
     done
@@ -1508,6 +1524,7 @@ case "$CMD" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --ids-only) ids_only="true"; shift ;;
+        -*) echo "Usage: knowledge-gate search [--ids-only] <keyword>" >&2; exit 1 ;;
         *) keyword="$1"; shift ;;
       esac
     done
