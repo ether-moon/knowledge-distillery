@@ -209,20 +209,45 @@ assert_contains "${list_output}" '"id":"callback-ban"' "list should include adde
 
 payment_query="$("${GATE}" query-domain payment)"
 assert_contains "${payment_query}" '"id":"service-rule"' "query-domain should return entries for the requested domain"
+assert_contains "${payment_query}" '"title":"Service Rule"' "query-domain should expose lightweight summary fields"
 assert_not_contains "${payment_query}" '"id":"callback-ban"' "query-domain should not leak unrelated domains"
+assert_not_contains "${payment_query}" '"body":' "query-domain should stay in summary mode by default"
+
+payment_query_ids="$("${GATE}" query-domain --ids-only payment)"
+assert_eq '["service-rule"]' "${payment_query_ids}" "query-domain --ids-only should emit only matching entry IDs"
 
 path_query="$("${GATE}" query-paths "app/services/payment/orchestrator.rb")"
 assert_contains "${path_query}" '"id":"service-rule"' "query-paths should include domain-matched entries"
 assert_contains "${path_query}" '"id":"global-convention"' "query-paths should include global entries"
 assert_not_contains "${path_query}" '"id":"callback-ban"' "query-paths should exclude non-matching domains"
 
+path_query_ids="$(echo "$("${GATE}" query-paths --ids-only "app/services/payment/orchestrator.rb")" | jq -c 'sort')"
+assert_eq '["global-convention","service-rule"]' "${path_query_ids}" "query-paths --ids-only should emit just the matching entry IDs"
+
 search_output="$("${GATE}" search callback)"
 assert_contains "${search_output}" '"id":"callback-ban"' "search should use FTS over active entries"
+assert_contains "${search_output}" '"title":"Callback Ban"' "search should expose lightweight summary fields"
+assert_not_contains "${search_output}" '"body":' "search should stay in summary mode by default"
+
+search_ids="$("${GATE}" search --ids-only callback)"
+assert_eq '["callback-ban"]' "${search_ids}" "search --ids-only should emit ranked matching entry IDs"
 
 entry_output="$("${GATE}" get service-rule)"
 assert_eq "payment" "$(echo "${entry_output}" | jq -r '.[0].domains[0]')" "get should enrich entries with domains"
 assert_eq "#1234" "$(echo "${entry_output}" | jq -r '.[0].evidence[0].ref')" "get should enrich entries with evidence"
 assert_contains "$(echo "${entry_output}" | jq -r '.[0].body')" "## Background" "get should include the full body"
+
+multi_entry_output="$("${GATE}" get-many global-convention service-rule)"
+assert_eq "global-convention" "$(echo "${multi_entry_output}" | jq -r '.[0].id')" "get-many should preserve requested ID order"
+assert_eq "service-rule" "$(echo "${multi_entry_output}" | jq -r '.[1].id')" "get-many should include later requested entries"
+assert_eq "global" "$(echo "${multi_entry_output}" | jq -r '.[0].domains[0]')" "get-many should enrich each entry with domains"
+assert_eq "#1234" "$(echo "${multi_entry_output}" | jq -r '.[1].evidence[0].ref')" "get-many should enrich each entry with evidence"
+assert_contains "$(echo "${multi_entry_output}" | jq -r '.[1].body')" "## Background" "get-many should include the full body for each entry"
+
+list_ids="$(echo "$("${GATE}" list --ids-only)" | jq -c 'sort')"
+assert_eq "22" "$(echo "${list_ids}" | jq 'length')" "list --ids-only should emit every active entry ID"
+assert_contains "${list_ids}" '"service-rule"' "list --ids-only should include fact IDs"
+assert_contains "${list_ids}" '"callback-ban"' "list --ids-only should include anti-pattern IDs"
 
 "${GATE}" domain-merge ui payment >/dev/null
 merged_info="$("${GATE}" domain-info ui)"
@@ -445,6 +470,8 @@ migrate_output="$("${GATE}" migrate)"
 assert_contains "${migrate_output}" "Already at version" "migrate should no-op cleanly when no migrations apply"
 
 help_output="$("${GATE}" help)"
+assert_contains "${help_output}" "query-domain [--ids-only] <domain>" "help should document lightweight entry indexes"
+assert_contains "${help_output}" "get-many <id>..." "help should document batch detail retrieval"
 assert_contains "${help_output}" "domain-list [--status X] [--ids-only]" "help should document lightweight domain indexes"
 assert_contains "${help_output}" "_pipeline-update <id>" "help should document pipeline update"
 

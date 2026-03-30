@@ -37,6 +37,6 @@ fi
 
 cat <<EOF
 {
-  "additionalContext": "Knowledge Vault active (${COUNT} entries). If this task involves code modifications, query relevant entries before planning:\n  - Single file: knowledge-gate query-paths <filepath>\n  - Multiple files: knowledge-gate domain-resolve-path <filepath> → knowledge-gate query-domain <domain>\n  - Topic search: knowledge-gate search <keyword>"
+  "additionalContext": "Knowledge Vault active (${COUNT} entries). If this task involves code modifications, query relevant entries before planning. Queries return a lightweight summary index by default; fetch full bodies only for the entry IDs you need with knowledge-gate get or knowledge-gate get-many.\n  - Single file: knowledge-gate query-paths <filepath>\n  - Multiple files: knowledge-gate domain-resolve-path <filepath> → knowledge-gate query-domain <domain>\n  - Topic search: knowledge-gate search <keyword>"
 }
 EOF

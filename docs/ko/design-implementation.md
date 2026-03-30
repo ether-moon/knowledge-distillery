@@ -354,23 +354,27 @@ description: 코드 수정 전 지식 금고에서 관련 규칙을 조회한다
 ## 쿼리 프로토콜
 
 ### 단일 파일 수정 시
+# 기본값은 경량 summary index
 bin/knowledge-gate query-paths "<수정할 파일 경로>"
 
 ### 다중 파일 수정 시 (PR 규모 변경)
 # 1. 관련 도메인 확인 (대표 파일 몇 개로 충분)
 bin/knowledge-gate domain-resolve-path "<파일 경로>"
-# 2. 도메인 단위로 규칙 조회 (중복 없이 효율적)
+# 2. 도메인 단위로 규칙 조회 (중복 없이 효율적, 기본값은 summary index)
 bin/knowledge-gate query-domain "<도메인명>"
 
 ### 키워드로 검색 (경로 매칭이 없을 때)
+# 기본값은 경량 summary index
 bin/knowledge-gate search "<키워드>"
 
 ### 상세 규칙 확인이 필요할 때
 bin/knowledge-gate get "<항목 ID>"
+bin/knowledge-gate get-many "<항목 ID 1>" "<항목 ID 2>"
 
 ### 도메인/키워드를 모를 때 (탐색용 레퍼런스)
+bin/knowledge-gate domain-list --ids-only
 bin/knowledge-gate list
-# → 전체 활성 항목 요약 목록. 여기서 관련 도메인이나 키워드를 파악한 후
+# → 경량 탐색 인덱스. 여기서 관련 도메인이나 키워드를 파악한 후
 #   query-paths / query-domain / search로 정밀 조회
 
 ### 도메인 확인

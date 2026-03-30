@@ -48,11 +48,12 @@ The `knowledge-gate` CLI is the sole access path to the knowledge vault (`.knowl
 
 | Command | Purpose |
 |---|---|
-| `query-paths <filepath>` | Resolve file path to domains → return matching rules |
-| `query-domain <domain>` | Query rules by domain name |
-| `search <keyword>` | FTS5 full-text keyword search |
+| `query-paths [--ids-only] <filepath>` | Resolve file path to domains → return a lightweight summary index, or IDs only |
+| `query-domain [--ids-only] <domain>` | Query rules by domain name → return a lightweight summary index, or IDs only |
+| `search [--ids-only] <keyword>` | FTS5 full-text keyword search → return a lightweight summary index, or IDs only |
 | `get <id>` | Retrieve full entry details (including body) |
-| `list` | Summary list of all active entries (exploration/keyword discovery) |
+| `get-many <id>...` | Retrieve full details for multiple entries in one call |
+| `list [--ids-only]` | Summary list of all active entries, or IDs only |
 
 **Domain** — explore and manage the domain registry:
 
@@ -86,6 +87,12 @@ The `knowledge-gate` CLI is the sole access path to the knowledge vault (`.knowl
 ```bash
 # Query rules before editing a file
 knowledge-gate query-paths src/api/auth/login.ts
+
+# Query a domain with an ultra-light ID-only index
+knowledge-gate query-domain --ids-only payment
+
+# Fetch multiple full entries after a lightweight discovery step
+knowledge-gate get-many global-convention service-rule
 
 # Check which domains a file belongs to
 knowledge-gate domain-resolve-path src/services/payment.rb
