@@ -100,6 +100,7 @@ jobs:
           fi
 
           if [ "$CHANGED" = true ]; then
+            git pull --rebase origin ${{ github.event.pull_request.base.ref }}
             git commit -m "knowledge: clean up batch ${BATCH_DATE} artifacts"
             git push origin ${{ github.event.pull_request.base.ref }}
           fi

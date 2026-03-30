@@ -173,7 +173,9 @@ For each entry in `identifiers.memento` where `has_notes` is `true`:
 
 3. **Parse structured sections** from the memento note (7-section format):
    - Look for `## Recorded Decisions` section → extract decision slugs and commit SHAs as `decision_refs`
+     - Expected line format: `` - `{slug}` ({sha}): {description} ``
    - Look for `## Vault Entries Referenced` section → extract entry IDs, signals, and notes as `vault_refs`
+     - Expected line format: `` - `{entry_id}` [{signal}]: {note} ``
    - If these sections are absent (5-section legacy format), set both to empty arrays: `vault_refs: []`, `decision_refs: []`
    - Valid signals: `followed`, `outdated`, `conflicted`, `insufficient`
 

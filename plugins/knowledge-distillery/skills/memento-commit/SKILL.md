@@ -37,7 +37,7 @@ Parse into 5 sections:
    - If excluding any untracked files, note them for the user
 
 Also gather session metadata for memento sections 6-7:
-- Read `tmp/vault-refs.jsonl` (if it exists) to identify vault entries used this session
+- Read `tmp/vault-refs.jsonl` (if it exists) to identify vault entries used this session. Parse `entry_id` from each line — these are the entries for which usage signals must be assessed in Step 3.
 - Check git log for any `decision:` prefix commits on the current branch from this session
 
 **Exit if:** Status is empty. Report "Nothing to commit." and stop.

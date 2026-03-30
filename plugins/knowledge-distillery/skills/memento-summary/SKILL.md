@@ -163,6 +163,12 @@ For each vault entry meaningfully used in the session, record the entry ID and a
 
 ## Context
 Implemented payment retry logic in PaymentService with exponential backoff. Key files: app/services/payment_service.rb, app/jobs/payment_retry_job.rb, spec/services/payment_service_spec.rb. Feature complete with tests passing.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
 ```
 
 ### Debugging session
@@ -184,6 +190,12 @@ Implemented payment retry logic in PaymentService with exponential backoff. Key 
 
 ## Context
 Fixed N+1 query performance issue in orders listing endpoint. Key files: app/controllers/orders_controller.rb, db/migrate/add_user_id_index_to_orders.rb. Performance improved from ~200 queries to 3 queries per page load.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
 ```
 
 ### Minimal session
