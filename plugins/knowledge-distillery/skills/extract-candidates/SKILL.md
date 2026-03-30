@@ -127,7 +127,7 @@ Collect all existing active entries for these domains. These are needed for:
 
 Collect `vault_refs` from all memento entries in the Evidence Bundle:
 
-1. Build a feedback map: `{ entry_id → [{signal, note, sha}] }`
+1. Build a feedback map: `{ entry_id → [{signal, note, memento_sha}] }`
 2. Filter to actionable signals only: `outdated`, `conflicted`, `insufficient`
 3. `followed` signals are informational and confirm entry validity — do not include in the feedback map
 

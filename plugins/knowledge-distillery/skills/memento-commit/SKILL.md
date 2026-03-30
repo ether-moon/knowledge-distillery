@@ -16,7 +16,7 @@ Replaces the default commit workflow when the knowledge-distillery plugin is ins
 
 ## Allowed Tools
 
-`Bash` (git commands only), `Read` (for reading `tmp/vault-refs.jsonl`). No other file writes, no MCP servers, no vault access.
+`Bash` (git commands + `rm -f tmp/vault-refs.jsonl` cleanup), `Read` (for reading `tmp/vault-refs.jsonl`). No other file writes, no MCP servers, no vault access.
 
 ## Execution Steps
 

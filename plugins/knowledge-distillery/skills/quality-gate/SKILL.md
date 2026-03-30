@@ -127,7 +127,7 @@ Compare the candidate against existing vault entries in the same domains:
 | `conflict` | Related but contradictory — different conclusion for overlapping scope | PASS + `curation_queue_entry` |
 | `unrelated` | Different topic or non-overlapping scope | PASS (no action) |
 
-4. If the candidate has a `_vault_feedback` annotation, use the feedback signals as additional context when classifying the relationship. An `outdated` or `conflicted` signal from a memento strengthens the case for classifying as `conflict` rather than `duplicate`. Include the vault feedback context in `curation_queue_entry.reason` when generating curation queue entries.
+4. If the candidate has a `_vault_feedback` annotation, use the feedback signals as additional context when classifying the relationship. An `outdated` or `conflicted` signal from a memento strengthens the case for classifying as `conflict` rather than `duplicate`. An `insufficient` signal carries no classification bias — include it as explanatory context in `curation_queue_entry.reason` only, without influencing the `duplicate` vs `conflict` decision. Include the vault feedback context in `curation_queue_entry.reason` when generating curation queue entries.
 
 #### Duplicate vs Conflict Heuristics
 
