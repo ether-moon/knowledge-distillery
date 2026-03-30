@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.4] - 2026-03-30
+
+### Added
+
+- **pipeline**: Vault usage tracking via `tmp/vault-refs.jsonl` — records which vault entries influenced session decisions
+- **pipeline**: Memento 7-section format — adds Recorded Decisions and Vault Entries Referenced sections
+- **pipeline**: Vault feedback flow through collect-evidence → extract-candidates → quality-gate → batch-refine
+- **workflow**: Batch artifact cleanup step in apply-changeset workflow
+
+### Improved
+
+- **cli**: Doctor checks for outdated project configurations (tmp/ gitignore, BASH_REMATCH date extraction, cleanup step)
+- **skill**: Quality-gate R6 uses vault feedback signals to inform conflict vs duplicate classification
+- **skill**: Init template synced with latest workflow fixes (BASH_REMATCH, cleanup step, tmp/ gitignore)
+
+### Fixed
+
+- **workflow**: Apply-changeset date extraction uses BASH_REMATCH to handle suffixed branch names correctly
+- **workflow**: Apply-changeset cleanup push race condition mitigated with git pull --rebase
+- **skill**: Hardened workflow templates against injection and unauthorized access
+
 ## [0.1.3] - 2026-03-27
 
 ### Fixed
