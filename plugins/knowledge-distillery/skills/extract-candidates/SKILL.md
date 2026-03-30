@@ -169,7 +169,7 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 Apply two questions in sequence:
 
 - **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
-- **Q2 — Residual value:** Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves don't explain?
+- **Q2 — Residual value:** Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that a developer **could not infer** from the artifacts themselves?
 
 | Q1 | Q2 | Decision |
 |----|-----|----------|
@@ -177,14 +177,29 @@ Apply two questions in sequence:
 | yes | yes | **Keep candidate** — artifact shows *what*, entry preserves *why* |
 | no | — | **Keep candidate** — knowledge is not visible in artifacts |
 
+> **Q2 strictness — self-evident rationale is NOT residual value:**
+> Q2 is only YES when the rationale would **surprise** a competent developer reading the current code. The following do NOT count as residual value:
+>
+> - **Pattern-inherent rationale:** If the "why" follows directly from the engineering pattern used (input validation → prevents injection; fail-fast → prevents silent failures; catch-all case → prevents silent misuse), the reasoning is inherent in the pattern itself — Q2=no.
+> - **Standard engineering practice:** If the rationale restates well-known principles rather than project-specific context (lightweight output → reduces cost; strict access checks → prevents unauthorized use; gitignoring runtime config → prevents secret leaks), Q2=no.
+> - **Intent already visible in code:** If error messages, variable names, comments, or doc strings in the implementation already convey the intent, the entry adds no invisible knowledge — Q2=no.
+> - **Behavior + obvious purpose:** If the code clearly shows *what* it does and a developer can trivially reconstruct *why* from the behavior alone (e.g., a regex guard in a shell script → shell injection prevention), Q2=no even if the entry adds a "Rejected Alternatives" section.
+>
+> Q2=yes requires genuinely non-obvious context: a past incident that shaped the design, a deliberate tradeoff between competing valid approaches, a policy constraint from outside the codebase, or a boundary that contradicts what someone might naively expect.
+
 > **Important:** "Traceable via `git log` / `git blame`" is NOT a reject reason. Historical rationale buried in commit history is exactly what the vault should surface — it is not readily visible during normal development.
 
-**Fact-type filter:** A `fact` candidate that merely describes current state ("X uses Y") without rationale is directly derivable — skip it. Only extract facts that carry a rule or constraint with reasoning ("When touching X, keep Y because Z").
+**Fact-type filter:** A `fact` candidate that merely describes current state ("X uses Y") without rationale is directly derivable — skip it. A `fact` whose rationale is self-evident from the implementation pattern is also directly derivable — skip it. Only extract facts that carry **non-obvious** reasoning ("When touching X, keep Y because Z" where Z is not inferable from X's implementation).
 
 Examples:
 - "The `/curate` workflow checks branch prefix `knowledge/batch-*`" → Q1=yes (YAML file), Q2=no → **skip**
-- "Archive rejected vault entries instead of deleting to preserve audit history" → Q1=partially (function exists), Q2=yes (preserves *why*) → **keep**
+- "`get-many` MUST exit 1 when requested IDs are missing" → Q1=yes (code + error message), Q2=no (fail-fast rationale is self-evident from pattern) → **skip**
+- "Query commands MUST reject unknown flags with usage error" → Q1=yes (catch-all in code), Q2=no (standard CLI error handling) → **skip**
+- "`.mcp.json` MUST be gitignored" → Q1=yes (already in `.gitignore`), Q2=no (runtime config with potential secrets → standard practice) → **skip**
+- "Branch name validation MUST use env var + regex instead of direct interpolation" → Q1=yes (workflow YAML), Q2=no (shell injection prevention via env var is a well-known pattern) → **skip**
+- "Archive rejected vault entries instead of deleting to preserve audit history" → Q1=partially (function exists), Q2=yes (audit trail requirement is not self-evident from the archive function alone) → **keep**
 - "PR body template enforcement is out of scope for knowledge-distillery" → Q1=no (scope decisions aren't in code), Q2=yes (boundary + rejected alternative) → **keep**
+- "Use React Server Components for data-fetching pages because SSR hydration cost was causing 3s delays on the dashboard" → Q1=yes (code uses RSC), Q2=yes (the 3s delay incident and performance threshold are not in the code) → **keep**
 
 **When in doubt, leave it out.** If confidence in any criterion is low, do NOT extract.
 
@@ -329,7 +344,7 @@ Before returning candidates, verify:
 6. Does every candidate cite at least one `evidence` source?
 7. Are domains derived via `domain-resolve-path`, not hardcoded?
 8. Does the skill return `[]` gracefully when no candidates are found?
-9. Does each `fact` candidate preserve rationale, constraint, or boundary — not just describe current state?
+9. Does each `fact` candidate preserve **non-obvious** rationale, constraint, or boundary — not just describe current state or self-evident engineering reasoning?
 10. If a new domain is proposed, is the name self-explanatory enough to be recognized from the ID alone in `domain-list --ids-only`?
 11. If a new domain is proposed, does its `description` define the scope clearly enough to distinguish it from adjacent domains?
 12. Before proposing a new domain, did the skill check whether an existing domain could be reused instead?
