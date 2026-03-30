@@ -64,10 +64,30 @@ EOF
 
 cat > "${REPO_DIR}/.gitignore" <<'EOF'
 .knowledge/tmp/
+tmp/
 EOF
 
 touch "${REPO_DIR}/.github/workflows/mark-evidence.yml"
 touch "${REPO_DIR}/.github/workflows/batch-refine.yml"
+
+cat > "${REPO_DIR}/.github/workflows/apply-changeset.yml" <<'APPLY_EOF'
+name: Apply Changeset
+on:
+  pull_request:
+    types: [closed]
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract batch date
+        run: |
+          if [[ ! "$BRANCH" =~ ^knowledge/batch-([0-9]{4}-[0-9]{2}-[0-9]{2})(-[0-9]+)?$ ]]; then
+            exit 1
+          fi
+          DATE="${BASH_REMATCH[1]}"
+      - name: Clean up batch artifacts
+        run: echo "cleanup"
+APPLY_EOF
 touch "${REPO_DIR}/app/services/payment/orchestrator.rb"
 touch "${REPO_DIR}/app/ui/button.tsx"
 touch "${REPO_DIR}/app/ops/sync.rb"
@@ -449,7 +469,7 @@ assert_contains "${domain_report_output}" "docs/missing/ -- no domain mapping" "
 doctor_output="$(cd "${REPO_DIR}" && "${GATE}" doctor)"
 assert_contains "${doctor_output}" "PASS  AGENTS.md contains the Knowledge Vault section" "doctor should respect CLAUDE.md delegation to AGENTS.md"
 assert_contains "${doctor_output}" "PASS  batch-refine workflow exists" "doctor should verify workflow adoption"
-assert_contains "${doctor_output}" "Summary: 9 passed, 0 failed" "doctor should pass in the fully configured fixture repo"
+assert_contains "${doctor_output}" "Summary: 12 passed, 0 failed" "doctor should pass in the fully configured fixture repo"
 
 BAD_REPO="${TMP_DIR}/bad-repo"
 mkdir -p "${BAD_REPO}/.knowledge"
