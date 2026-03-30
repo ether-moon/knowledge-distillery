@@ -1,0 +1,23 @@
+## Decisions Made
+- All 8 batch-2026-03-30 candidates rejected: Applied reviewer's Q2 criterion re-evaluation — rationale for all entries is pattern-inherent or standard engineering practice, leaving no residual non-obvious value to capture in the vault.
+- Feedback embedded in `/curate` trigger comment treated as valid reviewer input: The single comment combined actionable feedback with the `/curate` trigger; the feedback portion was processed rather than filtered as a trigger-only comment.
+
+## Problems Encountered
+- Repo owner not `anthropics`: Initial MCP calls to `anthropics/knowledge-distillery` returned 404; corrected to `ether-moon/knowledge-distillery` via `git remote -v`.
+- `knowledge-distillery:curate-report` skill not registered in Claude Code: The `Skill` tool call returned "Unknown skill"; proceeded by reading the SKILL.md directly and executing the workflow step-by-step.
+
+## Constraints Identified
+- Vault.db MUST NOT be modified during curation: All changes operate exclusively on `.knowledge/changesets/batch-2026-03-30.json` and the report file.
+- Zero vault insertions on merge: With 0 accepted entries, merging this PR will produce no vault changes — the changeset is a no-op for vault.db.
+
+## Open Questions
+- Q2 calibration in the extraction pipeline: All 8 candidates in this batch failed Q2 at curation. Consider tightening the quality-gate Q2 check upstream to reduce candidates that reliably fail human review.
+
+## Context
+Executed the curate-report workflow for PR #30 (branch `knowledge/batch-2026-03-30`). Reviewer `ether-moon` (OWNER) re-evaluated all 8 candidates against the updated Q2 criterion (from PR #31) and rejected all — each entry's rationale is derivable from code patterns, standard practice, or explicit documentation. Updated `.knowledge/changesets/batch-2026-03-30.json` marking all entries rejected, created `.knowledge/reports/batch-2026-03-30.md`, committed, pushed to origin, updated the PR title/body, and posted the curation summary comment on the PR.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
