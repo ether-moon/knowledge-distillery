@@ -3,7 +3,7 @@
   "batch_date": "2026-03-30",
   "entries": [
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "apply-changeset-branch-regex",
         "type": "fact",
@@ -13,16 +13,25 @@
         "alternative": null,
         "considerations": "This pattern applies to any GitHub Actions workflow that uses user-controlled values (branch names, PR titles, comment bodies) in `run:` steps. Always prefer env-var assignment + validation over direct interpolation.",
         "applies_to": {
-          "domains": ["pipeline"]
+          "domains": [
+            "pipeline"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#27" },
-          { "type": "memento", "ref": "5877ccf" }
+          {
+            "type": "pr",
+            "ref": "#27"
+          },
+          {
+            "type": "memento",
+            "ref": "5877ccf"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — shell injection prevention is pattern-inherent rationale; env var assignment + regex validation purpose is self-evident from the pattern itself"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "curate-report-author-association-gate",
         "type": "fact",
@@ -32,16 +41,25 @@
         "alternative": null,
         "considerations": "The three allowed associations (OWNER, MEMBER, COLLABORATOR) cover all intentional maintainers. If guest curators are needed, they must be added as explicit COLLABORATOR rather than relaxing the gate.",
         "applies_to": {
-          "domains": ["pipeline"]
+          "domains": [
+            "pipeline"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#27" },
-          { "type": "memento", "ref": "5877ccf" }
+          {
+            "type": "pr",
+            "ref": "#27"
+          },
+          {
+            "type": "memento",
+            "ref": "5877ccf"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — standard GitHub Actions access control pattern; OWNER/MEMBER/COLLABORATOR allowlist is standard practice, self-evident from the implementation"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "mcp-json-must-be-gitignored",
         "type": "fact",
@@ -51,16 +69,25 @@
         "alternative": null,
         "considerations": "This applies to the init template and any project created by the init skill. Existing projects without this `.gitignore` entry should add it manually. Check `git status` for `.mcp.json` before committing.",
         "applies_to": {
-          "domains": ["pipeline"]
+          "domains": [
+            "pipeline"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#27" },
-          { "type": "memento", "ref": "5877ccf" }
+          {
+            "type": "pr",
+            "ref": "#27"
+          },
+          {
+            "type": "memento",
+            "ref": "5877ccf"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — gitignoring runtime config files is standard engineering practice; already present in .gitignore"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "knowledge-gate-summary-index-default",
         "type": "fact",
@@ -70,16 +97,25 @@
         "alternative": null,
         "considerations": "AGENTS.md and the knowledge-gate SKILL.md document this workflow. The pre-prompt hook now emits summary-first guidance. Any skill or hook that queries knowledge-gate must follow the discovery-then-fetch flow.",
         "applies_to": {
-          "domains": ["cli"]
+          "domains": [
+            "cli"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#28" },
-          { "type": "memento", "ref": "2f89d35" }
+          {
+            "type": "pr",
+            "ref": "#28"
+          },
+          {
+            "type": "memento",
+            "ref": "2f89d35"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — progressive disclosure token savings is self-evident from the pattern itself; documented in CLI code and AGENTS.md"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "summary-index-claim-field-required",
         "type": "fact",
@@ -89,16 +125,25 @@
         "alternative": null,
         "considerations": "If the claim field becomes excessively long in future entry types, a `short_claim` or `claim_preview` truncation may be needed. For now, the full claim is the right field.",
         "applies_to": {
-          "domains": ["cli"]
+          "domains": [
+            "cli"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#28" },
-          { "type": "memento", "ref": "2f89d35" }
+          {
+            "type": "pr",
+            "ref": "#28"
+          },
+          {
+            "type": "memento",
+            "ref": "2f89d35"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — necessity of including core assertion in summary index is self-evident from design intent; output format is implemented in code"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "get-many-fail-fast-missing-ids",
         "type": "fact",
@@ -108,16 +153,25 @@
         "alternative": null,
         "considerations": "This fail-fast behavior means callers should only request IDs they expect to exist in the vault. If an entry may have been removed or renamed, use `search` or `list` first to confirm the ID before using `get-many`.",
         "applies_to": {
-          "domains": ["cli"]
+          "domains": [
+            "cli"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#28" },
-          { "type": "memento", "ref": "623d05d" }
+          {
+            "type": "pr",
+            "ref": "#28"
+          },
+          {
+            "type": "memento",
+            "ref": "623d05d"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — fail-fast preventing silent failure is pattern-inherent; error message already conveys the intent"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "query-unknown-flags-rejected",
         "type": "fact",
@@ -127,16 +181,25 @@
         "alternative": null,
         "considerations": "The catch-all must be placed after all known flag cases in the option-parsing loop. This pattern should be applied to any new flags or commands added to knowledge-gate in the future.",
         "applies_to": {
-          "domains": ["cli"]
+          "domains": [
+            "cli"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#28" },
-          { "type": "memento", "ref": "623d05d" }
+          {
+            "type": "pr",
+            "ref": "#28"
+          },
+          {
+            "type": "memento",
+            "ref": "623d05d"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — standard CLI error handling; catch-all error message already explains the intent"
     },
     {
-      "status": "accepted",
+      "status": "rejected",
       "data": {
         "id": "ids-only-opt-in-not-default",
         "type": "fact",
@@ -146,13 +209,22 @@
         "alternative": null,
         "considerations": "If vault entries grow very large and summary index tokens become a concern, consider claim truncation before reverting to id-only defaults. The claim field is load-bearing for single-pass relevance judgment.",
         "applies_to": {
-          "domains": ["cli"]
+          "domains": [
+            "cli"
+          ]
         },
         "evidence": [
-          { "type": "pr", "ref": "#28" },
-          { "type": "memento", "ref": "2f89d35" }
+          {
+            "type": "pr",
+            "ref": "#28"
+          },
+          {
+            "type": "memento",
+            "ref": "2f89d35"
+          }
         ]
-      }
+      },
+      "reject_reason": "Q2=no — extra round-trip required with IDs-only is self-evident from the two-mode design; opt-in nature is clear from flag design"
     }
   ]
 }
