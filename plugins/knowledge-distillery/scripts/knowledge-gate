@@ -975,6 +975,27 @@ doctor() {
     fail ".gitignore is missing .knowledge/tmp/"
   fi
 
+  if [ -f "${repo_root}/.gitignore" ] && grep -qE '(^|/)tmp/' "${repo_root}/.gitignore"; then
+    pass ".gitignore contains tmp/ (vault-refs tracking)"
+  else
+    fail ".gitignore is missing tmp/ — vault-refs.jsonl may be committed accidentally"
+  fi
+
+  local apply_wf="${repo_root}/.github/workflows/apply-changeset.yml"
+  if [ -f "$apply_wf" ]; then
+    if grep -Fq 'BASH_REMATCH' "$apply_wf"; then
+      pass "apply-changeset uses BASH_REMATCH date extraction"
+    else
+      fail "apply-changeset uses legacy date extraction — update to BASH_REMATCH pattern"
+    fi
+
+    if grep -Fq 'Clean up batch artifacts' "$apply_wf"; then
+      pass "apply-changeset has batch artifact cleanup step"
+    else
+      fail "apply-changeset is missing batch artifact cleanup step"
+    fi
+  fi
+
   echo ""
   echo "Summary: ${pass_count} passed, ${fail_count} failed"
 
