@@ -154,7 +154,7 @@ Compare the candidate against existing vault entries in the same domains:
 Evaluate whether the candidate reads like an obvious codified restatement:
 
 1. **Q1 — Derivability (heuristic):** Based on the candidate's claim, body, and evidence, does this appear to describe something directly readable from current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
-2. **Q2 — Residual value:** Does the entry preserve *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves wouldn't explain?
+2. **Q2 — Residual value:** Does the entry preserve *why*, *boundary*, *exception*, or *failure mode* that a developer **could not infer** from the artifacts themselves?
 
 | Q1 | Q2 | Verdict |
 |----|-----|---------|
@@ -162,9 +162,15 @@ Evaluate whether the candidate reads like an obvious codified restatement:
 | yes | yes | PASS — artifact shows *what*, entry preserves *why* |
 | no | — | PASS — knowledge is not visible in artifacts |
 
-**Fact-type heuristic:** A `fact` that merely restates what the code does ("X uses Y") without explaining *why* or defining a *boundary* → likely R7 fail. A `fact` that carries rationale or constraint ("When touching X, keep Y because Z") → likely R7 pass.
+**Q2 strictness — red flags for false residual value:**
+- The "why" follows directly from the engineering pattern (e.g., "validates input to prevent injection", "fails fast to prevent silent errors") → likely Q2=no, rationale is pattern-inherent
+- The "why" restates standard engineering practice without project-specific context → likely Q2=no
+- The body's "Rejected Alternatives" section describes obviously inferior approaches that no one would seriously consider → likely Q2=no (padding, not genuine insight)
+- The entry's error messages or guard clauses already communicate the intent described in the body → likely Q2=no
 
-**Borderline R7 decisions:** Err on the side of rejecting. The vault should contain only knowledge that is invisible to artifact readers or that preserves reasoning they would otherwise lose.
+**Fact-type heuristic:** A `fact` that merely restates what the code does ("X uses Y") without explaining *why* or defining a *boundary* → likely R7 fail. A `fact` whose "why" is self-evident from the implementation pattern → also likely R7 fail. A `fact` that carries genuinely non-obvious rationale or constraint ("When touching X, keep Y because Z" where Z is a past incident, policy decision, or non-obvious tradeoff) → likely R7 pass.
+
+**Borderline R7 decisions:** Err on the side of rejecting. The vault should contain only knowledge that is invisible to artifact readers or that preserves reasoning they would otherwise lose. Having rationale text in the entry body is insufficient — the rationale itself must be non-obvious.
 
 ### Compose Verdicts
 
