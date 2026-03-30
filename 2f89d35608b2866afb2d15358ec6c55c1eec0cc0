@@ -1,0 +1,21 @@
+## Decisions Made
+- Adopt progressive disclosure pattern from claude_memory analysis: query commands return summary index by default, full details only via get/get-many. Rationale: reduces token cost per query while keeping context gate intact.
+- Add get-many batch detail query: allows fetching multiple entries in one call after a broad summary query. Rationale: avoids N+1 round-trips when several entries are relevant.
+- Keep --ids-only as opt-in ultra-light mode, not default: summary index (id + type + title + claim) is the right default granularity — IDs alone force an extra round-trip. Rationale: balance between token savings and usability.
+- Do not adopt agent direct-write memory, global vault promotion, vector/semantic search, or MCP connection release pattern from claude_memory: these conflict with our air-gap, batch-refine, and context-gate design, or are premature at current vault scale.
+
+## Problems Encountered
+- query-domain was mistakenly assumed to return full body in the external feedback — verified it already returned summary-only output. Corrected the analysis before implementing.
+- Agent-facing documentation (skills, hooks, AGENTS.md) was stale after CLI changes — discovered drift and updated all surfaces.
+
+## Constraints Identified
+- Summary index must include claim field, not just id+title: without claim, the agent cannot judge relevance and must fetch details for every entry, defeating the purpose. This sets a minimum output width.
+- The memento-commit hook blocks bare git commit: all commits in this project must go through the memento-commit skill to ensure session context reaches the evidence pipeline.
+
+## Open Questions
+- Whether to add --full flag to query commands for cases with very few results (1-2 entries) where a second round-trip is wasteful
+- Benchmark suite (DevMemBench-style) for retrieval accuracy and obsolescence detection — identified as high-value adoption item but not yet scoped
+- Worktree-aware vault resolution needs investigation — current resolve_vault_path may diverge in worktree contexts
+
+## Context
+Analyzed codenamev/claude_memory project for adoptable patterns. Identified progressive disclosure, diagnostic UX, worktree-aware paths, benchmarks, and privacy opt-out as high-value items. Implemented the progressive disclosure pattern: knowledge-gate query commands now default to summary index output, added get-many for batch detail fetch, updated all agent-facing docs/skills/hooks, and added regression tests. All tests pass.

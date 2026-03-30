@@ -1,0 +1,30 @@
+## Decisions Made
+- Keep decision commits on existing durable path: Peer review (3/3 consensus) identified durability regression — decisions in gitignored tmp could be lost on session crash
+- Use tmp/ (project root) instead of .knowledge/tmp/ for vault-refs: Avoids conflict with .knowledge/ direct read prohibition in AGENTS.md
+- vault-refs are best-effort with unconditional cleanup: Loss on note failure is acceptable for supplementary signal
+- Markdown-only format (no JSON appendix): Consistent with existing 5-section approach, avoids dual-format complexity
+- Memento remains optional evidence: Pipeline works without vault-refs
+- No session scoping for tmp files: Single session is standard, worktree isolation handles concurrency
+- followed signals excluded from _vault_feedback: YAGNI — can be added later without breaking changes
+- Part C artifact cleanup as separate workflow step: Ensures cleanup runs even when vault.db is unchanged
+
+## Problems Encountered
+- Peer review identified 6 design issues requiring resolution before implementation: Resolved through structured discussion — each issue reviewed with user, decisions documented in plan
+- Initial plan had record-decision moving to tmp (breaking durability): Resolved by keeping hybrid approach — decisions commit, memento references by slug/SHA
+- knowledge-gate rule 6 initially inserted inside Question Protocol section: Fixed by correcting insertion point
+
+## Constraints Identified
+- .knowledge/ directory must not be read directly by agents: All vault access through knowledge-gate CLI, vault-refs stored in tmp/ instead
+- Backward compatibility required for 5-section mementos: collect-evidence defaults vault_refs and decision_refs to empty arrays for legacy format
+
+## Open Questions
+- None
+
+## Context
+Implemented vault usage tracking and memento 7-section format across 11 files in the knowledge-distillery plugin. Key areas: memento-summary/commit (format), knowledge-gate (recording), collect-evidence/extract-candidates/quality-gate/batch-refine (pipeline consumption), apply-changeset.yml (cleanup). Feature complete, all changes are SKILL.md behavioral rules and workflow definitions.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

@@ -1,0 +1,18 @@
+Decisions Made
+- Hardened the shell-based skill orchestration harness by validating that each check object defines exactly one supported matcher key.
+- Made ordered snippet matching resilient under `set -euo pipefail` by preventing a missing `grep` match from aborting before the explicit failure path.
+
+Problems Encountered
+- The previous regression-harness PR was already merged, so the follow-up had to be cut as a new branch and PR from the updated main branch.
+- A parallel HEAD lookup raced with the commit and returned the pre-commit SHA, so the note/push flow had to re-read the current commit.
+
+Constraints Identified
+- The fix should remain limited to the merged harness file so the follow-up PR stays narrowly scoped.
+- The shell harness must keep using the existing variables and failure path semantics while avoiding premature exits under strict shell options.
+
+Open Questions
+- Whether to add a tiny negative fixture that intentionally violates the single-key rule so this validation itself is covered by automation.
+- Whether the harness should eventually support richer matcher types beyond contains/absent/ordered_contains.
+
+Context
+- Follow-up to merged PR #24. Updated tests/skill-orchestration-harness.sh, reran bash tests/skill-orchestration.sh and bash tests/all.sh, and prepared this patch as a new PR because the original branch had already merged.
