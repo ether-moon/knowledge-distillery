@@ -21,7 +21,7 @@ EXTRACT="${ROOT}/plugins/knowledge-distillery/skills/extract-candidates/SKILL.md
 BATCH="${ROOT}/plugins/knowledge-distillery/skills/batch-refine/SKILL.md"
 GATE_SKILL="${ROOT}/plugins/knowledge-distillery/skills/knowledge-gate/SKILL.md"
 HOOK="${ROOT}/plugins/knowledge-distillery/hooks/pre-prompt-knowledge-gate.sh"
-INIT="${ROOT}/plugins/knowledge-distillery/skills/init/SKILL.md"
+SETUP="${ROOT}/plugins/knowledge-distillery/skills/setup/SKILL.md"
 DESIGN_EN="${ROOT}/docs/design-implementation.md"
 DESIGN_KO="${ROOT}/docs/ko/design-implementation.md"
 
@@ -32,7 +32,7 @@ assert_contains "${BATCH}" 'GATE domain-list --ids-only' "batch-refine should ex
 assert_contains "${GATE_SKILL}" 'GATE get-many "<id-1>" "<id-2>" ...' "knowledge-gate skill should document batch detail retrieval"
 assert_contains "${GATE_SKILL}" 'lightweight summary index by default' "knowledge-gate skill should explain summary-first queries"
 assert_contains "${HOOK}" 'knowledge-gate get <id> or knowledge-gate get-many <id...>' "pre-prompt hook should mention detail fetch after summary queries"
-assert_contains "${INIT}" 'knowledge-gate get <id>` or `knowledge-gate get-many <id...>`' "init skill should install the summary-first retrieval guidance"
+assert_contains "${SETUP}" 'knowledge-gate get <id>` or `knowledge-gate get-many <id...>`' "setup skill should install the summary-first retrieval guidance"
 assert_contains "${DESIGN_EN}" 'knowledge-gate get-many "<entry ID 1>" "<entry ID 2>"' "English design doc should include batch detail retrieval"
 assert_contains "${DESIGN_KO}" 'knowledge-gate get-many "<항목 ID 1>" "<항목 ID 2>"' "Korean design doc should include batch detail retrieval"
 assert_contains "${DESIGN_EN}" '_domain_maintenance' "English design doc should describe the structured follow-up signal"
