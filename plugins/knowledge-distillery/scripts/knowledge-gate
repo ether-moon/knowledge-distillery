@@ -1097,12 +1097,22 @@ doctor() {
 
   if [ -f "${repo_root}/.github/workflows/mark-evidence.yml" ]; then
     pass "mark-evidence workflow exists"
+    if grep -Fq 'allowedTools' "${repo_root}/.github/workflows/mark-evidence.yml"; then
+      pass "mark-evidence workflow has --allowedTools"
+    else
+      fail "mark-evidence workflow is missing --allowedTools — CI will deny all tool calls"
+    fi
   else
     fail "mark-evidence workflow is missing"
   fi
 
   if [ -f "${repo_root}/.github/workflows/batch-refine.yml" ]; then
     pass "batch-refine workflow exists"
+    if grep -Fq 'allowedTools' "${repo_root}/.github/workflows/batch-refine.yml"; then
+      pass "batch-refine workflow has --allowedTools"
+    else
+      fail "batch-refine workflow is missing --allowedTools — CI will deny all tool calls"
+    fi
   else
     fail "batch-refine workflow is missing"
   fi
