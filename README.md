@@ -79,7 +79,6 @@ The `knowledge-gate` CLI is the sole access path to the knowledge vault (`.knowl
 |---|---|
 | `init-db [path]` | Create a new vault from bundled schema |
 | `migrate` | Apply schema migrations |
-| `doctor` | Verify repository adoption state |
 | `curate` | Interactive curation queue resolution |
 
 **Examples:**

@@ -1,15 +1,15 @@
 ---
-name: init
-description: "Initializes the Knowledge Distillery in an adopting project. Creates vault.db, GitHub Actions workflows, CLAUDE.md Knowledge Vault section, and .gitignore entries. Run once per project via /knowledge-distillery:init. Safe to re-run (idempotent). Use when setting up, bootstrapping, or onboarding a new project into the Knowledge Distillery system — any mention of 'initialize', 'set up', 'install', or 'bootstrap' knowledge distillery should trigger this."
+name: setup
+description: "Sets up or updates Knowledge Distillery in a project. Creates vault, workflows, directive sections, and permissions — always converging to the latest expected state. Safe to re-run after plugin upgrades. Use when setting up, updating, or troubleshooting a Knowledge Distillery installation — any mention of 'initialize', 'set up', 'install', 'bootstrap', or 'update' knowledge distillery should trigger this."
 ---
 
-# init — Knowledge Distillery Adoption Setup
+# setup — Knowledge Distillery Setup
 
 ## When to Use
 
-Run `/knowledge-distillery:init` once in a new project to set up the Knowledge Distillery infrastructure. Safe to re-run — all operations are idempotent.
+Run `/knowledge-distillery:setup` to set up a new project, update an existing installation after a plugin upgrade, or verify configuration state. Safe to re-run — always converges to the latest expected state.
 
-## What This Skill Creates
+## What This Skill Manages
 
 1. `.knowledge/vault.db` — SQLite vault initialized from the plugin's schema
 2. `.knowledge/reports/` — Directory for batch report files
@@ -24,21 +24,31 @@ Run `/knowledge-distillery:init` once in a new project to set up the Knowledge D
 
 ## Execution Steps
 
-### Step 1: Create Knowledge Vault
+### Step 1: Create or Verify Knowledge Vault
 
 ```bash
 mkdir -p .knowledge
 ```
 
-If `.knowledge/vault.db` already exists, skip this step (idempotent).
-
-If it does not exist, initialize it through the bundled CLI:
+If `.knowledge/vault.db` does not exist, initialize it:
 
 ```bash
 GATE init-db .knowledge/vault.db
 ```
 
-Verify: `sqlite3 .knowledge/vault.db "PRAGMA user_version;"` should return `1`.
+If `.knowledge/vault.db` already exists, verify its health:
+
+```bash
+sqlite3 .knowledge/vault.db "PRAGMA user_version;"
+```
+
+Expected: `1` or higher. If `0` or empty, report the problem and stop.
+
+```bash
+sqlite3 .knowledge/vault.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('entries','entry_domains','domain_registry','domain_paths','evidence');"
+```
+
+Expected: `5`. If less, report the problem and stop.
 
 ### Step 2: Create Reports and Changesets Directories
 
@@ -47,15 +57,11 @@ mkdir -p .knowledge/reports
 mkdir -p .knowledge/changesets
 ```
 
-### Step 3: Generate GitHub Actions Workflows
+### Step 3: Write GitHub Actions Workflows
 
-Create `.github/workflows/` directory if it doesn't exist.
+Create `.github/workflows/` directory if it doesn't exist. Write each workflow file below. If the file already exists, overwrite it with the latest template.
 
 #### `.github/workflows/mark-evidence.yml`
-
-If this file already exists, skip (idempotent).
-
-Write the following content:
 
 ```yaml
 name: Knowledge Distillery — Mark Evidence
@@ -77,12 +83,12 @@ jobs:
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
@@ -90,7 +96,7 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
-          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
+          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
@@ -122,6 +128,7 @@ jobs:
             Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
             and add 'knowledge:pending' label.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
 
       - name: Cleanup sensitive files
         if: always()
@@ -129,10 +136,6 @@ jobs:
 ```
 
 #### `.github/workflows/batch-refine.yml`
-
-If this file already exists, skip (idempotent).
-
-Write the following content:
 
 ```yaml
 name: Knowledge Distillery — Batch Refine
@@ -151,12 +154,12 @@ jobs:
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
@@ -164,9 +167,9 @@ jobs:
 
       - name: Write dynamic MCP config
         run: |
-          echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"
-          echo "::add-mask::${{ secrets.SLACK_API_KEY }}"
-          echo "::add-mask::${{ secrets.NOTION_API_KEY }}"
+          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
+          if [ -n "${{ secrets.SLACK_API_KEY }}" ]; then echo "::add-mask::${{ secrets.SLACK_API_KEY }}"; fi
+          if [ -n "${{ secrets.NOTION_API_KEY }}" ]; then echo "::add-mask::${{ secrets.NOTION_API_KEY }}"; fi
           cat > .mcp.json << 'MCPEOF'
           {
             "mcpServers": {
@@ -228,6 +231,7 @@ jobs:
             Create a Report PR with change summary.
             Do NOT modify vault.db directly — the changeset will be applied on merge.
           claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
 
       - name: Cleanup sensitive files
         if: always()
@@ -235,10 +239,6 @@ jobs:
 ```
 
 #### `.github/workflows/curate-report.yml`
-
-If this file already exists, skip (idempotent).
-
-Write the following content:
 
 ```yaml
 name: Knowledge Distillery — Curate Report
@@ -272,25 +272,30 @@ jobs:
             });
             const branch = pr.data.head.ref;
             if (!branch.startsWith('knowledge/batch-')) {
-              core.setFailed('Not a Report PR branch: ' + branch);
+              core.notice('Skipping: not a Report PR branch (' + branch + ')');
+              core.setOutput('skip', 'true');
               return;
             }
+            core.setOutput('skip', 'false');
             core.setOutput('branch', branch);
             core.setOutput('pr_number', context.issue.number);
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        if: steps.pr.outputs.skip != 'true'
         with:
           ref: ${{ steps.pr.outputs.branch }}
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
           path: .knowledge-distillery-plugin
 
       - name: Write dynamic MCP config
+        if: steps.pr.outputs.skip != 'true'
         run: |
           cat > .mcp.json << 'MCPEOF'
           {
@@ -308,11 +313,13 @@ jobs:
           MCPEOF
 
       - name: Configure git identity
+        if: steps.pr.outputs.skip != 'true'
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - uses: anthropics/claude-code-action@v1
+        if: steps.pr.outputs.skip != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
@@ -326,15 +333,11 @@ jobs:
           show_full_output: true
 
       - name: Cleanup sensitive files
-        if: always()
+        if: always() && steps.pr.outputs.skip != 'true'
         run: rm -f .mcp.json
 ```
 
 #### `.github/workflows/apply-changeset.yml`
-
-If this file already exists, skip (idempotent).
-
-Write the following content:
 
 ```yaml
 name: Knowledge Distillery — Apply Changeset
@@ -353,13 +356,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
 
       - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ether-moon/knowledge-distillery
           ref: main
@@ -529,33 +532,54 @@ Read `.claude/settings.json` if it exists. Merge the following permissions into 
 
 Preserve all existing keys in the file. Only add to the `permissions.allow` array.
 
-### Step 7: Run Self-Check
+### Step 7: Verify Setup
 
-After all files are created or updated, verify the repository state through the bundled CLI:
+After all files are created or updated, verify the repository state:
 
 ```bash
-GATE doctor
+sqlite3 .knowledge/vault.db "PRAGMA user_version;"
+# Expected: >= 1
+
+sqlite3 .knowledge/vault.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('entries','entry_domains','domain_registry','domain_paths','evidence');"
+# Expected: 5
+
+ls -d .knowledge/reports .knowledge/changesets .github/workflows/mark-evidence.yml .github/workflows/batch-refine.yml .github/workflows/curate-report.yml .github/workflows/apply-changeset.yml
+# All should exist
 ```
 
-This command must succeed. If any check fails, stop and report the failing items instead of claiming initialization is complete.
+Verify directive file contains both sections:
+
+```bash
+grep -Fq '## Knowledge Vault' <directive-file>
+grep -Fq '## Memento' <directive-file>
+```
+
+Verify .gitignore entries:
+
+```bash
+grep -Fq '.knowledge/tmp/' .gitignore
+grep -Fq '.mcp.json' .gitignore
+```
+
+If any check fails after the create/update steps, report the specific failure.
 
 ### Step 8: Output Summary
 
-Print a summary of all created/updated files:
+Print a summary of all managed files:
 
 ```
-Knowledge Distillery initialized:
-  [created|exists] .knowledge/vault.db
-  [created|exists] .knowledge/reports/
-  [created|exists] .knowledge/changesets/
-  [created|exists] .github/workflows/mark-evidence.yml
-  [created|exists] .github/workflows/batch-refine.yml
-  [created|exists] .github/workflows/curate-report.yml
-  [created|exists] .github/workflows/apply-changeset.yml
-  [updated|exists] <target file> (Knowledge Vault + Memento sections)
-  [updated|exists] .gitignore
-  [updated|exists] .claude/settings.json (CLI permissions)
-  [passed] knowledge-gate doctor
+Knowledge Distillery setup complete:
+  [created|updated|unchanged] .knowledge/vault.db (schema v<N>)
+  [created|unchanged] .knowledge/reports/
+  [created|unchanged] .knowledge/changesets/
+  [created|updated] .github/workflows/mark-evidence.yml
+  [created|updated] .github/workflows/batch-refine.yml
+  [created|updated] .github/workflows/curate-report.yml
+  [created|updated] .github/workflows/apply-changeset.yml
+  [created|updated|unchanged] <target file> (Knowledge Vault + Memento sections)
+  [created|updated|unchanged] .gitignore
+  [created|updated|unchanged] .claude/settings.json (CLI permissions)
+  Verification: all checks passed
 
 Next steps:
   1. Add ANTHROPIC_API_KEY to your repository secrets
@@ -571,6 +595,5 @@ Next steps:
 - Vault initialization must go through the bundled CLI command so schema asset lookup stays inside the plugin package
 - Idempotent: safe to run multiple times without duplication
 - Does NOT modify existing vault.db data
-- Does NOT overwrite existing workflow files
-- Does NOT remove existing CLAUDE.md content
-- Final repository validation must go through `GATE doctor`
+- Workflows are always overwritten with the latest templates — user customizations are visible in git diff
+- Does NOT remove existing directive file content (only appends missing sections)

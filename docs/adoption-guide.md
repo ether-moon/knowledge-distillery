@@ -24,12 +24,12 @@ Expected outcome:
 - Claude Code can see the `/knowledge-distillery:*` skills
 - The bundled assets are available through `${CLAUDE_PLUGIN_ROOT}`
 
-## 2. Initialize the Repository
+## 2. Set Up the Repository
 
 In the adopting repository, run:
 
 ```text
-/knowledge-distillery:init
+/knowledge-distillery:setup
 ```
 
 This sets up:
@@ -41,13 +41,8 @@ This sets up:
 - `CLAUDE.md` Knowledge Vault section
 - `.gitignore` entry for `.knowledge/tmp/`
 
-At the end of initialization, the skill should run a self-check through:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate doctor
-```
-
-Initialization is complete only if that check passes.
+The skill validates the configuration at the end and reports the result.
+Setup is complete when all verification checks pass.
 
 ## 3. Configure the Repository
 
@@ -90,7 +85,7 @@ After adoption:
 
 Before relying on the system, confirm:
 
-- `knowledge-gate doctor` passes in the repository root
+- `/knowledge-distillery:setup` reports all verification checks passed
 - `knowledge-gate query-paths <file>` returns results for at least one representative path
 - GitHub Actions can access the required secrets
 - The generated workflows match the repository's branch and schedule policies
