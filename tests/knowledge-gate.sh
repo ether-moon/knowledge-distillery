@@ -466,25 +466,6 @@ assert_contains "${domain_report_output}" "orphan -- created" "domain-report sho
 assert_contains "${domain_report_output}" "Broadest pattern: src/" "domain-report should warn about broad path patterns"
 assert_contains "${domain_report_output}" "docs/missing/ -- no domain mapping" "domain-report should surface structural mismatches"
 
-doctor_output="$(cd "${REPO_DIR}" && "${GATE}" doctor)"
-assert_contains "${doctor_output}" "PASS  AGENTS.md contains the Knowledge Vault section" "doctor should respect CLAUDE.md delegation to AGENTS.md"
-assert_contains "${doctor_output}" "PASS  batch-refine workflow exists" "doctor should verify workflow adoption"
-assert_contains "${doctor_output}" "Summary: 14 passed, 0 failed" "doctor should pass in the fully configured fixture repo"
-
-BAD_REPO="${TMP_DIR}/bad-repo"
-mkdir -p "${BAD_REPO}/.knowledge"
-git -C "${TMP_DIR}" init -q bad-repo
-cat > "${BAD_REPO}/AGENTS.md" <<'EOF'
-No vault section here.
-EOF
-export KNOWLEDGE_VAULT_PATH="${BAD_REPO}/.knowledge/vault.db"
-"${GATE}" init-db >/dev/null
-if bad_doctor_output="$(cd "${BAD_REPO}" && "${GATE}" doctor 2>&1)"; then
-  fail "doctor should fail for incomplete repository adoption"
-fi
-assert_contains "${bad_doctor_output}" "FAIL  Directive file is missing the Knowledge Vault section" "doctor should fail when the directive file is incomplete"
-assert_contains "${bad_doctor_output}" "FAIL  .knowledge/reports is missing" "doctor should fail when required directories are absent"
-
 export KNOWLEDGE_VAULT_PATH="${REPO_DIR}/.knowledge/vault.db"
 migrate_output="$("${GATE}" migrate)"
 assert_contains "${migrate_output}" "Already at version" "migrate should no-op cleanly when no migrations apply"

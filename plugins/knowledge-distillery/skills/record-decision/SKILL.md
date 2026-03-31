@@ -50,8 +50,8 @@ From the session conversation, extract:
 **IMPORTANT — No command substitution:** Never use `$(...)` or backtick substitution in Bash calls. Claude Code's security layer blocks these patterns.
 
 ```bash
-test -d .knowledge || { echo "knowledge-distillery not initialized. Run /knowledge-distillery:init"; exit 1; }
-mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" <<'DECISION_EOF'
+test -d .knowledge || { echo "knowledge-distillery not initialized. Run /knowledge-distillery:setup"; exit 1; }
+mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" << 'DECISION_EOF'
 # Decision: <title>
 
 **Decision**: <decision statement>
@@ -82,7 +82,7 @@ Decision recorded: <sha> decision: <slug>
 
 | Failure | Behavior |
 |---------|----------|
-| `.knowledge/` directory does not exist | Report that knowledge-distillery is not initialized. Suggest `/knowledge-distillery:init`. |
+| `.knowledge/` directory does not exist | Report that knowledge-distillery is not initialized. Suggest `/knowledge-distillery:setup`. |
 | File with same date+slug already exists | Append numeric suffix to slug (e.g., `pr-template-out-of-scope-2`). |
 | `git commit` fails | Report the error. The file remains on disk for manual review. |
 
