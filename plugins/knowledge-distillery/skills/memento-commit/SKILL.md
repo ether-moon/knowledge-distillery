@@ -70,20 +70,31 @@ Combine staging, commit, and note attachment in a single Bash call. This ensures
 - If untracked files should be committed, add them by name alongside `git add -u`
 - NEVER stage files matching: `.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`
 
+**IMPORTANT — No command substitution:** Never use `$(...)` or backtick substitution in Bash calls. Claude Code's security layer blocks these patterns. Use per-run unique temp files with heredocs, `-F` flags, and `trap` cleanup instead.
+
 ```bash
-git add <file1> <file2> ... && git commit -m "$(cat <<'COMMIT_EOF'
+COMMIT_MSG_FILE="${TMPDIR:-/tmp}/kd_commit_msg.$$.$RANDOM.txt"
+MEMENTO_FILE="${TMPDIR:-/tmp}/kd_memento.$$.$RANDOM.txt"
+trap 'rm -f "$COMMIT_MSG_FILE" "$MEMENTO_FILE"' EXIT
+
+cat > "$COMMIT_MSG_FILE" <<'COMMIT_EOF'
 <generated message>
 COMMIT_EOF
-)" && SHA=$(git log --format=%h -1) && cat <<'MEMENTO_EOF' | git notes --ref=refs/notes/commits add --force --file=- $SHA
+
+cat > "$MEMENTO_FILE" <<'MEMENTO_EOF'
 <generated summary>
 MEMENTO_EOF
-echo "$SHA $(git log --format=%s -1)"
+
+git add <file1> <file2> ... &&
+git commit -F "$COMMIT_MSG_FILE" &&
+git notes --ref=refs/notes/commits add --force -F "$MEMENTO_FILE" HEAD &&
+git log --format='%h %s' -1
 ```
 
 After the commit+note command succeeds, push the notes ref so that the downstream pipeline (mark-evidence in CI) can access them:
 
 ```bash
-PUSH_OUT=$(git push origin refs/notes/commits 2>&1) && echo "Notes push: synced to origin" || echo "FAILED — $PUSH_OUT"
+git push origin refs/notes/commits && echo "Notes push: synced to origin" || echo "Notes push: FAILED"
 ```
 
 After the notes push, clear the vault-refs tmp file (best-effort, unconditional):
@@ -93,8 +104,12 @@ rm -f tmp/vault-refs.jsonl 2>/dev/null || true
 ```
 
 - `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
+- `$$.$RANDOM`: Per-run unique filenames — safe for concurrent agents.
+- `trap ... EXIT`: Cleans up temp files on any exit (success, failure, or signal).
+- `-F "$COMMIT_MSG_FILE"`: Reads commit message from temp file — avoids command substitution.
+- `-F "$MEMENTO_FILE"`: Reads memento from temp file — avoids shell quoting issues with multi-line markdown.
+- `HEAD`: References the just-created commit without capturing SHA into a variable.
 - `--force`: Ensures idempotency if rerun on the same SHA.
-- `--file=-`: Avoids shell quoting issues with multi-line markdown.
 - `refs/notes/commits`: Matches the ref that mark-evidence and collect-evidence expect.
 - `git push origin refs/notes/commits`: Pushes notes to remote. Without this, notes exist only locally and the CI pipeline (mark-evidence) cannot detect them. This is a separate Bash call because a push failure should not affect the commit result.
 
@@ -118,7 +133,7 @@ If notes push failed:
 ```
 Committed: <sha> <first line of message>
 Memento:   attached to refs/notes/commits
-Notes push: FAILED — <reason>. Run `git push origin refs/notes/commits` manually before merging.
+Notes push: FAILED. Run `git push origin refs/notes/commits` manually before merging.
 ```
 
 ---

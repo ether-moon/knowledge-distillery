@@ -47,9 +47,11 @@ From the session conversation, extract:
 
 ### Step 2: Write File and Commit (single Bash call)
 
+**IMPORTANT — No command substitution:** Never use `$(...)` or backtick substitution in Bash calls. Claude Code's security layer blocks these patterns.
+
 ```bash
 test -d .knowledge || { echo "knowledge-distillery not initialized. Run /knowledge-distillery:init"; exit 1; }
-mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" << 'DECISION_EOF'
+mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" <<'DECISION_EOF'
 # Decision: <title>
 
 **Decision**: <decision statement>
@@ -58,16 +60,16 @@ mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.m
 
 **Rationale**: <rationale>
 DECISION_EOF
-git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" && git commit --only ".knowledge/decisions/YYYY-MM-DD-<slug>.md" -m "$(cat <<'COMMIT_EOF'
-decision: <slug>
-COMMIT_EOF
-)"
+
+git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" &&
+git commit --only ".knowledge/decisions/YYYY-MM-DD-<slug>.md" -m "decision: <slug>"
 ```
 
 Key details:
 - `test -d .knowledge` fails fast if the distillery is not initialized, matching the error handling table.
 - `mkdir -p` ensures the `decisions/` subdirectory exists (idempotent).
 - `git add` + `git commit --only` ensures ONLY the decision file is committed — even if other files are already staged from the user's work in progress, they won't be swept into this commit.
+- Commit message is a single-line `decision:` prefix — no heredoc or command substitution needed.
 - Commit message uses the `decision:` prefix for pipeline discoverability.
 
 ### Step 3: Report Result (no Bash)
