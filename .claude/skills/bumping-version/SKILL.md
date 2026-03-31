@@ -16,11 +16,18 @@ Bump the knowledge-distillery plugin version: analyze changes, suggest semver le
 
 ### 1. Analyze changes since last bump
 
+Run two separate Bash calls (no command substitution — Claude Code blocks `$(...)` patterns):
+
 ```bash
-# Find the last bump commit
-LAST_BUMP=$(git log --oneline --grep="bump version" -1 --format="%H")
-# Show commits since then
-git log --oneline "$LAST_BUMP"..HEAD
+# Call 1: Find the last bump commit SHA
+git log --oneline --grep="bump version" -1 --format="%H"
+```
+
+Read the SHA from the output, then use it in a second call:
+
+```bash
+# Call 2: Show commits since the last bump (replace <SHA> with output from Call 1)
+git log --oneline <SHA>..HEAD
 ```
 
 ### 2. Suggest semver level
