@@ -121,7 +121,7 @@ jobs:
             Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
             Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
             and add 'knowledge:pending' label.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
 
       - name: Cleanup sensitive files
         if: always()
@@ -227,7 +227,7 @@ jobs:
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
             Do NOT modify vault.db directly — the changeset will be applied on merge.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
 
       - name: Cleanup sensitive files
         if: always()
