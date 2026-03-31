@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0] - 2026-03-31
+
+### Added
+
+- **skill**: Unified `/knowledge-distillery:setup` skill — replaces init, handles both initial setup and plugin updates
+- **skill**: Inline verification checks in setup skill (vault health, workflow presence, directive sections)
+- **cli**: Progressive disclosure with `query-domain`, `query-paths` returning summary indexes; `get`/`get-many` for full details
+- **cli**: `domain-report` command for domain health analysis (split/merge candidates, orphans, broad patterns)
+- **pipeline**: Vault usage tracking via `tmp/vault-refs.jsonl` and memento 7-section format
+
+### Improved
+
+- **skill**: Setup skill always overwrites workflow templates — plugin updates propagate automatically
+- **workflow**: All workflow templates synced to latest (checkout@v6, conditional masking, `--allowedTools`, `show_full_output`)
+- **skill**: Eliminated command substitution from all skill Bash templates for Claude Code compatibility
+- **pipeline**: Quality-gate R6 uses vault feedback signals for conflict vs duplicate classification
+
+### Fixed
+
+- **workflow**: Apply-changeset date extraction uses BASH_REMATCH for suffixed branch names
+- **workflow**: Hardened workflow templates against injection and unauthorized access
+- **skill**: Curate-report uses skip output pattern instead of `core.setFailed`
+
+### Removed
+
+- **cli**: `doctor` command — replaced by setup skill's inline verification
+
 ## [0.1.4] - 2026-03-30
 
 ### Added
