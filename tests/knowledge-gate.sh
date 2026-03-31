@@ -67,8 +67,8 @@ cat > "${REPO_DIR}/.gitignore" <<'EOF'
 tmp/
 EOF
 
-touch "${REPO_DIR}/.github/workflows/mark-evidence.yml"
-touch "${REPO_DIR}/.github/workflows/batch-refine.yml"
+echo 'claude_args: "--allowedTools mcp__github__*"' > "${REPO_DIR}/.github/workflows/mark-evidence.yml"
+echo 'claude_args: "--allowedTools mcp__github__*"' > "${REPO_DIR}/.github/workflows/batch-refine.yml"
 
 cat > "${REPO_DIR}/.github/workflows/apply-changeset.yml" <<'APPLY_EOF'
 name: Apply Changeset
@@ -469,7 +469,7 @@ assert_contains "${domain_report_output}" "docs/missing/ -- no domain mapping" "
 doctor_output="$(cd "${REPO_DIR}" && "${GATE}" doctor)"
 assert_contains "${doctor_output}" "PASS  AGENTS.md contains the Knowledge Vault section" "doctor should respect CLAUDE.md delegation to AGENTS.md"
 assert_contains "${doctor_output}" "PASS  batch-refine workflow exists" "doctor should verify workflow adoption"
-assert_contains "${doctor_output}" "Summary: 12 passed, 0 failed" "doctor should pass in the fully configured fixture repo"
+assert_contains "${doctor_output}" "Summary: 14 passed, 0 failed" "doctor should pass in the fully configured fixture repo"
 
 BAD_REPO="${TMP_DIR}/bad-repo"
 mkdir -p "${BAD_REPO}/.knowledge"
