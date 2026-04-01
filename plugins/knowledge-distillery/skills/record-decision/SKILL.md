@@ -67,6 +67,12 @@ mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.m
 **Context**: <context>
 
 **Rationale**: <rationale>
+
+**Alternatives considered**:
+- **<Option A>**: <why rejected>
+- **<Option B>**: <why rejected>
+
+**Supersedes**: `YYYY-MM-DD-<previous-slug>`
 DECISION_EOF
 
 git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" &&
@@ -91,6 +97,7 @@ Key details:
 - `git add` + `git commit --only` ensures ONLY the decision file is committed — even if other files are already staged from the user's work in progress, they won't be swept into this commit.
 - Commit message is a single-line `decision:` prefix — no heredoc or command substitution needed.
 - Commit message uses the `decision:` prefix for pipeline discoverability.
+- The `Alternatives considered` and `Supersedes` sections are **optional** — omit them entirely from the heredoc when they don't apply. The template above shows the maximal form; most decisions will use only the core 4 fields.
 
 ### Step 3: Report Result (no Bash)
 
