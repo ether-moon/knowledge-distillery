@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1] - 2026-04-01
+
+### Improved
+
+- **skill**: Decision records support optional `Alternatives considered` and `Supersedes` fields for richer evidence extraction
+- **skill**: Core heredoc template separated from optional sections to prevent accidental inclusion
+
+### Fixed
+
+- **workflow**: Apply-changeset saves before rebase to prevent data loss
+
 ## [0.2.0] - 2026-03-31
 
 ### Added
