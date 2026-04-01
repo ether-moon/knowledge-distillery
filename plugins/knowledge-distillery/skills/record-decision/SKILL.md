@@ -65,12 +65,6 @@ mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.m
 **Context**: <context>
 
 **Rationale**: <rationale>
-
-**Alternatives considered**:
-- **<Option A>**: <why rejected>
-- **<Option B>**: <why rejected>
-
-**Supersedes**: `YYYY-MM-DD-<previous-slug>`
 DECISION_EOF
 git add ".knowledge/decisions/YYYY-MM-DD-<slug>.md" && git commit --only ".knowledge/decisions/YYYY-MM-DD-<slug>.md" -m "$(cat <<'COMMIT_EOF'
 decision: <slug>
@@ -78,12 +72,23 @@ COMMIT_EOF
 )"
 ```
 
+**Optional sections** — when `alternatives` or `supersedes` apply (from Step 1), append them to the heredoc body before the `DECISION_EOF` marker:
+
+```markdown
+**Alternatives considered**:
+- **<Option A>**: <why rejected>
+- **<Option B>**: <why rejected>
+
+**Supersedes**: `YYYY-MM-DD-<previous-slug>`
+```
+
+Include only the sections that apply. Most decisions will use only the core 4 fields.
+
 Key details:
 - `test -d .knowledge` fails fast if the distillery is not initialized, matching the error handling table.
 - `mkdir -p` ensures the `decisions/` subdirectory exists (idempotent).
 - `git add` + `git commit --only` ensures ONLY the decision file is committed — even if other files are already staged from the user's work in progress, they won't be swept into this commit.
 - Commit message uses the `decision:` prefix for pipeline discoverability.
-- The `Alternatives considered` and `Supersedes` sections are **optional** — omit them entirely from the heredoc when they don't apply. The template above shows the maximal form; most decisions will use only the core 4 fields.
 
 ### Step 3: Report Result (no Bash)
 
