@@ -1,0 +1,25 @@
+## Decisions Made
+- Decision record v2 포맷 도입: Alternatives considered와 Supersedes optional 필드 추가 — ADR/CIR 블로그 분석 + 3개 피어 LLM 합의 기반
+- CIR 별도 체계 불채택, pre-implementation 결정 기록 불채택 — memento 시스템이 이미 세션 의도 커버, 디자인 철학 §3과 충돌
+- Heredoc 템플릿에서 optional 섹션 분리 — CodeRabbit 리뷰 반영
+
+## Problems Encountered
+- gh auth가 EMU 계정(ether_karrot)으로 활성화되어 있어 PR 생성 실패: ether-moon으로 전환하여 해결
+- main 브랜치에 직접 커밋 후 feature 브랜치 분리 필요: 브랜치 생성 후 main reset으로 해결
+
+## Constraints Identified
+- Alternatives 필드에서 자명한 대안(padding)은 Q2 residual value로 인정되지 않음 — quality-gate R7 정책과 일관성 유지
+- Supersedes는 .knowledge/decisions/에 실제 파일 존재 시에만 사용
+
+## Open Questions
+- Supersedes 링크 시 vault entry 자동 아카이브 트리거 파이프라인 추가 여부
+- Status 필드(proposed/accepted/deprecated) 도입 여부 — Codex 찬성 vs Claude 반대
+
+## Context
+GitHub Engineering ADR 블로그와 Bryan Liles CIR 블로그를 기반으로 Gemini/Codex/Claude 피어 리뷰 수행. 합의된 2개 개선안을 record-decision SKILL.md에 반영하고 PR #37 생성. CodeRabbit 리뷰 피드백 반영 후 origin/main에 리베이스, 0.2.1 버전 범프.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
