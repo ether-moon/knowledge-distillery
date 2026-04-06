@@ -33,7 +33,7 @@ mkdir -p .knowledge
 If `.knowledge/vault.db` does not exist, initialize it:
 
 ```bash
-GATE init-db .knowledge/vault.db
+<knowledge-gate> init-db .knowledge/vault.db
 ```
 
 If `.knowledge/vault.db` already exists, verify its health:

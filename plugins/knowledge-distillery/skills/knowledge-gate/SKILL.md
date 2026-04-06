@@ -19,10 +19,10 @@ Resolve the CLI path once at session start. If `plugins/knowledge-distillery/scr
 - **Development repo**: `plugins/knowledge-distillery/scripts/knowledge-gate`
 - **Installed plugin**: `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate`
 
-All commands below use `GATE` as placeholder for the resolved path:
+All commands below use `<knowledge-gate>` as a placeholder for the resolved executable path. Substitute the concrete path directly in the command; do NOT create or execute a shell variable such as `$GATE`.
 
 ```bash
-GATE <command> [args]
+<knowledge-gate> <command> [args]
 ```
 
 If the CLI or vault is not available, inform the user: "Knowledge vault not configured. Proceeding without vault guidance." Then continue normally -- do not block work.
@@ -33,7 +33,7 @@ If the CLI or vault is not available, inform the user: "Knowledge vault not conf
 
 ```bash
 # Returns a lightweight summary index by default
-GATE query-paths "<filepath>"
+<knowledge-gate> query-paths "<filepath>"
 ```
 
 ### Modifying multiple files
@@ -42,17 +42,17 @@ Resolve domains first to avoid duplicate queries:
 
 ```bash
 # 1. Resolve each file to its domain(s) -- a few representative files suffice
-GATE domain-resolve-path "<filepath>"
+<knowledge-gate> domain-resolve-path "<filepath>"
 
 # 2. Deduplicate the resolved domains, then query each one (summary index by default)
-GATE query-domain "<domain>"
+<knowledge-gate> query-domain "<domain>"
 ```
 
 ### Investigating a topic or concept
 
 ```bash
 # Returns a lightweight summary index by default
-GATE search "<keyword>"
+<knowledge-gate> search "<keyword>"
 ```
 
 ### Getting full details for an entry
@@ -60,8 +60,8 @@ GATE search "<keyword>"
 When a query returns entry IDs and you need the complete body:
 
 ```bash
-GATE get "<id>"
-GATE get-many "<id-1>" "<id-2>" ...
+<knowledge-gate> get "<id>"
+<knowledge-gate> get-many "<id-1>" "<id-2>" ...
 ```
 
 ### Exploring what knowledge exists
@@ -70,13 +70,13 @@ When the relevant domain or keyword is unknown:
 
 ```bash
 # Load a lightweight navigation-only domain index
-GATE domain-list --ids-only
+<knowledge-gate> domain-list --ids-only
 
 # Browse all active entries as a summary index
-GATE list
+<knowledge-gate> list
 
 # Browse full domain metadata only when needed
-GATE domain-list
+<knowledge-gate> domain-list
 ```
 
 Then use `query-paths`, `query-domain`, or `search` for precise queries.
@@ -84,8 +84,8 @@ Then use `query-paths`, `query-domain`, or `search` for precise queries.
 ### Checking which domain a file belongs to
 
 ```bash
-GATE domain-resolve-path "<filepath>"
-GATE domain-info "<domain>"
+<knowledge-gate> domain-resolve-path "<filepath>"
+<knowledge-gate> domain-info "<domain>"
 ```
 
 ## Behavioral Rules
@@ -152,10 +152,10 @@ User asks: "Refactor the batch-refine pipeline to support parallel PR processing
 1. Hook fires: "Knowledge Vault active (12 entries). If this task involves code modifications, query relevant entries before planning."
 2. Query the relevant domain:
    ```bash
-   GATE domain-resolve-path "plugins/knowledge-distillery/skills/batch-refine/SKILL.md"
+   <knowledge-gate> domain-resolve-path "plugins/knowledge-distillery/skills/batch-refine/SKILL.md"
    # → domain: distillation-pipeline
-   GATE query-domain "distillation-pipeline"
-   GATE get-many "pipeline-stage-order" "parallelism-boundary"
+   <knowledge-gate> query-domain "distillation-pipeline"
+   <knowledge-gate> get-many "pipeline-stage-order" "parallelism-boundary"
    ```
 3. Vault returns an entry:
    ```

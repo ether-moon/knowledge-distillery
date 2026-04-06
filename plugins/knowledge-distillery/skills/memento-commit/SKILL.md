@@ -70,24 +70,20 @@ Combine staging, commit, and note attachment in a single Bash call. This ensures
 - If untracked files should be committed, add them by name alongside `git add -u`
 - NEVER stage files matching: `.env*`, `credentials*`, `*.key`, `*.pem`, `*.secret`, `settings.local.json`
 
-**IMPORTANT — No command substitution:** Never use `$(...)` or backtick substitution in Bash calls. Claude Code's security layer blocks these patterns. Use per-run unique temp files with heredocs, `-F` flags, and `trap` cleanup instead.
+**IMPORTANT — No shell expansion:** Avoid `$(...)`, backticks, `${...}`, `$VAR`, `$$`, and `$RANDOM` in this Bash call. Claude Code may still require approval when it detects shell expansion, so feed the commit message and memento directly through heredocs and `-F -` instead.
 
 ```bash
-COMMIT_MSG_FILE="${TMPDIR:-/tmp}/kd_commit_msg.$$.$RANDOM.txt"
-MEMENTO_FILE="${TMPDIR:-/tmp}/kd_memento.$$.$RANDOM.txt"
-trap 'rm -f "$COMMIT_MSG_FILE" "$MEMENTO_FILE"' EXIT
+set -e
+git add <file1> <file2> ...
 
-cat > "$COMMIT_MSG_FILE" <<'COMMIT_EOF'
+git commit -F - <<'COMMIT_EOF'
 <generated message>
 COMMIT_EOF
 
-cat > "$MEMENTO_FILE" <<'MEMENTO_EOF'
+git notes --ref=refs/notes/commits add --force -F - HEAD <<'MEMENTO_EOF'
 <generated summary>
 MEMENTO_EOF
 
-git add <file1> <file2> ... &&
-git commit -F "$COMMIT_MSG_FILE" &&
-git notes --ref=refs/notes/commits add --force -F "$MEMENTO_FILE" HEAD &&
 git log --format='%h %s' -1
 ```
 
@@ -104,10 +100,9 @@ rm -f tmp/vault-refs.jsonl 2>/dev/null || true
 ```
 
 - `git add <files>`: Stage only the files identified in the staging plan. Use `git add -u` when only tracked files changed.
-- `$$.$RANDOM`: Per-run unique filenames — safe for concurrent agents.
-- `trap ... EXIT`: Cleans up temp files on any exit (success, failure, or signal).
-- `-F "$COMMIT_MSG_FILE"`: Reads commit message from temp file — avoids command substitution.
-- `-F "$MEMENTO_FILE"`: Reads memento from temp file — avoids shell quoting issues with multi-line markdown.
+- `set -e`: Fails fast if staging, commit, or note attachment fails inside the multi-step Bash call.
+- `git commit -F - <<'COMMIT_EOF'`: Reads the commit message from stdin without temp files or shell expansion.
+- `git notes --ref=refs/notes/commits add --force -F - HEAD <<'MEMENTO_EOF'`: Attaches the memento from stdin to the commit that was just created.
 - `HEAD`: References the just-created commit without capturing SHA into a variable.
 - `--force`: Ensures idempotency if rerun on the same SHA.
 - `refs/notes/commits`: Matches the ref that mark-evidence and collect-evidence expect.

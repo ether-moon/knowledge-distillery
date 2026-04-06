@@ -20,9 +20,9 @@ user-invocable: false
 
 ## Allowed Tools
 
-- `GATE query-domain` — existing entries for semantic comparison
-- `GATE get` — full entry details for conflict analysis
-- `GATE search` — keyword search for duplicate detection
+- `<knowledge-gate> query-domain` — existing entries for semantic comparison
+- `<knowledge-gate> get` — full entry details for conflict analysis
+- `<knowledge-gate> search` — keyword search for duplicate detection
 - No direct vault.db access. No file writes.
 
 ## Input
@@ -111,12 +111,12 @@ Compare the candidate against existing vault entries in the same domains:
 
 1. Fetch existing entries for each domain in `applies_to.domains`:
    ```bash
-   GATE query-domain "<domain>"
+   <knowledge-gate> query-domain "<domain>"
    ```
 
 2. If the candidate has a `conflict_check` value referencing an existing entry, also fetch that entry:
    ```bash
-   GATE get "<conflict_check_id>"
+   <knowledge-gate> get "<conflict_check_id>"
    ```
 
 3. For each existing entry, classify the relationship:

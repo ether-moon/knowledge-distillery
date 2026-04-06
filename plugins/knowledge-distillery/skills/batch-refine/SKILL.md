@@ -127,7 +127,7 @@ Notes:
 Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data:
 
 ```bash
-GATE domain-list --ids-only
+<knowledge-gate> domain-list --ids-only
 ```
 
 - Use the current registry as the comparison baseline, not just the batch-local proposals
