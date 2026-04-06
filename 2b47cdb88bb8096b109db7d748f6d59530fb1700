@@ -1,0 +1,22 @@
+## Decisions Made
+- Parallelize PR-level subagent execution in batch-refine: Each PR pipeline is independent (own context window, no shared state), so concurrent Agent tool calls in a single message is safe and eliminates linear time scaling.
+- Keep intra-PR stages sequential: collect -> extract -> quality-gate has data dependencies within a single PR, so parallelizing within a PR is not feasible.
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- Agent tool parallelism requires all spawn calls in a single message: Claude Code launches subagents concurrently only when multiple Agent tool calls appear in one response.
+- Intra-PR pipeline must remain sequential: Evidence Bundle feeds extract-candidates, which feeds quality-gate — data dependency chain.
+
+## Open Questions
+- None
+
+## Context
+User reported batch-refine taking too long and risking context window overflow. Investigated the pipeline architecture, confirmed per-PR subagents are already isolated but spawned sequentially. Changed Step 3 of batch-refine SKILL.md to spawn all PR subagents in parallel via concurrent Agent tool calls, with explicit instructions on how to achieve parallelism.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
