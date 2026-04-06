@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] - 2026-04-06
+
+### Fixed
+
+- **workflow**: Save changes before rebasing in apply-changeset cleanup flow
+- **skill**: Avoid shell-expansion approval prompts in memento-commit and knowledge-gate command guidance
+
 ## [0.2.0] - 2026-03-31
 
 ### Added
