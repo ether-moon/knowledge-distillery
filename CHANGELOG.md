@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.3] - 2026-04-06
+
+### Improved
+
+- **pipeline**: Parallelize per-PR subagent execution in batch-refine with concurrency cap (10) and deterministic ordering
+
+### Fixed
+
+- **pipeline**: Harden manifest parsing and block direct vault writes on batch branches
+- **skill**: Avoid shell-expansion approval prompts in memento-commit and knowledge-gate command guidance
+
 ## [0.2.2] - 2026-04-06
 
 ### Fixed

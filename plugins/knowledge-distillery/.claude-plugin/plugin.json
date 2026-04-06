@@ -1,7 +1,7 @@
 {
   "name": "knowledge-distillery",
   "description": "A knowledge distillation system that delivers only verified knowledge to AI coding agents. 3-layer architecture with convention-based air gap.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "author": {
     "name": "ether-moon"
   }
