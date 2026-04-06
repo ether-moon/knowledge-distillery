@@ -42,22 +42,28 @@ git checkout -b knowledge/batch-YYYY-MM-DD main
 
 If branch already exists (re-run scenario), checkout existing branch.
 
-### Step 3: Execute Per-PR Subagents
+### Step 3: Execute Per-PR Subagents (Parallel)
 
-For each pending PR (in `mergedAt` order), spawn a subagent that runs sequentially:
+Spawn **all** pending PR subagents in parallel. Each subagent runs the full pipeline for one PR:
 
 1. **`/knowledge-distillery:collect-evidence`** with the PR number → Evidence Bundle
-   - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, skip to next PR
+   - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, return early
 2. **`/knowledge-distillery:extract-candidates`** with the Evidence Bundle → Candidate array
    - Runs in the same subagent context, so the Evidence Bundle and any selectively fetched PR diff context from collect-evidence remain available in-memory
-   - If empty array → record PR as "0 candidates", continue to next PR
+   - If empty array → record PR as "0 candidates", return early
 3. **`/knowledge-distillery:quality-gate`** with the Candidate array → Verdict array
 
-Collect from each subagent:
+**How to parallelize:** Use the Agent tool to spawn PR subagents in a single message (multiple Agent tool calls in one response). This launches them concurrently. Each subagent gets a fresh context window, so there is no cross-PR context pollution.
+
+**Concurrency limits:** Spawn at most **10 concurrent subagents** per batch. If the pending PR count exceeds this limit, process them in sequential batches of 10 — wait for one batch to complete before launching the next. The safe concurrency ceiling depends on PR complexity and available token budget; monitor token and API usage during initial runs and adjust downward if you hit rate limits. If a subagent stalls (no progress after an extended period), treat it as a failure — log the error and continue with the remaining PRs.
+
+Collect from each subagent after all complete:
 - Passed candidates (`verdict == "pass"`)
 - Rejected candidates with rejection codes
 - Curation queue entries (conflicts)
 - Insufficient evidence flag (if applicable)
+
+**Sort all collected results by source PR `mergedAt` (ascending) before aggregating into the changeset and report.** Parallel subagents complete in non-deterministic order; this sort step ensures deterministic output regardless of completion order.
 
 **Partial failure handling:** One PR's failure MUST NOT block remaining PRs. Log the error and continue.
 
@@ -281,7 +287,7 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 - MUST NOT modify existing vault entries (append-only principle)
 - MUST NOT insert entries into vault.db directly — write changeset file only
 - MUST NOT skip the report PR even when all candidates are rejected
-- MUST process PRs in `mergedAt` order (oldest first)
+- PRs may be spawned and executed concurrently, but results/outputs MUST be aggregated and presented in `mergedAt` order (oldest first)
 - MUST handle partial failures gracefully
 - MUST create report file `.knowledge/reports/batch-YYYY-MM-DD.md` always (even 0 entries)
 - MUST create changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` always (with empty entries array if 0 candidates)
