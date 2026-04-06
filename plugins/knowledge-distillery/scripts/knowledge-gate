@@ -713,6 +713,19 @@ add_entry() {
 }
 
 pipeline_insert() {
+  # Guard: prevent direct vault insertion on batch branches.
+  # Only _changeset-apply (post-merge on main) may call this on batch branches.
+  if [ "${_KD_VIA_CHANGESET_APPLY:-0}" != "1" ]; then
+    local current_branch
+    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+    if [[ "$current_branch" == knowledge/batch-* ]]; then
+      echo "ERROR: _pipeline-insert is blocked on batch branches." >&2
+      echo "Sub-agents MUST return candidates to the orchestrator for changeset file writing." >&2
+      echo "Direct vault insertion is only allowed via _changeset-apply after Report PR merge." >&2
+      return 1
+    fi
+  fi
+
   local json
   json=$(cat)
 
@@ -1025,6 +1038,7 @@ changeset_apply() {
     return 0
   fi
 
+  _KD_VIA_CHANGESET_APPLY=1
   echo "$new_entries" | pipeline_insert
 }
 

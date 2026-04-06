@@ -179,9 +179,11 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 
 **4d. Not directly derivable** — The knowledge adds value beyond what current repo artifacts already convey.
 
+**MUST: Verify Q1 against actual repo artifacts.** Do not guess derivability from the candidate text alone. Find and read the relevant artifacts — check `applies_to.paths`, grep for the class/function/pattern/config mentioned in the claim, or navigate from the evidence PR's changed files. Confirm whether the claim is already visible in the current codebase before deciding Q1. Skipping this step is the primary cause of false-positive extractions.
+
 Apply two questions in sequence:
 
-- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
+- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)? **You must read the relevant files to answer this — do not infer from the candidate text.**
 - **Q2 — Residual value:** Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that a developer **could not infer** from the artifacts themselves?
 
 | Q1 | Q2 | Decision |
@@ -340,6 +342,7 @@ Note: `_proposed_domain` is only present when new domains are proposed (see Step
 - MUST NOT create anti-pattern candidates without `alternative`
 - MUST NOT duplicate existing vault entries (check via `knowledge-gate`)
 - MUST NOT access vault.db directly — use `knowledge-gate` CLI only
+- MUST NOT call `_pipeline-insert`, `_pipeline-archive`, `_pipeline-update`, or `_changeset-apply` — these mutate vault.db. Candidates are returned in-memory to the orchestrator, which writes the changeset file.
 - MUST NOT write files to disk
 - MUST return empty array (not error) when no candidates are extractable
 - MUST cite specific evidence references for every candidate

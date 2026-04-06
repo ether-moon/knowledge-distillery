@@ -373,6 +373,7 @@ The final Evidence Bundle must follow this structure:
 
 - MUST NOT write any files to disk
 - MUST NOT access or modify vault.db
+- MUST NOT call any `knowledge-gate` commands (no CLI access in this step)
 - MUST NOT extract knowledge candidates (that is `/knowledge-distillery:extract-candidates` — Stage B step 2)
 - MUST NOT make sufficiency decisions beyond the defined rules — no subjective "I think this is enough"
 - MUST return the Evidence Bundle in memory for the next step in the same subagent context

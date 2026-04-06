@@ -288,6 +288,7 @@ For each candidate, produce a verdict:
 - MUST apply ALL applicable rejection codes per candidate, not just the first failure
 - MUST NOT modify candidates — only produce verdicts
 - MUST NOT access vault.db directly — use `knowledge-gate` CLI only
+- MUST NOT call `_pipeline-insert`, `_pipeline-archive`, `_pipeline-update`, or `_changeset-apply` — these mutate vault.db. Verdicts are returned in-memory to the orchestrator.
 - MUST NOT write files to disk
 - MUST classify borderline duplicates as `conflict` (human review) rather than auto-rejecting
 - MUST err toward rejection on borderline R1 evidence checks
