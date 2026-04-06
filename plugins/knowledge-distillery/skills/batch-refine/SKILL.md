@@ -42,18 +42,20 @@ git checkout -b knowledge/batch-YYYY-MM-DD main
 
 If branch already exists (re-run scenario), checkout existing branch.
 
-### Step 3: Execute Per-PR Subagents
+### Step 3: Execute Per-PR Subagents (Parallel)
 
-For each pending PR (in `mergedAt` order), spawn a subagent that runs sequentially:
+Spawn **all** pending PR subagents in parallel. Each subagent runs the full pipeline for one PR:
 
 1. **`/knowledge-distillery:collect-evidence`** with the PR number → Evidence Bundle
-   - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, skip to next PR
+   - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, return early
 2. **`/knowledge-distillery:extract-candidates`** with the Evidence Bundle → Candidate array
    - Runs in the same subagent context, so the Evidence Bundle and any selectively fetched PR diff context from collect-evidence remain available in-memory
-   - If empty array → record PR as "0 candidates", continue to next PR
+   - If empty array → record PR as "0 candidates", return early
 3. **`/knowledge-distillery:quality-gate`** with the Candidate array → Verdict array
 
-Collect from each subagent:
+**How to parallelize:** Use the Agent tool to spawn all PR subagents in a single message (multiple Agent tool calls in one response). This launches them concurrently. Each subagent gets a fresh context window, so there is no cross-PR context pollution.
+
+Collect from each subagent after all complete:
 - Passed candidates (`verdict == "pass"`)
 - Rejected candidates with rejection codes
 - Curation queue entries (conflicts)
