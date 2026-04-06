@@ -1,0 +1,17 @@
+## Decisions Made
+- Replaced all `bin/knowledge-gate` occurrences in Korean design doc with `knowledge-gate`: the `bin/` prefix was incorrect and inconsistent with the English doc, README, and actual CLI invocation path
+- Added fail-fast guard using LEFT JOIN + NULL check before rendering get-many results: silently dropping missing IDs from a batch API is misleading; an explicit error is preferable
+- Rejected unknown flags with a `-*)` catch-all case in query parsers: typos like `--id-only` were silently treated as the positional argument, producing empty results instead of usage guidance
+- Updated prompt-contracts test assertions to match the corrected code rather than preserving stale expectations
+
+## Problems Encountered
+- Test suite failed after initial edits because prompt-contracts.sh had hardcoded assertions matching the old text (e.g., `bin/knowledge-gate` prefix and missing ID placeholders): resolved by updating the test assertions to match the corrected code
+
+## Constraints Identified
+- The pre-commit hook enforces memento-commit workflow: direct `git commit` is blocked, requiring the `/knowledge-distillery:memento-commit` skill
+
+## Open Questions
+- None
+
+## Context
+Scanned PR #28 (ether_karrot/claude-memory) for all blocker types. No merge conflicts or CI failures were found. CodeRabbit had posted 4 review comments: incorrect CLI prefix in Korean docs, missing ID placeholders in hook guidance, silent ID dropping in get-many, and unknown-flag acceptance in query parsers. All four were addressed and tests updated to pass.

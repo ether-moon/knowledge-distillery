@@ -1,0 +1,14 @@
+## Decisions Made
+- Remove explicit `"hooks"` field from plugin.json instead of modifying hooks.json structure: Claude Code auto-loads `hooks/hooks.json` by convention, so the manifest reference caused duplicate loading
+
+## Problems Encountered
+- Plugin install produced "Hook load failed: expected record, received undefined" error: initially suspected missing top-level `hooks` key in hooks.json, but root cause was duplicate loading from explicit manifest reference plus convention-based auto-load
+
+## Constraints Identified
+- Claude Code plugin hooks are loaded by convention from `hooks/hooks.json` — do not also declare them in plugin.json `"hooks"` field or they will load twice
+
+## Open Questions
+- None
+
+## Context
+Investigated plugin hook load errors occurring during knowledge-distillery plugin installation. The error "expected record, received undefined" appeared twice, indicating duplicate hook loading. The fix was removing the `"hooks": "./hooks/hooks.json"` field from plugin.json since Claude Code already auto-discovers hooks at the conventional path. Updated CHANGELOG.md to reflect the correct fix description.

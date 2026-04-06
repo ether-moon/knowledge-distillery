@@ -1,0 +1,23 @@
+## Decisions Made
+- origin/main의 기존 0.2.1 릴리스와 충돌하던 브랜치 범프를 0.2.2로 재조정: main에 이미 0.2.1이 존재하므로 현재 브랜치의 approval prompt 수정은 다음 패치 릴리스로 올리는 것이 일관적이었다.
+- CHANGELOG 충돌은 릴리스 히스토리를 보존하는 방식으로 병합: origin/main의 0.2.1 엔트리는 유지하고, 현재 브랜치 변경만 0.2.2 엔트리로 분리했다.
+
+## Problems Encountered
+- origin/main 머지 시 CHANGELOG.md가 충돌: 동일한 0.2.1 버전 헤더를 양쪽에서 추가해 릴리스 기록이 중복되는 상태였다.
+- 브랜치의 버전 범프 커밋이 main의 최신 릴리스보다 뒤처짐: 단순 충돌 해소만으로는 plugin.json과 changelog가 잘못된 상태가 되므로 추가 조정이 필요했다.
+
+## Constraints Identified
+- 이미 main에 존재하는 버전 번호를 유지한 채 머지할 수 없다: plugin.json과 changelog가 릴리스 히스토리와 동기화되어야 한다.
+- 머지 커밋에는 upstream에서 들어온 record-decision 변경도 함께 포함된다: 충돌은 changelog에만 있었지만 최종 머지 결과는 세 파일을 함께 확정해야 했다.
+
+## Open Questions
+- None
+
+## Context
+사용자 요청에 따라 origin/main을 현재 브랜치에 머지했고, 충돌은 CHANGELOG.md 하나에서 발생했다. main에 이미 0.2.1 릴리스가 존재하는 것을 확인해 브랜치 버전을 0.2.2로 올리고 changelog를 재구성했으며, upstream의 record-decision 변경도 함께 반영했다. 이후 prompt contract 테스트를 다시 실행해 문서 규약이 유지되는 것을 확인했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

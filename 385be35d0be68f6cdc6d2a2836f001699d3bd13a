@@ -1,0 +1,18 @@
+Decisions Made
+- Bumped the plugin release metadata by one patch version from 0.1.1 to 0.1.2.
+- Recorded the regression-harness and harness-hardening work in the changelog under the new patch release.
+
+Problems Encountered
+- The main workspace contained unrelated uncommitted changes, so the version bump was isolated in a separate worktree from origin/main before pushing.
+- An accidental stray file appeared during file copy into the isolated worktree and was removed before commit.
+
+Constraints Identified
+- Only release metadata files should be included in this direct push to main.
+- The repository requires a memento git note after each commit.
+
+Open Questions
+- Whether future release bumps should be automated as part of a release workflow.
+- Whether marketplace metadata should eventually carry an explicit plugin version alongside plugin.json.
+
+Context
+- Updated plugins/knowledge-distillery/.claude-plugin/plugin.json to 0.1.2 and added a 0.1.2 section to CHANGELOG.md, then prepared the commit for direct push to main.

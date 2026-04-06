@@ -1,0 +1,20 @@
+## Decisions Made
+- None
+
+## Problems Encountered
+- CI failure in prompt-contracts test: stale reference to `skills/init/SKILL.md` after rename to `skills/setup/SKILL.md`. Fixed by updating variable name and path in `tests/prompt-contracts.sh`.
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Fixed a CI failure on PR #35 caused by the init→setup skill rename missing one test file reference. Updated `tests/prompt-contracts.sh` to use the new `setup/SKILL.md` path. All tests pass locally.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

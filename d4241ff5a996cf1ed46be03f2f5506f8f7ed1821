@@ -1,0 +1,20 @@
+## Decisions Made
+- None
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Minor version bump from 0.1.4 to 0.2.0 to reflect the init→setup unification, doctor removal, and progressive disclosure features added since last bump. Updated plugin.json and CHANGELOG.md.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

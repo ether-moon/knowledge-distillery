@@ -1,0 +1,15 @@
+## Decisions Made
+- Accepted all 3 Major CodeRabbit review comments and the 1 nitpick as valid after verifying each against the actual code: All identified real issues rather than false positives.
+- Used BASH_REMATCH for date extraction rather than post-hoc stripping: Captures only the date group directly from the regex, which is cleaner and avoids needing a second normalization step.
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- The pre-commit hook blocks direct git commit and requires memento-commit skill: This ensures every commit carries session context for the evidence pipeline.
+
+## Open Questions
+- None
+
+## Context
+Scanned PR #29 for blockers (merge conflicts, CI failures, review comments). No conflicts or CI failures found. Identified and resolved 4 CodeRabbit review comments across apply-changeset.yml, extract-candidates, memento-commit, and quality-gate skill specs. All fixes are documentation/spec corrections and one workflow bug fix.

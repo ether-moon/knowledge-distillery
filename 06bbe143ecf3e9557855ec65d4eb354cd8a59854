@@ -1,0 +1,18 @@
+## Decisions Made
+- PostToolUse(사후 리마인드) → PreToolUse(사전 차단)로 전환: 리마인드만으로는 에이전트가 직접 git commit을 실행하는 것을 막지 못함 (이번 세션에서 실제 발생)
+- 차단 조건: `git commit`이 포함되지만 `git notes`가 없는 Bash 명령 → 스킬 미경유 직접 커밋으로 판단
+- 허용 조건: `git commit` + `git notes`가 동일 명령에 포함 → memento-commit 스킬이 생성한 단일 호출
+
+## Problems Encountered
+- 이전 커밋(19bdee3)에서 memento-commit 스킬을 사용하지 않고 직접 git commit 실행 → PostToolUse 훅이 사후에 리마인드했으나 이미 커밋 완료 후라 수동 노트 첨부로 대응
+- hooks.json 수정이 브랜치 전환 시 유실됨 → 재적용 필요
+
+## Constraints Identified
+- PreToolUse 훅은 tool_input만 볼 수 있고 실행 결과는 볼 수 없음 → 명령어 패턴 매칭으로만 판단해야 함
+- memento-commit 스킬이 항상 commit + notes를 단일 Bash 호출로 묶는다는 전제에 의존
+
+## Open Questions
+- memento-commit 스킬을 Skill 도구로 호출할 수 없는 문제 (Unknown skill 에러) — 플러그인 로딩 경로 확인 필요
+
+## Context
+knowledge-gate UserPromptSubmit 훅 구현 후, 커밋 과정에서 memento-commit 스킬을 사용하지 않은 문제를 발견. 사후 리마인드가 아닌 사전 차단으로 전환하여 직접 커밋을 원천 방지하는 PreToolUse 훅을 구현함.
