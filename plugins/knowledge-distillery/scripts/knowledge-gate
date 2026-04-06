@@ -1038,8 +1038,7 @@ changeset_apply() {
     return 0
   fi
 
-  _KD_VIA_CHANGESET_APPLY=1
-  echo "$new_entries" | pipeline_insert
+  _KD_VIA_CHANGESET_APPLY=1 pipeline_insert <<< "$new_entries"
 }
 
 # ============================================================
