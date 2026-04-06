@@ -35,7 +35,7 @@ user-invocable: false
 |-------|--------|--------|
 | PR number | Passed by orchestrator | Integer |
 | Repository | Derived via GitHub MCP if not provided | `owner/repo` |
-| Manifest JSON | Parsed from PR comment (between `EVIDENCE_BUNDLE_MANIFEST_START`/`END` delimiters) | JSON per [evidence-manifest.spec.md](../mark-evidence/reference/evidence-manifest.spec.md) |
+| Manifest JSON | Parsed from PR comment — strict delimiter parsing preferred, LLM fallback for non-standard formats | JSON per [evidence-manifest.spec.md](../mark-evidence/reference/evidence-manifest.spec.md) |
 
 ## Output
 
@@ -53,6 +53,8 @@ Fetch all PR comments and locate the Manifest:
 Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
 ```
 
+#### 1a. Strict parsing (preferred)
+
 1. Find the comment whose body contains `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`
 2. Extract the text between `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->` and `<!-- EVIDENCE_BUNDLE_MANIFEST_END -->`
 3. Strip the markdown code fence (opening ` ```json ` and closing ` ``` `)
@@ -63,7 +65,46 @@ Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
    - `pr.merge_sha` must match `/^[0-9a-f]{7,40}$/`
    - All `identifiers` sub-keys (`linear`, `slack`, `memento`, `greptile`, `notion`) must be present (even if empty arrays)
 
-**If no Manifest comment is found**, return an Evidence Bundle with:
+If strict parsing succeeds, proceed to Step 2.
+
+#### 1b. LLM fallback parsing
+
+If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, or if the JSON between delimiters is malformed:
+
+1. Search all PR comments for one that resembles an Evidence Bundle Manifest. Look for comments containing keywords like "Evidence Bundle Manifest", "evidence", identifier references (Linear IDs, Slack URLs, commit SHAs), or structured lists of evidence sources.
+2. If a candidate comment is found, extract structured data from it by reading its content and mapping it to the Manifest schema:
+   ```json
+   {
+     "version": "1",
+     "pr": {
+       "number": "<from orchestrator input>",
+       "merge_sha": "<from PR merge commit — query GitHub MCP if not in comment>",
+       "base_branch": "<from PR base branch — query GitHub MCP if not in comment>",
+       "changed_files": ["<from PR changed files — query GitHub MCP if not in comment>"]
+     },
+     "identifiers": {
+       "linear": [],
+       "slack": [],
+       "memento": [],
+       "greptile": [],
+       "notion": []
+     },
+     "collected_at": "<current ISO 8601 timestamp>"
+   }
+   ```
+   - Extract any Linear issue IDs (pattern: `[A-Z]+-\d+`) mentioned in the comment → populate `identifiers.linear`
+   - Extract any Slack URLs (pattern: `https://*.slack.com/archives/*/p*`) → populate `identifiers.slack`
+   - Extract any commit SHAs referenced as memento sources → populate `identifiers.memento`
+   - Extract any Greptile review references → populate `identifiers.greptile`
+   - Extract any Notion URLs (pattern: `https://(www.)?notion.(so|site)/*`) → populate `identifiers.notion`
+   - For `pr` fields not present in the comment, query GitHub MCP directly to fill them in.
+3. Validate the reconstructed Manifest using the same rules as 1a step 5. Empty identifier arrays are valid.
+
+If fallback parsing produces a valid Manifest, proceed to Step 2.
+
+#### 1c. No Manifest found
+
+If **no comment resembling a Manifest exists at all** (not even in non-standard format), return an Evidence Bundle with:
 ```json
 {
   "sufficiency": {
@@ -74,18 +115,6 @@ Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
 }
 ```
 Stop processing — do not proceed to subsequent steps.
-
-**If the Manifest JSON is malformed or fails validation**, return an Evidence Bundle with:
-```json
-{
-  "sufficiency": {
-    "verdict": "insufficient",
-    "missing": ["manifest"],
-    "reason": "Evidence Bundle Manifest on PR #{pr_number} is malformed or invalid."
-  }
-}
-```
-Stop processing.
 
 ### Step 2: Collect PR Evidence (Required)
 
@@ -344,6 +373,7 @@ The final Evidence Bundle must follow this structure:
 
 - MUST NOT write any files to disk
 - MUST NOT access or modify vault.db
+- MUST NOT call any `knowledge-gate` commands (no CLI access in this step)
 - MUST NOT extract knowledge candidates (that is `/knowledge-distillery:extract-candidates` — Stage B step 2)
 - MUST NOT make sufficiency decisions beyond the defined rules — no subjective "I think this is enough"
 - MUST return the Evidence Bundle in memory for the next step in the same subagent context
