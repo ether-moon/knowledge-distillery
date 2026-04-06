@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] - 2026-04-06
+
+### Fixed
+
+- **skill**: Avoid shell-expansion approval prompts in memento-commit and knowledge-gate command guidance
+
 ## [0.2.1] - 2026-04-01
 
 ### Improved

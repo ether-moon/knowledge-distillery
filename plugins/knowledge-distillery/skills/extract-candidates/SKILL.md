@@ -20,11 +20,11 @@ user-invocable: false
 
 ## Allowed Tools
 
-- `GATE domain-resolve-path` — resolve changed files to domains
-- `GATE domain-list` — inspect the existing domain registry as a controlled vocabulary
-- `GATE query-domain` — fetch existing entries for relevant domains
-- `GATE search` — keyword search for potential duplicates
-- `GATE get` — full entry details for conflict check
+- `<knowledge-gate> domain-resolve-path` — resolve changed files to domains
+- `<knowledge-gate> domain-list` — inspect the existing domain registry as a controlled vocabulary
+- `<knowledge-gate> query-domain` — fetch existing entries for relevant domains
+- `<knowledge-gate> search` — keyword search for potential duplicates
+- `<knowledge-gate> get` — full entry details for conflict check
 - GitHub MCP (read-only) or `git diff` / `git show` — selective diff inspection for the specific files or hunks that need code confirmation
 - No direct vault.db reads. No file writes.
 
@@ -49,7 +49,7 @@ Do NOT filter candidates — that is the quality gate's job. Return all candidat
 Before proposing any new domains, load the existing active registry once as a lightweight controlled vocabulary:
 
 ```bash
-GATE domain-list --ids-only
+<knowledge-gate> domain-list --ids-only
 ```
 
 Use this list to:
@@ -60,7 +60,7 @@ Use this list to:
 For each file path in the Evidence Bundle's root-level `changed_files` array:
 
 ```bash
-GATE domain-resolve-path "<filepath>"
+<knowledge-gate> domain-resolve-path "<filepath>"
 ```
 
 Collect all matched domains from the output. Results include global domains (pattern = `*`) automatically — do not exclude them; they serve as the scope for project-wide rules.
@@ -115,7 +115,7 @@ Deduplicate the final domain list.
 For each resolved domain from Step 1:
 
 ```bash
-GATE query-domain "<domain>"
+<knowledge-gate> query-domain "<domain>"
 ```
 
 Collect all existing active entries for these domains. These are needed for:
