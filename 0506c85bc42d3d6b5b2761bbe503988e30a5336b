@@ -1,0 +1,20 @@
+## Decisions Made
+- Patch version bump (0.2.3 → 0.2.4): Two changes since last bump — report readability improvement and vault write guard fix — all qualify as patch-level
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Bumped plugin version from 0.2.3 to 0.2.4 after merging PR #43 (batch report readability) and PR #42 (vault write guard fix). Updated CHANGELOG.md with categorized entries.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
