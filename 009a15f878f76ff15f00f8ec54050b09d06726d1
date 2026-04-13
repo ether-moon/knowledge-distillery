@@ -1,0 +1,20 @@
+## Decisions Made
+None
+
+## Problems Encountered
+None
+
+## Constraints Identified
+None
+
+## Open Questions
+None
+
+## Context
+0.2.5 버전 범프. extract-candidates Q1/how-it-works 필터 강화, quality-gate R7 파일 검증 승격, decision-commit regex 강화 포함.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
