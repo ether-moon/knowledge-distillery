@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5] - 2026-04-13
+
+### Improved
+
+- **extract-candidates**: Explicit Q1=yes triggers and "how-it-works" rejection pattern for implementation-mechanic claims
+- **quality-gate**: Upgrade R7 from secondary heuristic to artifact-verified primary filter with file-reading capability
+- **hook**: Harden decision-commit regex with message-argument anchoring and quote-style support
+
 ## [0.2.4] - 2026-04-13
 
 ### Improved
