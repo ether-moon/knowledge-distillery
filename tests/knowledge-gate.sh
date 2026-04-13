@@ -476,6 +476,45 @@ assert_contains "${help_output}" "get-many <id>..." "help should document batch 
 assert_contains "${help_output}" "domain-list [--status X] [--ids-only]" "help should document lightweight domain indexes"
 assert_contains "${help_output}" "_pipeline-update <id>" "help should document pipeline update"
 
+# ── Batch-branch guard: all vault-write commands blocked on knowledge/batch-* ──
+(
+  cd "${REPO_DIR}"
+  git -c user.name=test -c user.email=t@t commit -q --allow-empty -m "init"
+  git checkout -q -b "knowledge/batch-2026-04-13"
+
+  if batch_add_output=$("${GATE}" add \
+    --type fact --title "Blocked" --claim "Should fail" \
+    --body "## Background\nBlocked.\n\n## Details\nBlocked." \
+    --domain payment --considerations "none" 2>&1); then
+    fail "add should be blocked on batch branches"
+  fi
+  assert_contains "${batch_add_output}" "Vault writes are blocked on batch branches" "add batch guard message"
+
+  if batch_insert_output=$(echo '[]' | "${GATE}" _pipeline-insert 2>&1); then
+    fail "_pipeline-insert should be blocked on batch branches"
+  fi
+  assert_contains "${batch_insert_output}" "Vault writes are blocked on batch branches" "_pipeline-insert batch guard message"
+
+  if batch_archive_output=$("${GATE}" _pipeline-archive service-rule-2 --reason "test" 2>&1); then
+    fail "_pipeline-archive should be blocked on batch branches"
+  fi
+  assert_contains "${batch_archive_output}" "Vault writes are blocked on batch branches" "_pipeline-archive batch guard message"
+
+  if batch_update_output=$(echo '{"title":"new"}' | "${GATE}" _pipeline-update service-rule-2 2>&1); then
+    fail "_pipeline-update should be blocked on batch branches"
+  fi
+  assert_contains "${batch_update_output}" "Vault writes are blocked on batch branches" "_pipeline-update batch guard message"
+
+  # _changeset-apply should still work (it passes bypass flag as function argument internally)
+  cat > "${TMP_DIR}/changeset-batch.json" <<'INNER_EOF'
+{"version":1,"batch_date":"2026-04-13","entries":[]}
+INNER_EOF
+  batch_changeset_output="$("${GATE}" _changeset-apply "${TMP_DIR}/changeset-batch.json")"
+  assert_contains "${batch_changeset_output}" "No accepted entries to apply" "_changeset-apply should still work on batch branches"
+
+  git checkout -q -
+)
+
 if unknown_output=$("${GATE}" does-not-exist 2>&1); then
   fail "unknown commands should fail"
 fi
