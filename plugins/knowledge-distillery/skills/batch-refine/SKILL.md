@@ -186,6 +186,8 @@ Verify:
 
 ## Report PR Format
 
+**Language**: Write all human-readable text in the report (headers, descriptions, labels, summaries) in the primary language of the project's agent directives (e.g., CLAUDE.md, AGENTS.md). Machine identifiers (entry IDs, domain slugs, branch names) remain as-is.
+
 **Title**: `knowledge: batch YYYY-MM-DD — N entries added`
 
 **Body**:
@@ -204,15 +206,19 @@ Verify:
 
 ### Accepted Entries
 
-| ID | Type | Title | Domains | Source PR |
-|----|------|-------|---------|-----------|
-| {id} | {type} | {title} | {domains} | #{pr_number} |
+{Group entries by source PR author, then by PR number (mergedAt order within each author). For each author, create an H4 section. Under each PR, render a table of entries:}
+
+#### @{author}
+- #{pr_number}
+  - [{type}] `{id}` — {one-sentence human-readable description — do NOT use the raw DB title; write a brief explanation that helps reviewers understand the entry at a glance}
 
 ### Rejected Candidates
 
-| Source PR | Code | Reason |
-|-----------|------|--------|
-| #{pr_number} | {rejection_codes} | {notes} |
+{Same structure as Accepted Entries — group by author, then by PR:}
+
+#### @{author}
+- #{pr_number}
+  - [{rejection_code}] `{id}` — {brief human-readable description of what the candidate was about and why it was rejected}
 
 ### Curation Queue (Human Review Required)
 {For each curation_queue_entry:}
@@ -221,7 +227,13 @@ Verify:
 {If empty: "No conflicts detected."}
 
 ### Domain Changes
-{New domains from _proposed_domain annotations in this batch, if any}
+
+**New domains proposed in this batch:**
+{For each new domain from _proposed_domain annotations:}
+- `{domain_name}` — {brief human-readable description of what this domain covers and which entries reference it}
+
+{If any domains were auto-created by subagents and already exist in vault.db, list them separately}
+
 {Structured `_domain_maintenance` findings from this batch, grouped by domain and suggestion, if any}
 {Near-duplicate domain names or merge/split candidates surfaced by this batch, if any}
 {Repeated unmapped path prefixes observed across this batch, if any}
@@ -232,10 +244,6 @@ Verify:
 - `{entry_id}`: {signal} — {note} (from #{source_pr}, commit {memento_sha})
 
 {If empty: "No feedback on existing entries."}
-
-### Source PR Details
-{For each processed PR:}
-- #{pr_number} "{title}": {outcome summary}
 
 ### Insufficient Evidence (Remains Pending)
 {For each insufficient PR:}
@@ -250,7 +258,7 @@ Verify:
 This PR contains a **changeset** with new knowledge entry candidates. Entries are **not yet in vault.db** — they will be applied automatically when this PR is merged.
 
 **To provide feedback:**
-1. Leave comments on this PR referencing entry IDs from the Accepted Entries table:
+1. Leave comments on this PR referencing entry IDs from the Accepted Entries list:
    - Reject: "Reject `entry-id` — reason"
    - Modify: "Change the claim of `entry-id` to: new text"
    - Update domains: "Move `entry-id` to domain `new-domain`"
