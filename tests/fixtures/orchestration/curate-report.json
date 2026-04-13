@@ -40,7 +40,7 @@
       "checks": [
         {
           "doc": "curate_report_skill",
-          "contains": "Parse the \"Accepted Entries\" table from the PR body to build the **entry ID whitelist** — only these entries may be modified"
+          "contains": "Parse the \"Accepted Entries\" list from the PR body to build the **entry ID whitelist**"
         },
         {
           "doc": "curate_report_skill",

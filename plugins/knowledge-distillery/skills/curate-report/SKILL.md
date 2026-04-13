@@ -27,7 +27,7 @@ Use GitHub MCP to read the PR that triggered the workflow:
 - **Validate**: branch starts with `knowledge/batch-` — if not, post a comment "This is not a Report PR. Curation is only available on knowledge/batch-* branches." and exit
 - **Validate**: PR state is `open` — if merged or closed, post "This PR is already merged/closed. Curation is only available on open PRs." and exit
 - Extract the batch date from the branch name (e.g., `knowledge/batch-2026-03-24` → `2026-03-24`)
-- Parse the "Accepted Entries" table from the PR body to build the **entry ID whitelist** — only these entries may be modified
+- Parse the "Accepted Entries" list from the PR body to build the **entry ID whitelist** (extract entry IDs from backtick-quoted `{id}` in each list item) — only these entries may be modified
 
 ### Step 2: Ensure Correct Branch and Locate Changeset
 
@@ -108,7 +108,7 @@ jq '.entries[]' .knowledge/changesets/batch-YYYY-MM-DD.json
 ```
 
 Write the updated report with the same structure as the original, but:
-- **Accepted entries** (status == "accepted") remain in "Accepted Entries" table
+- **Accepted entries** (status == "accepted") remain in "Accepted Entries" list
 - **Rejected entries** (status == "rejected") are moved to a new "Rejected Entries (via Curation)" section with their reject reasons
 - Add a "Curation Log" section at the end listing all actions taken:
   ```markdown
