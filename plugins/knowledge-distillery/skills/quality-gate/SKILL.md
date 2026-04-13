@@ -23,6 +23,8 @@ user-invocable: false
 - `<knowledge-gate> query-domain` — existing entries for semantic comparison
 - `<knowledge-gate> get` — full entry details for conflict analysis
 - `<knowledge-gate> search` — keyword search for duplicate detection
+- `<knowledge-gate> domain-resolve-path` — resolve file paths to domains for R7 artifact inspection
+- `Read` / `Grep` / `Glob` — inspect repo artifacts for R7 derivability verification (scoped to claim verification, not general exploration)
 - No direct vault.db access. No file writes.
 
 ## Input
@@ -147,14 +149,22 @@ Compare the candidate against existing vault entries in the same domains:
 
 - **When unsure**: Classify as `conflict` (safer — routes to human review) rather than `duplicate` (auto-reject).
 
-#### R7: Directly Derivable Knowledge (Heuristic)
+#### R7: Directly Derivable Knowledge (Artifact-Verified)
 
-> **Scope limitation:** This skill does not have direct artifact inspection capability. R7 is a **secondary smell test**, not a substitute for the primary derivability filter in extract-candidates criterion 4d. Reject only when the candidate *plainly restates* current implementation without residual value — do not attempt to verify derivability claims against actual files.
+R7 is a **primary derivability verifier** with file-reading capability. It serves as the safety net for candidates that passed extract-candidates criterion 4d — verify claims against actual repo artifacts rather than relying on the candidate's self-description.
 
-Evaluate whether the candidate reads like an obvious codified restatement:
+**Verification procedure:**
 
-1. **Q1 — Derivability (heuristic):** Based on the candidate's claim, body, and evidence, does this appear to describe something directly readable from current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)?
-2. **Q2 — Residual value:** Does the entry preserve *why*, *boundary*, *exception*, or *failure mode* that a developer **could not infer** from the artifacts themselves?
+1. **Locate artifacts.** From the candidate's `applies_to.domains`, `evidence` references, and claim content, identify the relevant files. Use `Grep` or `Glob` to find the code, config, or doc that the claim describes. Read the relevant sections.
+
+2. **Q1 — Derivability (artifact-verified):** Is the claim's content visible in the artifacts you just read? Any of the following makes Q1=yes:
+   - Code structure (functions, classes, control flow) expresses the behavior
+   - Comments, docstrings, or error messages convey the intent
+   - Config files (.gitignore, YAML, JSON) embody the rule
+   - Directive docs (README, CLAUDE.md, AGENTS.md, SKILL.md) document the practice
+   - Test assertions encode the expected behavior
+
+3. **Q2 — Residual value:** Does the entry's body preserve knowledge that a developer **could not infer** from the artifacts themselves?
 
 | Q1 | Q2 | Verdict |
 |----|-----|---------|
@@ -163,12 +173,13 @@ Evaluate whether the candidate reads like an obvious codified restatement:
 | no | — | PASS — knowledge is not visible in artifacts |
 
 **Q2 strictness — red flags for false residual value:**
-- The "why" follows directly from the engineering pattern (e.g., "validates input to prevent injection", "fails fast to prevent silent errors") → likely Q2=no, rationale is pattern-inherent
-- The "why" restates standard engineering practice without project-specific context → likely Q2=no
-- The body's "Rejected Alternatives" section describes obviously inferior approaches that no one would seriously consider → likely Q2=no (padding, not genuine insight)
-- The entry's error messages or guard clauses already communicate the intent described in the body → likely Q2=no
+- The "why" follows directly from the engineering pattern (e.g., "validates input to prevent injection", "fails fast to prevent silent errors") → Q2=no, rationale is pattern-inherent
+- The "why" restates standard engineering practice without project-specific context → Q2=no
+- The body's "Rejected Alternatives" section describes obviously inferior approaches that no one would seriously consider → Q2=no (padding, not genuine insight)
+- The entry's error messages or guard clauses already communicate the intent described in the body → Q2=no
+- **"How-it-works" claim** — the candidate describes implementation mechanics ("X uses Y", "X does Y via Z", "X works by doing Y") and the code already shows exactly this → Q2=no unless the candidate explains why THIS approach was chosen with genuinely non-obvious context
 
-**Fact-type heuristic:** A `fact` that merely restates what the code does ("X uses Y") without explaining *why* or defining a *boundary* → likely R7 fail. A `fact` whose "why" is self-evident from the implementation pattern → also likely R7 fail. A `fact` that carries genuinely non-obvious rationale or constraint ("When touching X, keep Y because Z" where Z is a past incident, policy decision, or non-obvious tradeoff) → likely R7 pass.
+**Fact-type check:** A `fact` that merely restates what the code does ("X uses Y") without explaining *why* or defining a *boundary* → R7 fail. A `fact` whose "why" is self-evident from the implementation pattern → also R7 fail. A `fact` that carries genuinely non-obvious rationale or constraint ("When touching X, keep Y because Z" where Z is a past incident, policy decision, or non-obvious tradeoff) → R7 pass.
 
 **Borderline R7 decisions:** Err on the side of rejecting. The vault should contain only knowledge that is invisible to artifact readers or that preserves reasoning they would otherwise lose. Having rationale text in the entry body is insufficient — the rationale itself must be non-obvious.
 
@@ -191,7 +202,7 @@ For each candidate, produce a verdict:
 | `R5_UNCONSIDERED` | 1 (Rule) | Considerations field empty or trivially dismissed |
 | `R1_EVIDENCE_INSUFFICIENT` | 2 (LLM) | Claim not adequately supported by cited evidence |
 | `R6_DUPLICATE` | 2 (LLM) | Semantically identical to existing vault entry |
-| `R7_DIRECTLY_DERIVABLE` | 2 (LLM, heuristic) | Candidate plainly restates current implementation with no residual value |
+| `R7_DIRECTLY_DERIVABLE` | 2 (LLM, artifact-verified) | Candidate content is visible in repo artifacts with no residual value |
 
 ## Error Handling
 
@@ -294,7 +305,7 @@ For each candidate, produce a verdict:
 - MUST err toward rejection on borderline R1 evidence checks
 - MUST return empty array for empty input (not error)
 - MUST run both Layer 1 and Layer 2 for every candidate (Layer 2 provides feedback even on Layer 1 failures)
-- R7 is a secondary heuristic smell test — the primary derivability filter is extract-candidates criterion 4d, which has artifact inspection capability
+- R7 has artifact inspection capability and serves as the safety net for extract-candidates criterion 4d — verify claims against actual files, not just candidate text
 
 ## Validation Checklist
 
@@ -308,4 +319,4 @@ Before returning verdicts, verify:
 6. Does the skill return empty array for empty candidate input?
 7. Does the skill handle `knowledge-gate` CLI unavailability gracefully?
 8. Are borderline cases handled conservatively (reject R1, queue R6, reject R7)?
-9. Does R7 check whether knowledge is directly derivable from current artifacts with no residual value?
+9. Does R7 read actual repo artifacts to verify whether knowledge is directly derivable with no residual value?

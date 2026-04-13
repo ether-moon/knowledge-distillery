@@ -183,7 +183,15 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 
 Apply two questions in sequence:
 
-- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts (source code, configuration, tests, README, CLAUDE.md, design docs)? **You must read the relevant files to answer this — do not infer from the candidate text.**
+- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts? **You must read the relevant files to answer this — do not infer from the candidate text.** Any of the following makes Q1=yes:
+  - **Code structure** — functions, classes, modules, or control flow express the behavior described in the claim
+  - **Comments / docstrings / error messages** — inline text already conveys the intent
+  - **Config files** — `.gitignore`, YAML workflows, JSON configs, `package.json` scripts embody the rule
+  - **Directive docs** — README, CLAUDE.md, AGENTS.md, SKILL.md, or design docs document the practice
+  - **Test assertions** — test cases encode the expected behavior
+
+  If **any single artifact** already communicates what the candidate describes, Q1=yes. The bar is low: even a partial expression counts.
+
 - **Q2 — Residual value:** Does this entry preserve *why*, *boundary*, *exception*, or *failure mode* that a developer **could not infer** from the artifacts themselves?
 
 | Q1 | Q2 | Decision |
@@ -206,12 +214,22 @@ Apply two questions in sequence:
 
 **Fact-type filter:** A `fact` candidate that merely describes current state ("X uses Y") without rationale is directly derivable — skip it. A `fact` whose rationale is self-evident from the implementation pattern is also directly derivable — skip it. Only extract facts that carry **non-obvious** reasoning ("When touching X, keep Y because Z" where Z is not inferable from X's implementation).
 
+> **"How-it-works" rejection — the most common false positive:**
+> Claims shaped as "X uses Y", "X does Y via Z", "X validates using Y", or "X works by doing Y" describe **implementation mechanics**. The code IS the canonical expression of how it works — restating it in the vault is redundant regardless of how well-structured the candidate body is.
+>
+> - Any how-it-works claim is **Q1=yes by default**. The code already says this.
+> - To survive Q2, the candidate must answer: **"Why THIS approach and not an obvious alternative?"** — with genuinely non-obvious context (a past incident, an external policy, a counterintuitive tradeoff). If the answer is "because that's the standard/correct way to do it", Q2=no.
+> - A well-written body (Background, Rejected Alternatives, etc.) does NOT rescue a how-it-works claim. The body's rationale itself must be non-obvious.
+
 Examples:
 - "The `/curate` workflow checks branch prefix `knowledge/batch-*`" → Q1=yes (YAML file), Q2=no → **skip**
 - "`get-many` MUST exit 1 when requested IDs are missing" → Q1=yes (code + error message), Q2=no (fail-fast rationale is self-evident from pattern) → **skip**
 - "Query commands MUST reject unknown flags with usage error" → Q1=yes (catch-all in code), Q2=no (standard CLI error handling) → **skip**
 - "`.mcp.json` MUST be gitignored" → Q1=yes (already in `.gitignore`), Q2=no (runtime config with potential secrets → standard practice) → **skip**
 - "Branch name validation MUST use env var + regex instead of direct interpolation" → Q1=yes (workflow YAML), Q2=no (shell injection prevention via env var is a well-known pattern) → **skip**
+- "The batch-refine pipeline sorts results by `mergedAt` ascending before aggregating" → Q1=yes (code in orchestrator), Q2=no (how-it-works — describes implementation mechanics readable from code) → **skip**
+- "The curate-report skill classifies feedback into REJECT, UPDATE, KEEP, and UNRESOLVED actions" → Q1=yes (SKILL.md documents the action types), Q2=no (how-it-works — restates what the skill definition already says) → **skip**
+- "The `collect-evidence` skill records identifiers only at marking time, not evidence content" → Q1=yes (SKILL.md + code), Q2=no (how-it-works — design directly readable from implementation and docs) → **skip**
 - "Archive rejected vault entries instead of deleting to preserve audit history" → Q1=partially (function exists), Q2=yes (audit trail requirement is not self-evident from the archive function alone) → **keep**
 - "PR body template enforcement is out of scope for knowledge-distillery" → Q1=no (scope decisions aren't in code), Q2=yes (boundary + rejected alternative) → **keep**
 - "Use React Server Components for data-fetching pages because SSR hydration cost was causing 3s delays on the dashboard" → Q1=yes (code uses RSC), Q2=yes (the 3s delay incident and performance threshold are not in the code) → **keep**
@@ -361,7 +379,7 @@ Before returning candidates, verify:
 6. Does every candidate cite at least one `evidence` source?
 7. Are domains derived via `domain-resolve-path`, not hardcoded?
 8. Does the skill return `[]` gracefully when no candidates are found?
-9. Does each `fact` candidate preserve **non-obvious** rationale, constraint, or boundary — not just describe current state or self-evident engineering reasoning?
+9. Does each `fact` candidate preserve **non-obvious** rationale, constraint, or boundary — not just describe current state, self-evident engineering reasoning, or implementation mechanics ("how it works")?
 10. If a new domain is proposed, is the name self-explanatory enough to be recognized from the ID alone in `domain-list --ids-only`?
 11. If a new domain is proposed, does its `description` define the scope clearly enough to distinguish it from adjacent domains?
 12. Before proposing a new domain, did the skill check whether an existing domain could be reused instead?

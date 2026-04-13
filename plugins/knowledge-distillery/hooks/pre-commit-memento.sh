@@ -23,6 +23,12 @@ if echo "$COMMAND" | grep -qE 'git\s+notes'; then
   exit 0
 fi
 
+# Allow: decision commits (message prefix "decision:") — decision files provide
+# their own session context and do not require memento notes (see AGENTS.md)
+if echo "$COMMAND" | grep -qE 'git\s+commit.*"decision:'; then
+  exit 0
+fi
+
 # Block: direct git commit without memento note
 cat <<'EOF'
 {
