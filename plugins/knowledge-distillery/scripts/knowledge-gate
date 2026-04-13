@@ -609,9 +609,10 @@ domain_paths_remove() {
 # ============================================================
 
 # Guard: block vault mutations on batch branches.
-# Only _changeset-apply (post-merge on main) may bypass this via _KD_VIA_CHANGESET_APPLY=1.
+# Only _changeset-apply (post-merge on main) may bypass this via internal function argument.
 assert_not_batch_branch() {
-  if [ "${_KD_VIA_CHANGESET_APPLY:-0}" = "1" ]; then
+  local allow_changeset_bypass="${1:-0}"
+  if [ "$allow_changeset_bypass" = "1" ]; then
     return 0
   fi
   local current_branch
@@ -731,7 +732,8 @@ add_entry() {
 }
 
 pipeline_insert() {
-  assert_not_batch_branch || return 1
+  local _allow_bypass="${1:-0}"
+  assert_not_batch_branch "$_allow_bypass" || return 1
 
   local json
   json=$(cat)
@@ -1049,7 +1051,7 @@ changeset_apply() {
     return 0
   fi
 
-  _KD_VIA_CHANGESET_APPLY=1 pipeline_insert <<< "$new_entries"
+  pipeline_insert 1 <<< "$new_entries"
 }
 
 # ============================================================

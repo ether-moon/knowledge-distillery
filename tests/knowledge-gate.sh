@@ -505,7 +505,7 @@ assert_contains "${help_output}" "_pipeline-update <id>" "help should document p
   fi
   assert_contains "${batch_update_output}" "Vault writes are blocked on batch branches" "_pipeline-update batch guard message"
 
-  # _changeset-apply should still work (it sets _KD_VIA_CHANGESET_APPLY=1 internally)
+  # _changeset-apply should still work (it passes bypass flag as function argument internally)
   cat > "${TMP_DIR}/changeset-batch.json" <<'INNER_EOF'
 {"version":1,"batch_date":"2026-04-13","entries":[]}
 INNER_EOF
