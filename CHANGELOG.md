@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.4] - 2026-04-13
+
+### Improved
+
+- **report**: Group accepted/rejected entries by PR author with human-readable descriptions
+- **report**: Infer report language from project agent directives instead of explicit config
+
+### Fixed
+
+- **pipeline**: Extend batch-branch vault write guard to all mutation paths
+
 ## [0.2.3] - 2026-04-06
 
 ### Improved
