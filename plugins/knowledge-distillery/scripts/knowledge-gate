@@ -608,6 +608,22 @@ domain_paths_remove() {
 # 4. Knowledge Loading Commands
 # ============================================================
 
+# Guard: block vault mutations on batch branches.
+# Only _changeset-apply (post-merge on main) may bypass this via _KD_VIA_CHANGESET_APPLY=1.
+assert_not_batch_branch() {
+  if [ "${_KD_VIA_CHANGESET_APPLY:-0}" = "1" ]; then
+    return 0
+  fi
+  local current_branch
+  current_branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo "")"
+  if [[ "$current_branch" == knowledge/batch-* ]]; then
+    echo "ERROR: Vault writes are blocked on batch branches." >&2
+    echo "Sub-agents MUST return candidates to the orchestrator for changeset file writing." >&2
+    echo "Direct vault mutation is only allowed via _changeset-apply after Report PR merge." >&2
+    return 1
+  fi
+}
+
 add_entry() {
   local type="" title="" claim="" body="" alt="" considerations="" domains="" evidence=""
 
@@ -624,6 +640,8 @@ add_entry() {
       *) echo "Unknown option: $1" >&2; return 1 ;;
     esac
   done
+
+  assert_not_batch_branch || return 1
 
   # Required field validation
   if [ -z "$type" ] || [ -z "$title" ] || [ -z "$claim" ] || [ -z "$body" ] || [ -z "$domains" ] || [ -z "$considerations" ]; then
@@ -713,18 +731,7 @@ add_entry() {
 }
 
 pipeline_insert() {
-  # Guard: prevent direct vault insertion on batch branches.
-  # Only _changeset-apply (post-merge on main) may call this on batch branches.
-  if [ "${_KD_VIA_CHANGESET_APPLY:-0}" != "1" ]; then
-    local current_branch
-    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
-    if [[ "$current_branch" == knowledge/batch-* ]]; then
-      echo "ERROR: _pipeline-insert is blocked on batch branches." >&2
-      echo "Sub-agents MUST return candidates to the orchestrator for changeset file writing." >&2
-      echo "Direct vault insertion is only allowed via _changeset-apply after Report PR merge." >&2
-      return 1
-    fi
-  fi
+  assert_not_batch_branch || return 1
 
   local json
   json=$(cat)
@@ -869,6 +876,8 @@ pipeline_insert() {
 }
 
 pipeline_archive() {
+  assert_not_batch_branch || return 1
+
   local entry_id="$1"
   local reason=""
   shift
@@ -907,6 +916,8 @@ pipeline_archive() {
 }
 
 pipeline_update() {
+  assert_not_batch_branch || return 1
+
   local entry_id="$1"
   local json
   json=$(cat)
