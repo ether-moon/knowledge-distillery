@@ -1,0 +1,23 @@
+## Decisions Made
+- Extract batch-branch guard into a shared helper rather than duplicating inline checks: reduces maintenance burden and ensures consistency across all four vault-write functions
+- Use `git symbolic-ref --short HEAD` instead of `git rev-parse --abbrev-ref HEAD`: symbolic-ref correctly returns the branch name on unborn branches (no commits), where rev-parse returns literal "HEAD"
+- Guard `add_entry()` (the `add` CLI command) in addition to pipeline commands: this was the most likely bypass vector since it's a public API with no prior guard
+
+## Problems Encountered
+- `git rev-parse --abbrev-ref HEAD` returns literal "HEAD" (not an error) on unborn branches, so the `||` fallback never triggered: resolved by switching to `git symbolic-ref --short HEAD`
+- Test repo had no commits so `git checkout main` failed after testing on batch branch: resolved by creating an initial commit before branching and using `git checkout -` to return
+
+## Constraints Identified
+- The `_KD_VIA_CHANGESET_APPLY` env var bypass must remain for `changeset_apply()` to work on batch branches post-merge: the guard checks this first and returns early
+
+## Open Questions
+- None
+
+## Context
+Investigated intermittent direct vault.db writes during batch-refine pipeline execution. Found that only `pipeline_insert()` had the batch-branch guard while `add_entry()`, `pipeline_archive()`, and `pipeline_update()` were unguarded. Extracted a shared `assert_not_batch_branch()` helper, applied it to all four functions, and added comprehensive tests. The existing `changeset_apply()` idempotency (skip by ID) already handles duplicates correctly.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
