@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6] - 2026-04-14
+
+### Fixed
+
+- **knowledge-gate**: Allow file-level patterns in `validate_pattern` (previously only directory suffixes and `*` were accepted)
+- **knowledge-gate**: Add exact filepath matching in `domain_resolve_path` and `query_by_path` SQL queries
+
 ## [0.2.5] - 2026-04-13
 
 ### Improved
