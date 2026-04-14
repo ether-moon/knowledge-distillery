@@ -131,10 +131,17 @@ assert_contains "${existing_output}" "Knowledge vault already exists" "init-db s
 "${GATE}" domain-paths-set ops "app/ops/" >/dev/null
 "${GATE}" domain-paths-set src-all "src/" >/dev/null
 
-if invalid_pattern_output=$("${GATE}" domain-paths-add payment "app/services/payment" 2>&1); then
-  fail "domain-paths-add should reject invalid patterns"
+# Empty patterns should be rejected
+if empty_pattern_output=$("${GATE}" domain-paths-add payment "" 2>&1); then
+  fail "domain-paths-add should reject empty patterns"
 fi
-assert_contains "${invalid_pattern_output}" "Invalid pattern" "invalid patterns should explain the directory-prefix contract"
+assert_contains "${empty_pattern_output}" "Empty pattern" "empty patterns should produce a clear error"
+
+# File-level patterns should be accepted (not just directory prefixes)
+"${GATE}" domain-paths-add orphan "Gemfile" >/dev/null
+resolve_file_pattern="$("${GATE}" domain-resolve-path "Gemfile")"
+assert_contains "${resolve_file_pattern}" '"domain":"orphan"' "file-level patterns should be resolvable"
+"${GATE}" domain-paths-remove orphan "Gemfile" >/dev/null
 
 "${GATE}" domain-paths-add ui "docs/components/" >/dev/null
 resolve_components="$("${GATE}" domain-resolve-path "docs/components/button.tsx")"

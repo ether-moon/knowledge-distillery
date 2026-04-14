@@ -129,6 +129,8 @@ query_by_path() {
         SELECT dp.domain FROM domain_paths dp
         JOIN filepath_prefixes fp ON fp.prefix = dp.pattern
         UNION
+        SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '${filepath}'
+        UNION
         SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '*'
       )
       SELECT COALESCE(json_group_array(id), '[]')
@@ -157,6 +159,8 @@ query_by_path() {
     ), matched_domains AS (
       SELECT dp.domain FROM domain_paths dp
       JOIN filepath_prefixes fp ON fp.prefix = dp.pattern
+      UNION
+      SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '${filepath}'
       UNION
       SELECT dp.domain FROM domain_paths dp WHERE dp.pattern = '*'
     )
@@ -452,6 +456,11 @@ domain_resolve_path() {
     SELECT DISTINCT dp.domain, dr.description, dp.pattern AS matched_pattern
     FROM domain_paths dp
     JOIN domain_registry dr ON dr.domain = dp.domain
+    WHERE dp.pattern = '${filepath}' AND dr.status = 'active'
+    UNION
+    SELECT DISTINCT dp.domain, dr.description, dp.pattern AS matched_pattern
+    FROM domain_paths dp
+    JOIN domain_registry dr ON dr.domain = dp.domain
     WHERE dp.pattern = '*' AND dr.status = 'active'
     ORDER BY 1;
   "
@@ -558,6 +567,9 @@ domain_deprecate() {
 
 validate_pattern() {
   local pattern="$1"
+  # Trim leading/trailing whitespace
+  pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+  pattern="${pattern%"${pattern##*[![:space:]]}"}"
   if [ -z "$pattern" ]; then
     echo "ERROR: Empty pattern." >&2
     return 1
