@@ -558,10 +558,11 @@ domain_deprecate() {
 
 validate_pattern() {
   local pattern="$1"
-  if [ "$pattern" = "*" ]; then return 0; fi
-  if [[ "$pattern" == */ ]]; then return 0; fi
-  echo "ERROR: Invalid pattern '${pattern}'. Must end with '/' (directory prefix) or be '*' (global)." >&2
-  return 1
+  if [ -z "$pattern" ]; then
+    echo "ERROR: Empty pattern." >&2
+    return 1
+  fi
+  return 0
 }
 
 domain_paths_set() {
