@@ -1,0 +1,23 @@
+## Decisions Made
+- validate_pattern에서 파일 수준 패턴 허용: 디렉토리/글로브만 허용하던 제한을 완화. app/models/ 같은 광범위한 디렉토리 패턴은 선택적 노출의 의미를 상실하고, Gemfile 같은 루트 파일은 디렉토리로 변환이 불가능하기 때문.
+- 파일 패턴을 상위 디렉토리로 자동 변환하는 대안 기각: 너무 광범위해져 패턴의 정밀도를 상실함.
+
+## Problems Encountered
+- changeset에 파일 수준 패턴 11개 포함으로 GitHub workflow 실패: validate_pattern 검증 완화로 해결.
+- CI 테스트가 구 검증 로직을 기대하여 실패: 테스트를 새 로직에 맞게 수정.
+- origin/main 리베이스 시 충돌 발생: PR blocker 해결 에이전트가 이미 반영한 whitespace trim 코드와 충돌, HEAD 쪽 유지로 해결.
+
+## Constraints Identified
+- domain_resolve_path/query_by_path의 recursive CTE는 디렉토리 접두사만 생성하므로, 파일 패턴 지원 시 exact match UNION 절 추가가 필수.
+
+## Open Questions
+- None
+
+## Context
+knowledge-gate의 _changeset-apply에서 suggested_patterns에 파일 수준 패턴이 거부되는 문제를 조사하고 수정했다. validate_pattern 완화, SQL 매칭 로직에 exact filepath match 추가, 테스트 수정, decision 기록, 0.2.6 버전 범프까지 완료.
+
+## Recorded Decisions
+- `allow-file-level-patterns` (7f2e13b): validate_pattern에서 파일 수준 패턴 허용 — 리베이스로 SHA 변경됨
+
+## Vault Entries Referenced
+- None
