@@ -188,14 +188,38 @@ for pr in pending_prs (sorted by mergedAt asc):
 
 ### Step 4: Maintain Report PR
 
-After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md`.
+After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md` and reconcile the reviewer set.
+
+**Why reviewers are auto-assigned:** Source PR authors of every accumulated changeset entry get review-requested on the Report PR so they receive a fast feedback loop on how their PR was distilled. The changeset grows incrementally across the per-PR loop (and across self-retrigger runs), so the reviewer set is reconciled on every Report PR refresh — new authors get added; previously-requested ones stay.
+
+**Reviewer collection procedure (run on every create / refresh):**
+
+1. Iterate every entry in `.knowledge/changesets/batch-YYYY-MM-DD.json` (`entries[]` — every `status` is included; entries of every status share the same `data.evidence[]` shape). Collect every PR number from `entries[].data.evidence[].ref` (e.g., `"#27"` → `27`).
+2. Deduplicate the PR-number set.
+3. For each unique PR number, resolve the author and bot flag using the `gh` CLI (not GitHub MCP — the `jq` pipe format below is what the next step parses):
+   ```bash
+   gh pr view <num> --json author --jq '.author.login + "|" + (.author.is_bot | tostring)'
+   ```
+   On error for a single PR, log a warning and skip — continue collecting other authors.
+4. Filter the resolved authors:
+   - Drop entries where `is_bot == true`.
+   - Drop empty / null logins (deleted accounts).
+   - Deduplicate by login.
+
+**Create or refresh the Report PR:**
 
 ```text
 If no PR with head=knowledge/batch-YYYY-MM-DD exists:
-  Use GitHub MCP to create a PR (title/body/base/head per "Report PR Format" below)
+  Use GitHub MCP to create a PR (title/body/base/head per "Report PR Format" below).
+  Pass `reviewers` = the filtered author list (omit the argument entirely when the list is empty).
 Else:
-  Use GitHub MCP to update the existing PR's body from the latest report file
+  Use GitHub MCP to update the existing PR's body from the latest report file.
+  Then add any new reviewers idempotently:
+    gh pr edit <pr_number> --add-reviewer <login1>,<login2>,...
+  `--add-reviewer` re-requesting an already-requested reviewer is a no-op, so the call is safe to make on every refresh with the full current set. Skip the call when the list is empty.
 ```
+
+If GitHub MCP rejects the entire `reviewers` argument on PR creation, retry the create call once without it so the PR is still created, then log a warning. The reviewer set will be reconciled by `gh pr edit --add-reviewer` on the next refresh.
 
 **MUST NOT auto-merge the report PR.** Human review is the intervention point.
 
@@ -405,6 +429,10 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
 | Branch already exists | Checkout existing branch (supports re-runs and self-retriggers). |
 | `MAX_RETRY_COUNT` reached | Append `❗ 재시도 한도 도달` row, do not retrigger, exit 0. |
+| `gh pr view` fails for a single PR while collecting reviewers | Skip that PR's author, log a warning, continue with the others. |
+| Resolved reviewer list is empty after filtering | Skip the `reviewers` argument on create / skip the `gh pr edit --add-reviewer` call on refresh. |
+| GitHub MCP rejects the `reviewers` argument on PR creation | Retry the create call once without `reviewers`; log a warning. PR creation must still succeed. Reviewers will be reconciled via `gh pr edit --add-reviewer` on the next refresh. |
+| GitHub silently drops some reviewers (no repo access, etc.) | No action — treat the result as successful. GitHub handles it. |
 
 ## Constraints
 
