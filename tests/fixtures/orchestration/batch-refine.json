@@ -23,9 +23,9 @@
         {
           "doc": "batch_refine_skill",
           "ordered_contains": [
-            "1. **`/knowledge-distillery:collect-evidence`** with the PR number → Evidence Bundle",
-            "2. **`/knowledge-distillery:extract-candidates`** with the Evidence Bundle → Candidate array",
-            "3. **`/knowledge-distillery:quality-gate`** with the Candidate array → Verdict array"
+            "invoke /knowledge-distillery:collect-evidence with pr.number",
+            "invoke /knowledge-distillery:extract-candidates with the Evidence Bundle",
+            "invoke /knowledge-distillery:quality-gate with the Candidate array"
           ]
         },
         {
@@ -43,7 +43,7 @@
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "**Partial failure handling:** One PR's failure MUST NOT block remaining PRs. Log the error and continue."
+          "contains": "PR-level failures MUST NOT block the rest of the batch."
         }
       ]
     },
@@ -52,11 +52,7 @@
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "1. Keep the PR labeled `knowledge:pending`"
-        },
-        {
-          "doc": "batch_refine_skill",
-          "contains": "2. Record in report under \"Insufficient Evidence\" section"
+          "contains": "1. Keep the PR labeled `knowledge:pending` (no label flip in Step 3d)."
         },
         {
           "doc": "batch_refine_workflow",
@@ -69,7 +65,7 @@
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "Entries are NOT inserted into vault.db at this stage — they are recorded in a changeset that will be applied after the Report PR is merged."
+          "contains": "Entries are NOT inserted into vault.db at this stage — they are applied after the Report PR is merged."
         },
         {
           "doc": "batch_refine_skill",
@@ -82,18 +78,20 @@
       ]
     },
     {
-      "id": "report-pr-precedes-label-transition",
+      "id": "label-flip-after-pr-atomic-commit",
       "checks": [
         {
           "doc": "batch_refine_skill",
           "ordered_contains": [
-            "### Step 8: Create Report PR",
-            "### Step 9: Label Transitions for Processed PRs"
+            "Append entries to `.knowledge/changesets/batch-YYYY-MM-DD.json`",
+            "git add .knowledge/ && git commit",
+            "git push",
+            "Update the PR's label: `knowledge:pending` → `knowledge:collected`"
           ]
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "**After** Report PR creation (to prevent orphaned label state):"
+          "contains": "**changeset/report committed and pushed before label flips**"
         }
       ]
     },
@@ -102,7 +100,11 @@
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "**Always** generate `.knowledge/reports/batch-YYYY-MM-DD.md` — even with 0 accepted candidates. This guarantees a git diff for the Report PR."
+          "contains": "MUST create report file `.knowledge/reports/batch-YYYY-MM-DD.md` always (even 0 entries)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST create changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` always (with empty entries array if 0 candidates)"
         }
       ]
     },
@@ -116,6 +118,241 @@
         {
           "doc": "collect_evidence_skill",
           "contains": "MUST NOT create, modify, or delete any GitHub resources (comments, labels, PRs). Read operations only."
+        }
+      ]
+    },
+    {
+      "id": "time-budget-check-precedes-each-pr",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Run this check at the **top of every PR iteration**, before invoking `collect-evidence`:"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "elapsed=$(( $(date +%s) - BATCH_START_TS ))"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do **not** start a new PR after the deadline"
+        }
+      ]
+    },
+    {
+      "id": "graceful-handoff-procedure-documented",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "### Graceful Handoff Procedure",
+            "**Confirm progress is committed.**",
+            "**Append a handoff row to the Report PR progress table**",
+            "**Decide whether to retrigger.**",
+            "**Retrigger:**",
+            "**Exit 0.**"
+          ]
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "gh workflow run batch-refine.yml -f retry_count=$((RETRY_COUNT + 1))"
+        }
+      ]
+    },
+    {
+      "id": "max-retry-count-prevents-infinite-loop",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**If `MAX_RETRY_COUNT` reached:** append `❗ 재시도 한도 도달, 다음 cron까지 대기` to the row. Do **not** retrigger."
+        }
+      ]
+    },
+    {
+      "id": "auth-failure-does-not-retrigger",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do **not** attempt the handoff procedure — every step requires a valid token."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "401/403 from GitHub MCP MUST NOT trigger the handoff procedure (the token is already dead)"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-401-marks-insufficient",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "GitHub MCP authentication failed (401/403) on any required call"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "\"missing\": [\"github_auth\"],"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Do not write incomplete fields into the bundle that would look \"sufficient\" to downstream stages."
+        }
+      ]
+    },
+    {
+      "id": "workflow-yaml-time-budget-env",
+      "checks": [
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "DEADLINE_SECONDS:"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "MAX_RETRY_COUNT:"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "RETRY_COUNT: ${{ inputs.retry_count || '0' }}"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "echo \"BATCH_START_TS=$(date +%s)\" >> \"$GITHUB_ENV\""
+        }
+      ]
+    },
+    {
+      "id": "workflow-yaml-permissions-and-dispatch-input",
+      "checks": [
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "actions: write"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "ordered_contains": [
+            "workflow_dispatch:",
+            "inputs:",
+            "retry_count:"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "serial-pr-loop-is-the-cancellation-point",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "PRs MUST be processed serially in `mergedAt` ascending order so the time-budget cancellation point is well-defined"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Why serial, not parallel?"
+        }
+      ]
+    },
+    {
+      "id": "branch-resume-supports-self-retrigger",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "If the branch already exists (re-run or self-retrigger scenario), checkout the existing branch — do not reset it."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The PR's `knowledge:collected` label is the authoritative signal"
+        }
+      ]
+    },
+    {
+      "id": "fresh-subagent-per-pr-prevents-context-pollution",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST run in a fresh subagent"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Each PR gets its own context window so that"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "spawn-agent (single Agent tool call, fresh context):"
+        }
+      ]
+    },
+    {
+      "id": "auth-failure-detected-via-missing-github-auth-signal",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "sufficiency.missing contains \"github_auth\""
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "→ enter \"Unexpected 401\" path (do NOT retrigger; token is dead)"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "\"missing\": [\"github_auth\"],"
+        }
+      ]
+    },
+    {
+      "id": "workflow-prompt-references-correct-skill-section",
+      "checks": [
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "follow the skill's \"Graceful Handoff Procedure\""
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "absent": "Graceful Exit and Self-Retrigger\""
+        }
+      ]
+    },
+    {
+      "id": "handoff-row-uses-markdown-table-format",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| run #$GITHUB_RUN_ID | ⏱ 시간 예산 도달 — 처리 N개, 남은 M개, 재트리거함 (재시도 $RETRY_COUNT/$MAX_RETRY_COUNT) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "matching the table schema in the \"Report PR Progress Table\" section — never use bullets here"
+        }
+      ]
+    },
+    {
+      "id": "report-pr-body-includes-progress-table",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "## Knowledge Distillery Batch Report — YYYY-MM-DD",
+            "### 진행 상황",
+            "| 항목 | 상태 |",
+            "### Summary"
+          ]
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "do **not** regenerate it from current label state, as that would erase handoff history"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-prose-distinguishes-auth-from-optional-missing",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Even when `insufficient` due to **missing optional sources**"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "**Auth failure is a special case** that does **not** follow this rule"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Partial data on auth failure must be discarded."
         }
       ]
     }

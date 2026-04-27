@@ -248,6 +248,7 @@ Evaluate evidence completeness using these rules:
 | Changed file list present AND commit messages present | Required baseline met — `sufficient` |
 | All optional sources (Linear, Slack, memento, Greptile, Notion) missing but required baseline met | `sufficient` |
 | No Manifest found | `insufficient` |
+| GitHub MCP authentication failed (401/403) on any required call | `insufficient` (see GitHub MCP Auth Failure below) |
 
 **Composing the sufficiency object:**
 
@@ -269,7 +270,29 @@ If `insufficient`:
 }
 ```
 
-Even when `insufficient`, return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., keeping the PR in `knowledge:pending` for a later retry).
+Even when `insufficient` due to **missing optional sources** (e.g., Linear unavailable, Notion down), return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., keeping the PR in `knowledge:pending` for a later retry).
+
+**Auth failure is a special case** that does **not** follow this rule — see GitHub MCP Auth Failure (401/403) below. Partial data on auth failure must be discarded.
+
+#### GitHub MCP Auth Failure (401/403)
+
+A GitHub MCP call may return 401/403 mid-collection — typically because the workflow's installation token expired before the workflow finished. When this happens:
+
+1. **Stop collecting immediately.** Do **not** continue with partially fetched data. PR title/body without comments, or comments without authors, would feed `extract-candidates` a misleading bundle.
+2. **Discard any partial evidence** for this PR. Do not write incomplete fields into the bundle that would look "sufficient" to downstream stages.
+3. **Return** the bundle with:
+   ```json
+   {
+     "sufficiency": {
+       "verdict": "insufficient",
+       "missing": ["github_auth"],
+       "reason": "GitHub MCP authentication failed (401/403). Token likely expired mid-run. PR will be retried on next batch."
+     }
+   }
+   ```
+4. The orchestrator (`batch-refine`) treats the `github_auth` missing tag as a special signal: it stops the per-PR loop and follows the **Unexpected 401** path (no graceful handoff, no retrigger). The PR remains `knowledge:pending` and is naturally picked up by the next cron run.
+
+This rule supersedes the "graceful degradation" guidance for optional sources — auth failure on the required GitHub baseline is **never** acceptable. There is no partial-data path here.
 
 ## Evidence Bundle Structure
 
