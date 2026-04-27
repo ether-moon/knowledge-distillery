@@ -76,6 +76,7 @@ Triggered when the time-budget check fails. Performed once, after the last in-fl
    ```
    If retrigger succeeds, append `재트리거함 → run #<new_run_id>` (best-effort link) to the same row. If retrigger fails (401 already, or `actions: write` denied), do not retry — the next cron will pick up the leftover PRs.
 5. **If `MAX_RETRY_COUNT` reached:** append `❗ 재시도 한도 도달, 다음 cron까지 대기` to the row. Do **not** retrigger. Leave remaining PRs labeled `knowledge:pending`.
+   **If no `knowledge:pending` PRs remain (`classify_handoff` → `no-pending`, `format_handoff_row` → `남은 0개`):** still append the handoff row and commit/push, but do **not** retrigger even if `RETRY_COUNT < MAX_RETRY_COUNT`. The batch is naturally complete.
 6. **Exit 0.** A graceful handoff is a successful workflow run, not a failure. Failing the workflow would only generate noise.
 
 ### Unexpected 401 (ungraceful path)
@@ -144,7 +145,7 @@ When resuming an existing branch, also locate the existing Report PR (if any) an
 
 Process pending PRs **one at a time** in `mergedAt` ascending order. For each PR run the full per-PR pipeline and immediately persist progress before moving on. This guarantees that any kind of mid-run termination (graceful handoff, 401, runner timeout) leaves a consistent state.
 
-```
+```text
 for pr in pending_prs (sorted by mergedAt asc):
   # 3a. Time budget gate
   elapsed=$(( $(date +%s) - BATCH_START_TS ))
@@ -189,7 +190,7 @@ for pr in pending_prs (sorted by mergedAt asc):
 
 After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md`.
 
-```
+```text
 If no PR with head=knowledge/batch-YYYY-MM-DD exists:
   Use GitHub MCP to create a PR (title/body/base/head per "Report PR Format" below)
 Else:
@@ -270,7 +271,9 @@ Run this after the per-PR loop ends — either because all PRs are processed, or
 - Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
 - Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
-Append the domain summary to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run (handoff or full completion).
+Append the domain summary to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run **only on full completion** — on the handoff path, the Graceful Handoff Procedure performs an additional handoff-row commit after Step 8.
+
+**Linear ordering on budget hit:** Step 7 (Domain Change Summary) → Step 8 (Cleanup Verification) → Graceful Handoff Procedure (handoff row commit + retrigger decision) → exit 0.
 
 ### Step 8: Cleanup Verification
 
