@@ -41,3 +41,12 @@ The current implementation serves as a proof of concept. Do not over-engineer fo
 - Do NOT trigger for: user preferences (use auto-memory instead), temporary debugging choices, implementation details obvious from code
 - Decision commits do not require a memento note — the decision file itself provides the session context
 - Decision files are committed on the current branch and enter the vault through the normal pipeline (PR merge → mark-evidence → batch-refine)
+
+## Versioning
+
+The `bumping-version` skill (in `skill-set`) reads this section.
+
+- **Base branch**: main
+- **Commit message**: chore: bump version to {version}
+- **Extra version files**: (none — `plugins/knowledge-distillery/.claude-plugin/plugin.json` is auto-detected)
+- **Changelog categories**: Added, Improved, Fixed
