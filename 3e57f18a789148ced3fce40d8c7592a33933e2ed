@@ -1,0 +1,32 @@
+## Decisions Made
+- batch-refine을 병렬 subagent에서 시리얼 PR-atomic loop로 전환: 시간 예산 cancellation point를 명확히 하고 PR마다 push/label-flip의 atomicity 보장.
+- DEADLINE_SECONDS=2100 (35분) 채택: 토큰 ~60분 수명 안에서 마지막 PR 마무리 + 핸드오프에 25분 마진 확보.
+- 401/403은 graceful 핸드오프 트리거가 아닌 ungraceful 자연 사망으로 처리: 핸드오프 단계 자체가 유효 토큰을 요구하므로 시도 무의미.
+- 401 신호를 collect-evidence가 sufficiency.missing=["github_auth"]로 반환: 부분 데이터 사용 금지를 prose에 명시.
+- 자기 재트리거를 gh workflow run + workflow_dispatch.inputs.retry_count로 구현: secrets.GITHUB_TOKEN + actions: write 만으로 동작.
+- MAX_RETRY_COUNT=5 채택: 한 batch당 약 3시간 한도, 무한 루프 방지.
+
+## Problems Encountered
+- 매트릭스 분리안이 과잉 복잡도라는 사용자 피드백: 시리얼 PR-atomic 패턴으로 단순화.
+- 피어 LLM 리뷰에서 lib auth-failure-skipped action이 SKILL prose와 모순(dead code): lib에서 제거하고 classify_handoff가 skip-handoff 시그널 반환하도록 수정.
+- workflow.yml prompt가 잘못된 섹션명("Graceful Exit and Self-Retrigger")을 참조: "Graceful Handoff Procedure"로 정정.
+- 시리얼 재작성 시 fresh subagent per PR invariant가 silently 사라짐: Step 3b에 Agent tool spawn 명시 복원.
+
+## Constraints Identified
+- GitHub Actions의 secrets.GITHUB_TOKEN은 워크플로우 시작 시 발급되고 약 1시간 후 만료: 모든 graceful 작업이 그 안에 끝나야 함.
+- claude-code-action은 MCP 헤더에 토큰을 정적으로 박아두어 실행 중 토큰 갱신 불가능.
+- gh workflow run은 actions: write permission만으로 동작 가능 (별도 PAT 불필요).
+- 핸드오프는 exit 0이어야 함 — 실패 알림 노이즈 방지.
+
+## Open Questions
+- 단일 PR이 LLM stall로 데드라인을 초과하는 케이스에 mid-PR 체크포인트 도입 여부 (의식적 유보).
+- 라벨 flip 실패 후 changeset 중복 entry 방어를 changeset 기반 source-of-truth로 이전할지 (별도 작업으로 분리).
+
+## Context
+batch-refine 워크플로우에서 GitHub 토큰 만료로 PR 작성자/리뷰 정보를 silent하게 잃는 문제를 진단하고, graceful 시간 예산 핸드오프 + 자기 재트리거 메커니즘을 구현. 영향 파일: .github/workflows/batch-refine.yml, plugins/knowledge-distillery/skills/batch-refine/SKILL.md, plugins/knowledge-distillery/skills/collect-evidence/SKILL.md, tests/lib/handoff-structure.sh, tests/handoff-structure.sh, tests/fixtures/orchestration/batch-refine.json. 피어 LLM 리뷰(gemini, codex, claude)로 7개 OBVIOUS 항목을 수정 후 모든 테스트 통과.
+
+## Recorded Decisions
+- `handoff-edge-cases-stay-as-is` (23aca47): 단일 PR stall, 라벨 flip 실패 후 replay, 첫 PR 401 가시성 — 세 엣지케이스를 별도 안전장치 없이 현 상태 유지.
+
+## Vault Entries Referenced
+None
