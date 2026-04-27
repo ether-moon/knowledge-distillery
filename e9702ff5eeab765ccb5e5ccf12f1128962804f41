@@ -1,0 +1,25 @@
+## Decisions Made
+- Reviewer 수집 범위: changeset의 모든 후보 entry(accepted/modified/rejected)의 source PR 작성자를 포함. Rejected 케이스도 알려서 빠른 피드백 루프 형성.
+- Bot 작성자 자동 제외: dependabot/renovate/github-actions[bot] 등에 review request가 가는 노이즈를 방지하기 위해 `is_bot==true`는 필터링.
+- Author lookup 시점: `batch-refine` Step 8에서 `gh pr view <num> --json author`로 즉시 조회. mark-evidence/collect-evidence/changeset 스키마 변경 회피 → backward compatible.
+- 변경 범위 최소화: `batch-refine/SKILL.md` Step 8만 수정. Report 본문의 `#### @{author}` 그룹핑은 이미 존재하므로 손대지 않음.
+- 자동화 테스트 추가하지 않음: SKILL.md는 LLM이 실행하는 절차 문서로, 단위 테스트 가능 단위가 아님. AGENTS.md "implementation philosophy"와 정합.
+
+## Problems Encountered
+- 직접 `git commit` 시도가 pre-commit hook에 의해 차단됨: `/knowledge-distillery:memento-commit` 사용으로 전환하여 해결.
+
+## Constraints Identified
+- batch-refine은 LLM 실행 절차 문서: 코드 단위 테스트가 불가능하므로 검증은 다음 batch 실행 결과 PR을 직접 확인하는 방식만 가능.
+- Backward compatibility: 기존 changeset/manifest 스키마를 깨면 과거 데이터 재처리가 필요해지므로 신규 스키마 변경은 회피해야 함.
+
+## Open Questions
+- None
+
+## Context
+"refine 결과 PR에 추가 후보 entry 작성자들을 리뷰어로 지정해 줘" 요청에 대해 brainstorming skill로 설계를 진행. 후보 entry 범위(B: 모두), bot 제외(B), author 캡처 시점(B: Step 8 lookup) 결정 후 `docs/superpowers/specs/2026-04-27-report-pr-reviewers-design.md`에 design spec 작성. 구현은 별도 단계(writing-plans)에서 진행 예정.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
