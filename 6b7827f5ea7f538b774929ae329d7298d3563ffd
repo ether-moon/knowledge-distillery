@@ -1,0 +1,24 @@
+## Decisions Made
+- CodeRabbit 리뷰 항목을 autofixing-and-escalating 기준으로 분류: 4건 obvious 자동 수정, 2건 ambiguous 논의 보류 (이유: 동작 변경/설계 검토 필요)
+- prompt 내부의 `$BATCH_START_TS`/`$DEADLINE_SECONDS` 표현 변경은 ambiguous로 분류 — 현재 구현은 LLM이 runtime에 env var을 읽는 구조로 의도된 설계
+- serial vs parallel throughput 재평가는 ambiguous로 분류 — 실측 데이터 + 설계 재검토가 필요한 사안
+
+## Problems Encountered
+- 직접 `git commit` 호출이 PreToolUse hook에 의해 차단됨: `/knowledge-distillery:memento-commit` 워크플로로 전환하여 해결
+
+## Constraints Identified
+- `claude-code-action@v1`은 bash subprocess의 gh CLI 인증을 위해 별도의 `github_token` input이 필요 — 누락 시 self-retrigger가 401로 silent fail
+- 본 프로젝트의 commit은 반드시 memento-commit 스킬을 통해 수행해야 함 (pre-commit hook이 강제)
+
+## Open Questions
+- Ambiguous 항목 2건의 향후 처리 방향: 워크플로 prompt env 확장 방식, serial 처리 throughput 한계 검증
+- 결정 기록(commit 23aca47)에 명시된 3개 edge case에 대해 향후 리뷰어가 지적할 경우 status quo를 어떻게 정당화할지
+
+## Context
+PR #48 (`investigate-auth-issue` 브랜치)에 대한 CodeRabbit 리뷰 피드백을 처리. autofixing-and-escalating 스킬 기준으로 명확한 6건 중 4건(workflow의 `github_token` 추가, SKILL.md의 markdownlint 태그, no-pending 분기 문서화, Step 7 ordering 명료화)을 자동 수정하고, 2건은 ambiguous로 보류. 변경 파일: `.github/workflows/batch-refine.yml`, `plugins/knowledge-distillery/skills/batch-refine/SKILL.md`. tests/skill-structure.sh 및 tests/handoff-structure.sh 통과 확인.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
