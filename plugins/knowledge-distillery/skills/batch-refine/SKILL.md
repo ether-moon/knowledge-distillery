@@ -9,7 +9,104 @@ description: "Orchestrates the Stage B distillation pipeline: discovers merged P
 
 - Cron schedule (weekly/biweekly) via GitHub Actions
 - Manual dispatch via `workflow_dispatch`
+- Self-retrigger via `gh workflow run batch-refine.yml -f retry_count=N` (graceful handoff path)
 - Invoked as `/knowledge-distillery:batch-refine`
+
+## Time Budget and Self-Retrigger
+
+The GitHub token used by this workflow expires roughly one hour after the workflow starts. Once it expires, every subsequent operation (commit, push, label change, PR update, even `gh workflow run`) will fail with 401. To avoid leaving the batch in a half-finished state, this skill must hand work off to a fresh workflow run **before** the token expires.
+
+**Environment contract** (set by `.github/workflows/batch-refine.yml`):
+
+| Variable | Meaning |
+|----------|---------|
+| `BATCH_START_TS` | Unix timestamp when this run started (proxy for token issuance time). |
+| `DEADLINE_SECONDS` | Maximum elapsed seconds before refusing to start a new PR (e.g. `2100` = 35 min). |
+| `RETRY_COUNT` | How many self-retriggers preceded this run. Cron starts at `0`. |
+| `MAX_RETRY_COUNT` | Hard ceiling on self-retriggers per batch (e.g. `5`). |
+
+The deadline (35 min) is well under the token lifetime (~60 min) so all handoff operations complete with a valid token. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but PR-atomic commits preserve everything completed so far, and the next cron run resumes naturally.
+
+### Time budget check (before each PR)
+
+Run this check at the **top of every PR iteration**, before invoking `collect-evidence`:
+
+```bash
+elapsed=$(( $(date +%s) - BATCH_START_TS ))
+remaining=$(( DEADLINE_SECONDS - elapsed ))
+if [ "$remaining" -le 0 ]; then
+  # Skip this PR. Enter graceful handoff with the remaining PRs as the leftover set.
+  goto_graceful_handoff=1
+fi
+```
+
+If `goto_graceful_handoff=1`, stop the loop and run the **Graceful Handoff Procedure** below. Do **not** start a new PR after the deadline — even a "small" PR can blow through the remaining margin once an LLM call stalls.
+
+### PR-atomic commit pattern
+
+Every PR that completes (or is determined `insufficient`) must immediately commit its changeset delta and update its label, **before** moving on to the next PR. This guarantees that any kind of crash — graceful handoff, 401, OOM, runner timeout — leaves a consistent state for the next run to pick up.
+
+For each PR:
+
+1. Append entries to `.knowledge/changesets/batch-YYYY-MM-DD.json` (or set `insufficient` flag in the report file).
+2. Append a row to `.knowledge/reports/batch-YYYY-MM-DD.md` progress table (see "Report PR Progress Table" below).
+3. `git add .knowledge/ && git commit -m "kd: PR #<n> processed"`.
+4. `git push`.
+5. Update the PR's label: `knowledge:pending` → `knowledge:collected` (or leave pending if insufficient).
+6. If a Report PR already exists for this batch, refresh its body from the report file. Skip if it does not yet exist (it gets created at first commit).
+
+The order is intentional: **changeset/report committed and pushed before label flips**. If the label flips first and we crash, the next run sees `knowledge:collected` and skips the PR even though its entries are not in the changeset.
+
+### Graceful Handoff Procedure
+
+Triggered when the time-budget check fails. Performed once, after the last in-flight PR finishes (or never starts).
+
+1. **Confirm progress is committed.** If any in-flight changeset/report changes are uncommitted, commit + push now while the token is still valid.
+2. **Append a handoff row to the Report PR progress table** using the exact Markdown table row format below (matching the table schema in the "Report PR Progress Table" section — never use bullets here):
+   ```markdown
+   | run #$GITHUB_RUN_ID | ⏱ 시간 예산 도달 — 처리 N개, 남은 M개, 재트리거함 (재시도 $RETRY_COUNT/$MAX_RETRY_COUNT) |
+   ```
+   Commit + push this update (the report file is part of the same branch).
+3. **Decide whether to retrigger.** Retrigger if **both** are true:
+   - `RETRY_COUNT < MAX_RETRY_COUNT`
+   - At least one PR with `knowledge:pending` label remains
+4. **Retrigger:**
+   ```bash
+   gh workflow run batch-refine.yml -f retry_count=$((RETRY_COUNT + 1))
+   ```
+   If retrigger succeeds, append `재트리거함 → run #<new_run_id>` (best-effort link) to the same row. If retrigger fails (401 already, or `actions: write` denied), do not retry — the next cron will pick up the leftover PRs.
+5. **If `MAX_RETRY_COUNT` reached:** append `❗ 재시도 한도 도달, 다음 cron까지 대기` to the row. Do **not** retrigger. Leave remaining PRs labeled `knowledge:pending`.
+   **If no `knowledge:pending` PRs remain (`classify_handoff` → `no-pending`, `format_handoff_row` → `남은 0개`):** still append the handoff row and commit/push, but do **not** retrigger even if `RETRY_COUNT < MAX_RETRY_COUNT`. The batch is naturally complete.
+6. **Exit 0.** A graceful handoff is a successful workflow run, not a failure. Failing the workflow would only generate noise.
+
+### Unexpected 401 (ungraceful path)
+
+If `collect-evidence` (or any GitHub MCP call) returns 401/403 mid-run, the token has died early. Do **not** attempt the handoff procedure — every step requires a valid token.
+
+1. The PR currently being processed: do nothing. It stays `knowledge:pending`.
+2. Stop the loop.
+3. Exit (any non-zero is fine; the workflow run will be marked failed but PR-atomic commits up to this point are already in place).
+
+The next cron (or manual dispatch) sees the leftover `knowledge:pending` PRs and resumes from there. No retrigger from inside this run.
+
+### Report PR Progress Table
+
+The Report PR body opens with a per-run progress table. Each row records one PR's outcome **or** one handoff event. The table grows append-only across retriggers so reviewers see the full story.
+
+Format:
+
+```markdown
+### 진행 상황
+
+| 항목 | 상태 |
+|------|------|
+| #1234 | ✅ 처리 완료 (3 accepted, run #100) |
+| #1235 | ⏸ 대기 중 (insufficient: manifest, run #100) |
+| run #100 | ⏱ 시간 예산 도달 — 처리 1개, 남은 1개, 재트리거함 → run #101 |
+| #1236 | ✅ 처리 완료 (2 accepted, run #101) |
+```
+
+When a retrigger run starts, it picks up the existing branch + Report PR, reads the table to count work already done, and continues processing remaining `knowledge:pending` PRs.
 
 ## Prerequisites
 
@@ -34,55 +131,85 @@ Sort by `mergedAt` ascending (oldest first).
 
 **If no results:** Log "No pending PRs" and exit 0. Do NOT create a branch, commit, or PR.
 
-### Step 2: Create Working Branch
+### Step 2: Create or Resume Working Branch
 
 ```bash
 git checkout -b knowledge/batch-YYYY-MM-DD main
 ```
 
-If branch already exists (re-run scenario), checkout existing branch.
+If the branch already exists (re-run or self-retrigger scenario), checkout the existing branch — do not reset it. The accumulated commits from previous runs are the source of truth for which PRs have already been processed in this batch.
 
-### Step 3: Execute Per-PR Subagents (Parallel)
+When resuming an existing branch, also locate the existing Report PR (if any) and re-read the progress table to confirm which PRs are already marked complete. The PR's `knowledge:collected` label is the authoritative signal; treat the progress table as a human-readable mirror.
 
-Spawn **all** pending PR subagents in parallel. Each subagent runs the full pipeline for one PR:
+### Step 3: Per-PR Atomic Loop
 
-1. **`/knowledge-distillery:collect-evidence`** with the PR number → Evidence Bundle
-   - If `sufficiency.verdict == "insufficient"` → record PR as insufficient, return early
-2. **`/knowledge-distillery:extract-candidates`** with the Evidence Bundle → Candidate array
-   - Runs in the same subagent context, so the Evidence Bundle and any selectively fetched PR diff context from collect-evidence remain available in-memory
-   - If empty array → record PR as "0 candidates", return early
-3. **`/knowledge-distillery:quality-gate`** with the Candidate array → Verdict array
+Process pending PRs **one at a time** in `mergedAt` ascending order. For each PR run the full per-PR pipeline and immediately persist progress before moving on. This guarantees that any kind of mid-run termination (graceful handoff, 401, runner timeout) leaves a consistent state.
 
-**How to parallelize:** Use the Agent tool to spawn PR subagents in a single message (multiple Agent tool calls in one response). This launches them concurrently. Each subagent gets a fresh context window, so there is no cross-PR context pollution.
+```text
+for pr in pending_prs (sorted by mergedAt asc):
+  # 3a. Time budget gate
+  elapsed=$(( $(date +%s) - BATCH_START_TS ))
+  if [ "$elapsed" -ge "$DEADLINE_SECONDS" ]; then
+    break   # → Graceful Handoff Procedure
+  fi
 
-**Concurrency limits:** Spawn at most **10 concurrent subagents** per batch. If the pending PR count exceeds this limit, process them in sequential batches of 10 — wait for one batch to complete before launching the next. The safe concurrency ceiling depends on PR complexity and available token budget; monitor token and API usage during initial runs and adjust downward if you hit rate limits. If a subagent stalls (no progress after an extended period), treat it as a failure — log the error and continue with the remaining PRs.
+  # 3b. Run pipeline for this single PR — MUST run in a fresh subagent
+  # spawned via the Agent tool. Each PR gets its own context window so that
+  # accumulating PRs do not pollute the orchestrator's main context. Inside
+  # that subagent, the three skills are invoked sequentially:
+  spawn-agent (single Agent tool call, fresh context):
+    invoke /knowledge-distillery:collect-evidence with pr.number
+      → Evidence Bundle
+      - If sufficiency.verdict == "insufficient" AND
+        sufficiency.missing contains "github_auth":
+          → enter "Unexpected 401" path (do NOT retrigger; token is dead)
+      - If sufficiency.verdict == "insufficient" for any other reason:
+          → record insufficient, skip 3c/3d, continue with next PR
+    invoke /knowledge-distillery:extract-candidates with the Evidence Bundle
+      → Candidate array (may be empty)
+    invoke /knowledge-distillery:quality-gate with the Candidate array
+      → Verdict array
+  return Verdict array (and any insufficient/auth signal) to the orchestrator
 
-Collect from each subagent after all complete:
-- Passed candidates (`verdict == "pass"`)
-- Rejected candidates with rejection codes
-- Curation queue entries (conflicts)
-- Insufficient evidence flag (if applicable)
+  # 3c. Persist this PR's outcome (atomic checkpoint)
+  - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
+  - Append a progress table row + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
+  - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
+  - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
 
-**Sort all collected results by source PR `mergedAt` (ascending) before aggregating into the changeset and report.** Parallel subagents complete in non-deterministic order; this sort step ensures deterministic output regardless of completion order.
+  # 3d. Flip the label (only after the commit landed)
+  - Use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected` on PR #<n>
+    (if insufficient: leave label as `knowledge:pending`)
+```
 
-**Partial failure handling:** One PR's failure MUST NOT block remaining PRs. Log the error and continue.
+**Why serial, not parallel?** Earlier versions of this skill spawned all PRs in parallel for throughput. Parallelism is incompatible with the "graceful handoff before token expiry" contract: if multiple subagents are mid-flight when the deadline is reached, the orchestrator cannot cleanly truncate them. Serial processing keeps the cancellation point well-defined (between PRs) and makes the progress table monotonically meaningful. Throughput is recovered across multiple workflow runs (cron + self-retriggers) rather than within one.
 
-### Step 4: Handle Insufficient Evidence PRs
+**Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), record the failure in the progress table for that PR (`❌ failed: <error>`), do not flip its label, and continue with the next PR. PR-level failures MUST NOT block the rest of the batch.
+
+### Step 4: Maintain Report PR
+
+After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md`.
+
+```text
+If no PR with head=knowledge/batch-YYYY-MM-DD exists:
+  Use GitHub MCP to create a PR (title/body/base/head per "Report PR Format" below)
+Else:
+  Use GitHub MCP to update the existing PR's body from the latest report file
+```
+
+**MUST NOT auto-merge the report PR.** Human review is the intervention point.
+
+### Step 5: Handle Insufficient Evidence PRs
 
 For PRs where collect-evidence returned `insufficient`:
 
-1. Keep the PR labeled `knowledge:pending`
-2. Record in report under "Insufficient Evidence" section
-3. Retry on a later batch run after more evidence accumulates
+1. Keep the PR labeled `knowledge:pending` (no label flip in Step 3d).
+2. The progress table row is `⏸ 대기 중 (insufficient: <missing>, run #<id>)`.
+3. The next batch run picks them up automatically — no special handling required.
 
-### Step 5: Write Changeset — Accepted Candidates
+### Step 6: Changeset — Accepted Candidates
 
-For all passed candidates, construct a changeset JSON file. Entries are NOT inserted into vault.db at this stage — they are recorded in a changeset that will be applied after the Report PR is merged.
-
-```bash
-mkdir -p .knowledge/changesets
-# Write changeset to .knowledge/changesets/batch-YYYY-MM-DD.json
-```
+The changeset is written **incrementally** by Step 3c, one PR's entries at a time. This section documents the file format. Entries are NOT inserted into vault.db at this stage — they are applied after the Report PR is merged.
 
 **Changeset format:**
 
@@ -128,9 +255,9 @@ Notes:
 - Preserve `_domain_maintenance` annotations from extract-candidates so the report can surface follow-up domain cleanup suggestions.
 - Preserve `_vault_feedback` annotations from extract-candidates so the report can surface feedback on existing vault entries.
 
-### Step 6: Domain Change Summary
+### Step 7: Domain Change Summary (after the PR loop)
 
-Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data:
+Run this after the per-PR loop ends — either because all PRs are processed, or because a graceful handoff is about to fire. Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data accumulated so far.
 
 ```bash
 <knowledge-gate> domain-list --ids-only
@@ -144,45 +271,21 @@ Since entries are not yet inserted into vault.db, `domain-report` cannot reflect
 - Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
 - Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
-### Step 7: Generate Batch Report File and Commit
+Append the domain summary to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run **only on full completion** — on the handoff path, the Graceful Handoff Procedure performs an additional handoff-row commit after Step 8.
 
-**Always** generate `.knowledge/reports/batch-YYYY-MM-DD.md` — even with 0 accepted candidates. This guarantees a git diff for the Report PR.
+**Linear ordering on budget hit:** Step 7 (Domain Change Summary) → Step 8 (Cleanup Verification) → Graceful Handoff Procedure (handoff row commit + retrigger decision) → exit 0.
 
-```bash
-mkdir -p .knowledge/reports
-# Write report content to .knowledge/reports/batch-YYYY-MM-DD.md
-git add .knowledge/changesets/ .knowledge/reports/
-git commit -m "knowledge: batch YYYY-MM-DD — N entries added"
-git push -u origin knowledge/batch-YYYY-MM-DD
-```
+### Step 8: Cleanup Verification
 
-### Step 8: Create Report PR
+Run before exit (whether the exit is full completion or graceful handoff):
 
-```
-Use GitHub MCP to create a PR:
-  - title: "knowledge: batch YYYY-MM-DD — N entries added"
-  - body: <report body content per the Report PR Format section below>
-  - base: main (or master)
-  - head: knowledge/batch-YYYY-MM-DD
-```
+- Every PR with `knowledge:collected` label has at least one accepted entry **or** an explicit row in the progress table.
+- Every PR still labeled `knowledge:pending` either: (a) was deferred as `insufficient`, (b) has not been reached yet (graceful handoff case), or (c) failed mid-pipeline with a non-auth error and has a `❌ failed` row.
+- `.knowledge/changesets/batch-YYYY-MM-DD.json` is valid JSON.
+- `.knowledge/reports/batch-YYYY-MM-DD.md` is present.
+- Report PR exists and is open.
 
-**MUST NOT auto-merge the report PR.** Human review is the intervention point.
-
-### Step 9: Label Transitions for Processed PRs
-
-**After** Report PR creation (to prevent orphaned label state):
-
-```
-Use GitHub MCP to remove the `knowledge:pending` label and add the `knowledge:collected` label to PR #{number}.
-```
-
-### Step 10: Cleanup Verification
-
-Verify:
-- All successfully processed PRs have `knowledge:collected` label
-- PRs with insufficient evidence remain `knowledge:pending`
-- Changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` is valid JSON with correct structure
-- Report PR exists and is open
+If any check fails, log it but **do not fail the workflow** — the next run will reconcile.
 
 ## Report PR Format
 
@@ -192,8 +295,18 @@ Verify:
 
 **Body**:
 
+The body MUST start with the **Progress Table** (so reviewers can see partial-batch status at a glance) and is followed by the standard report sections. The progress table is append-only across self-retriggers; on every body refresh, copy it verbatim from `.knowledge/reports/batch-YYYY-MM-DD.md` — do **not** regenerate it from current label state, as that would erase handoff history.
+
 ```markdown
 ## Knowledge Distillery Batch Report — YYYY-MM-DD
+
+### 진행 상황
+
+| 항목 | 상태 |
+|------|------|
+| #{pr_number} | ✅ 처리 완료 ({N} accepted, run #{run_id}) |
+| #{pr_number} | ⏸ 대기 중 (insufficient: {missing}, run #{run_id}) |
+| run #{run_id} | ⏱ 시간 예산 도달 — 처리 N개, 남은 M개, 재트리거함 (재시도 R/MAX) |
 
 ### Summary
 | Metric | Value |
@@ -282,12 +395,16 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | Failure Mode | Behavior |
 |-------------|----------|
 | No pending PRs | Exit 0. No branch, no PR. |
-| Subagent fails | Skip that PR. Record error in report. Continue with remaining. |
-| Changeset write fails | Log error. Record in report. |
-| `git push` fails | Retry once. If still fails, output manual instructions and abort. |
-| GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. |
+| Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |
+| GitHub MCP 401/403 mid-run | Stop loop. Do **not** retrigger (token already dead). Exit non-zero. Next cron resumes. |
+| Per-PR pipeline fails (non-auth) | Record `❌ failed: <error>` row, leave PR labeled `knowledge:pending`, continue with next PR. |
+| Insufficient evidence on a PR | Record row, leave label `knowledge:pending`. Picked up by next batch. |
+| Changeset write fails | Log error. Skip the PR. The label stays `knowledge:pending`. |
+| `git push` fails (non-auth) | Retry once. If still fails, log and continue — next run reconciles. |
+| GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. Continue (PR will be created on next commit). |
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
-| Branch already exists | Checkout existing branch (supports re-runs). |
+| Branch already exists | Checkout existing branch (supports re-runs and self-retriggers). |
+| `MAX_RETRY_COUNT` reached | Append `❗ 재시도 한도 도달` row, do not retrigger, exit 0. |
 
 ## Constraints
 
@@ -295,7 +412,10 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 - MUST NOT modify existing vault entries (append-only principle)
 - MUST NOT insert entries into vault.db directly — write changeset file only
 - MUST NOT skip the report PR even when all candidates are rejected
-- PRs may be spawned and executed concurrently, but results/outputs MUST be aggregated and presented in `mergedAt` order (oldest first)
+- PRs MUST be processed serially in `mergedAt` ascending order so the time-budget cancellation point is well-defined
+- Per-PR commits MUST be atomic: changeset/report committed and pushed **before** the label flips
+- Graceful handoff MUST exit 0 — it is a successful workflow run, not a failure
+- 401/403 from GitHub MCP MUST NOT trigger the handoff procedure (the token is already dead)
 - MUST handle partial failures gracefully
 - MUST create report file `.knowledge/reports/batch-YYYY-MM-DD.md` always (even 0 entries)
 - MUST create changeset file `.knowledge/changesets/batch-YYYY-MM-DD.json` always (with empty entries array if 0 candidates)
