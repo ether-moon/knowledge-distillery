@@ -1,0 +1,20 @@
+## Decisions Made
+- None
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+직전 commit(f18f6fc)에서 적용한 batch-refine reviewer 자동 지정 변경에 대한 구현 plan 문서를 별도 docs commit으로 보존. Plan 자체는 spec(2026-04-27-report-pr-reviewers-design.md)을 따라 작성되었고 실제 구현에 사용된 작업 가이드.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
