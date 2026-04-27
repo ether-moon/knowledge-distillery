@@ -7,14 +7,15 @@
     ]
   },
   "extraKnownMarketplaces": {
-    "knowledge-distillery": {
+    "ether-plugins": {
       "source": {
         "source": "github",
-        "repo": "ether-moon/knowledge-distillery"
+        "repo": "ether-moon/ether-plugins"
       }
     }
   },
   "enabledPlugins": {
-    "knowledge-distillery@knowledge-distillery": true
+    "knowledge-distillery@ether-plugins": true,
+    "skill-set@ether-plugins": true
   }
 }
