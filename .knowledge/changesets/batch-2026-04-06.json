@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "batch_date": "2026-04-06",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "vault-refs-location-project-tmp",
+        "type": "fact",
+        "title": "Store vault-refs.jsonl in project-root tmp/, not .knowledge/tmp/",
+        "claim": "MUST store vault usage tracking file at `tmp/vault-refs.jsonl` (project root) rather than `.knowledge/tmp/` to avoid conflicting with the prohibition on agents directly reading files inside `.knowledge/`.",
+        "body": "## Background\nWhen implementing vault usage tracking in PR #29, there was a choice between storing the vault-refs JSONL file inside `.knowledge/tmp/` (collocated with other knowledge artifacts) or in a separate `tmp/` directory at the project root. The `.knowledge/` directory is governed by a hard prohibition: agents MUST NOT read files inside it directly — all access must go through the `knowledge-gate` CLI. The `memento-commit` skill needs to read `tmp/vault-refs.jsonl` to populate the 7-section memento format, which means the file must be readable directly (via the `Read` tool), not through the CLI.\n\n## Details\nThe vault-refs file (`tmp/vault-refs.jsonl`) lives at the project root, is gitignored, and is consumed and cleared by `memento-commit` after each commit. Placing it inside `.knowledge/tmp/` would put it in a zone where direct reads by agents are prohibited, creating a contradiction: the memento-commit skill would need to read it directly but couldn't. The project root `tmp/` directory avoids this conflict. The `tmp/` directory must be added to `.gitignore` to prevent accidentally committing vault tracking data.\n\n## Rejected Alternatives\n- `.knowledge/tmp/vault-refs.jsonl` — rejected because the `.knowledge/` prohibition prevents agents from reading it directly, which is required for memento-commit to process usage signals.",
+        "alternative": null,
+        "considerations": "This constraint is specific to projects using the knowledge-distillery plugin where the `.knowledge/` direct-read prohibition is active. Projects without that prohibition could use `.knowledge/tmp/` without issue. The `tmp/` directory must be gitignored to prevent committing tracking data.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#29"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "decision-commits-must-stay-committed",
+        "type": "fact",
+        "title": "Decision files must commit immediately, never buffer in tmp",
+        "claim": "MUST commit decision files to `.knowledge/decisions/` immediately via `record-decision` rather than buffering them in a gitignored `tmp/` location, because session crashes would permanently lose unbuffered decisions.",
+        "body": "## Background\nDuring design of PR #29, a proposal was considered to move decision file staging to `tmp/` (alongside `vault-refs.jsonl`) and commit them at session end. This was rejected by 3/3 peer reviewers on durability grounds: a session crash, editor restart, or unexpected termination between writing the file and committing it would silently discard the decision — with no recovery path since `tmp/` is gitignored.\n\n## Details\nThe `record-decision` skill commits the decision file immediately upon invocation, before the session can terminate unexpectedly. This means: (1) the decision is durable the moment it's recorded, (2) session crashes cannot cause data loss, (3) the `decision:` prefix commit is visible in git log immediately and can be referenced by memento notes. The commit-immediately pattern is non-negotiable for this class of artifact — decisions are high-value, low-frequency, and irreproducible if lost.\n\n## Rejected Alternatives\n- Buffering in `tmp/` and committing at session end — rejected unanimously due to session crash durability risk. A crash between recording and committing would silently lose the decision with no recovery path.",
+        "alternative": null,
+        "considerations": "This applies specifically to decision files via `record-decision`. Vault-refs (`tmp/vault-refs.jsonl`) intentionally use the opposite pattern (best-effort, acceptable loss) because they are supplementary signals, not primary artifacts. The distinction between durable artifacts (decisions) and best-effort instrumentation (vault-refs) should be preserved.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#29"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "q2-self-evident-rationale-excluded",
+        "type": "fact",
+        "title": "Self-evident rationale does not qualify as Q2 residual value",
+        "claim": "Q2 residual value is only YES when the rationale would surprise a competent developer reading the current code; pattern-inherent reasoning, standard engineering practice, intent visible in code, and behavior with obvious purpose do NOT count.",
+        "body": "## Background\nPR #30 accepted all 8 extracted entries despite most describing behaviors already implemented in code. The Q2 test passed because entry bodies contained rationale text — but that rationale was self-evident from the engineering patterns used (e.g., \"fail-fast prevents silent failures\", \"input validation prevents injection\"). A similar issue had occurred in the 2026-03-26 batch (R7 rejections), but the criteria were not strict enough to prevent recurrence. PR #31 tightened Q2's boundary in both extract-candidates criterion 4d and quality-gate R7.\n\n## Details\nQ2=yes requires genuinely non-obvious context: a past incident that shaped the design, a deliberate tradeoff between competing valid approaches, a policy constraint from outside the codebase, or a boundary that contradicts what someone might naively expect.\n\nFour categories explicitly excluded from Q2 residual value:\n1. **Pattern-inherent rationale:** If the \"why\" follows directly from the engineering pattern (input validation → prevents injection; fail-fast → prevents silent failures; catch-all case → prevents silent misuse), Q2=no.\n2. **Standard engineering practice:** If the rationale restates well-known principles without project-specific context (lightweight output → reduces cost; gitignoring runtime config → prevents secret leaks), Q2=no.\n3. **Intent already visible in code:** If error messages, variable names, comments, or docstrings already convey the intent, Q2=no.\n4. **Behavior + obvious purpose:** If the code clearly shows *what* it does and a developer can trivially reconstruct *why* from the behavior alone, Q2=no even if the entry adds a \"Rejected Alternatives\" section.\n\nHaving rationale text in the entry body is insufficient — the rationale itself must be non-obvious.\n\n## Rejected Alternatives\nThe previous Q2 formulation (\"preserves *why*, *boundary*, *exception*, or *failure mode* that the artifacts themselves don't explain\") was rejected as insufficiently strict — it admitted any entry whose body contained rationale text, even when that rationale was trivially derivable from the pattern. The weaker form was kept through two pipeline cycles and produced systematic false positives.\n\n## Stop Conditions\nIf false positives in extraction persist (e.g., pattern-inherent rationale still passing Q2), further tighten by requiring the extract-candidates skill to explicitly name which non-obvious category justifies Q2=yes.",
+        "alternative": null,
+        "considerations": "This entry is a strict refinement of `derivability-two-question-test` — it does not replace the Q1/Q2 structure but defines more precisely what fails Q2. The note in `derivability-two-question-test` that Q2 captures what 'the artifacts themselves don't explain' is now superseded by the stronger 'could not infer' / 'would surprise' threshold. The R7 quality-gate check remains a secondary heuristic without artifact inspection capability; this entry's strictness primarily governs the extract-candidates primary filter.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#31"}],
+        "curation": [{"related_id": "derivability-two-question-test", "reason": "Refines existing entry — both address Q2 but prescribe different levels of strictness. Human should decide whether to update `derivability-two-question-test` body to incorporate the Q2 strictness language from this entry, then archive this one as superseded, or keep both."}]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "claude-code-action-requires-allowed-tools",
+        "type": "fact",
+        "title": "claude-code-action CI workflows require explicit --allowedTools",
+        "claim": "MUST include `--allowedTools` in the `claude_args` of mark-evidence and batch-refine CI workflow steps; `claude-code-action` has no interactive approval in CI so all tool calls are denied by default without an explicit allowlist.",
+        "body": "## Background\n`claude-code-action` runs in a non-interactive CI environment with no mechanism for human approval of tool calls. When `--allowedTools` is absent from `claude_args`, every tool call (Bash, Read, GitHub MCP, etc.) is denied with a permission error. This was discovered via real-world failure: a run in an adopting project (hoian-webapp) resulted in 12 consecutive permission denials, blocking the entire mark-evidence workflow. The actual dogfooding workflows had been manually patched earlier, but the `init`/`setup` SKILL.md templates were never updated.\n\n## Details\nEvery `claude-code-action` step in mark-evidence and batch-refine CI workflows MUST include `--allowedTools` in `claude_args` with an explicit list of permitted tools. The `knowledge-gate doctor` check now validates for the presence of `--allowedTools` in workflow files. Template drift (live workflows patched but templates not updated) is the primary risk vector — the setup skill now always overwrites workflow files on re-run to prevent this class of divergence.\n\n## Rejected Alternatives\nNot applicable — there is no interactive fallback in CI. The flag is mandatory.",
+        "alternative": null,
+        "considerations": "The specific set of tools to include in `--allowedTools` depends on what each workflow step requires. mark-evidence needs GitHub MCP and Bash at minimum; batch-refine needs GitHub MCP, Bash, and knowledge-gate CLI. Failing to include a required tool will cause a silent permission denial, not an obvious error message.",
+        "applies_to": {
+          "domains": ["skills", "plugin-infra"]
+        },
+        "evidence": [{"type": "pr", "ref": "#33"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "skill-bash-no-command-substitution",
+        "type": "anti-pattern",
+        "title": "Using $(...) command substitution in skill Bash templates triggers approval prompts",
+        "claim": "MUST NOT use `$(...)` or backtick substitution in Bash calls within skill templates — Claude Code's security layer detects and blocks these patterns, triggering approval prompts on every execution.",
+        "body": "## Background\nClaude Code's security layer detects and blocks `$(...)` command substitution and backtick patterns in Bash tool calls issued by agents. This causes persistent approval prompts (or silent denial in non-interactive CI) on any Bash call containing these patterns. PR #34 patched the three most-affected skills: memento-commit (commit message capture), record-decision (commit message), and bumping-version (git log capture).\n\n## Details\nAll skill Bash templates must avoid command substitution. The per-file `IMPORTANT — No shell expansion` notices in individual SKILL.md files document skill-specific workarounds, but this constraint generalizes to any skill that authors Bash calls. Replacements:\n- `$(git log ...)` for SHA capture → two sequential Bash calls\n- Multi-line content → heredoc stdin (`-F - <<'EOF'`)\n- `$(mktemp)` or `${TMPDIR}/file` → use a deterministic temp path or stdin approach\n\n## Rejected Alternatives\nUsing `$$.$RANDOM` for unique temp file names was an intermediate approach used in memento-commit after removing `$(...)`. However, `$$` and `$RANDOM` are also shell expansion patterns that trigger approval prompts (see `shell-expansion-triggers-approval-prompts` — broader finding from PR #38).",
+        "alternative": "Use heredoc stdin (`-F - <<'EOF'...EOF'`) for multi-line content, sequential Bash calls for SHA capture, and avoid all shell variable expansion in Bash call strings.",
+        "considerations": "The PR #38 entry (`shell-expansion-triggers-approval-prompts`) revealed a broader constraint: ALL shell expansion patterns trigger approval prompts, not just command substitution. This entry may be superseded by that broader rule — see curation queue.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#34"}],
+        "curation": [{"related_id": "shell-expansion-triggers-approval-prompts", "reason": "PR #38 (shell-expansion-triggers-approval-prompts) revealed a broader constraint: all shell expansion patterns (not just $(...)) trigger approval prompts. This entry's scope is a subset. Human should decide whether to merge into the broader entry or archive this one."}]
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "doctor-cli-removed-template-drift-blind-spot",
+        "type": "fact",
+        "title": "doctor CLI removed due to fundamental limitation: string-marker checks cannot detect template drift",
+        "claim": "Do NOT restore the `doctor` CLI command in its previous form — it was deliberately removed because string-marker presence checks cannot detect template drift in workflow files and cannot take corrective action.",
+        "body": "## Background\nThe `doctor` CLI command was removed in PR #35. It had been introduced to validate that adopting projects had the required configuration, but it was identified as fundamentally limited: it could only check whether a specific string marker was present in a file, with no ability to compare actual file content against the latest template version. As knowledge-distillery templates evolved, `doctor` would report PASS on files that were structurally outdated.\n\n## Details\nThe removal was deliberate rather than incidental. The decision: inline verification within the `setup` skill replaces all `doctor` checks. The key limitation that made `doctor` untenable: string-marker checks verify presence, not correctness. A file that previously passed `doctor` could contain an outdated workflow format while still containing the expected string token.\n\nThe replacement (setup skill verification) checks file existence, sqlite3 health, and grep for specific directives — a higher bar than marker presence, and integrated into the same flow that fixes problems (setup can overwrite outdated files; doctor could only report).\n\n## Rejected Alternatives\nKeeping `doctor` with enhanced checks was considered but rejected — improving it to detect template drift would require parsing workflow YAML and diffing against in-memory templates, making it more complex than the setup skill itself.\n\n## Stop Conditions\nIf a new diagnostic command is added to knowledge-gate, it must incorporate template content comparison, not string-marker checks.",
+        "alternative": null,
+        "considerations": "This rationale (string-marker limitation) is only in the PR body — the code is gone, so future contributors cannot discover the reason from artifacts alone. The pattern is broadly applicable: any CLI validation tool that checks for string presence without content comparison has this limitation.",
+        "applies_to": {
+          "domains": ["cli"]
+        },
+        "evidence": [{"type": "pr", "ref": "#35"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "commit-before-rebase-staged-changes",
+        "type": "anti-pattern",
+        "title": "Running git pull --rebase before committing staged index changes causes workflow failure",
+        "claim": "MUST NOT run `git pull --rebase` when the git index has uncommitted staged changes (e.g., from `git rm` or `git add`) — git rebase refuses with 'cannot pull with rebase: uncommitted changes'.",
+        "body": "## Background\nThe `apply-changeset` workflow includes a cleanup step that removes batch artifact files then syncs with the base branch. The step used `git rm` to stage file deletions, then called `git pull --rebase` before `git commit`. This caused consistent workflow failures in production.\n\n## Details\n`git rm` stages file removals in the git index. When `git pull --rebase` is invoked with any staged (uncommitted) index changes present, git refuses to proceed with the error \"cannot pull with rebase: uncommitted changes\". The error occurs even when the working tree itself is clean — the index cleanliness check is stricter than most developers expect.\n\nThe correct sequence for any workflow step that stages changes then needs to sync:\n1. Stage changes (git rm, git add)\n2. `git commit`\n3. `git pull --rebase` (or git fetch + rebase)\n4. `git push`\n\n## Rejected Alternatives\n- `git reset HEAD` before rebase then re-apply changes — works but requires re-staging, more error-prone.\n- `git stash` — applies to working tree changes, not index-only changes from `git rm`.",
+        "alternative": "Run `git commit` to clear staged index changes before calling `git pull --rebase`.",
+        "considerations": "This was a demonstrated production incident causing the workflow to fail on every run. The non-obvious aspect is that git rebase checks index cleanliness (not just working tree), so `git rm` staging alone (even with a clean working tree) blocks rebase. This applies to any GitHub Actions step combining staging operations with rebase-based syncing.",
+        "applies_to": {
+          "domains": ["pipeline"]
+        },
+        "evidence": [{"type": "pr", "ref": "#36"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "decision-record-alternatives-supersedes-fields",
+        "type": "fact",
+        "title": "Decision records support optional 'alternatives' and 'supersedes' fields",
+        "claim": "The record-decision skill MUST support two optional fields — 'alternatives' (considered approaches and rejection reasons) and 'supersedes' (filename of the prior decision being replaced) — and MUST omit both entirely when they do not apply; the core heredoc template contains only the 4 required fields.",
+        "body": "## Background\nPR #37 extended the decision record format after a multi-LLM peer review (Gemini, Codex, Claude — 3/3 agreed on adding 'alternatives'; 'supersedes' was added to prevent contradictions accumulating across decisions over time). The change deliberately avoids modifying the vault schema or pipeline — it is an evidence quality improvement only.\n\n## Details\nTwo optional fields were added to the record-decision field table:\n- **alternatives**: Document considered approaches and why each was rejected. Include only when the session involved genuine deliberation between multiple paths. Padding with self-evidently inferior options is rejected at the quality gate (R7, non-residual value).\n- **supersedes**: Reference the full filename (without extension) of a prior decision that this one replaces. Valid only when the prior file actually exists in `.knowledge/decisions/`.\n\nThe core heredoc template in SKILL.md contains only the 4 required fields (title, decision, context, rationale). Optional sections are documented separately as append blocks to prevent accidental inclusion. A code review comment caught pre-filled optional placeholders in the initial commit; they were removed so the template does not include empty optional sections by default.\n\n## Rejected Alternatives\nA 'status' field (proposed/accepted/deprecated) was proposed during the peer review session but rejected: it would create double-state tracking since the vault already manages entry status, and contradictions between the markdown status and the vault status would be difficult to reconcile.\n\n## Stop Conditions\nIf the alternatives field is routinely abused (low-quality or padding alternatives), consider removing it.",
+        "alternative": null,
+        "considerations": "The vault entry `record-decision-trigger-taxonomy` covers *when* to trigger the skill, not what fields to include — no overlap. These two optional fields improve extract-candidates quality: 'alternatives' maps directly to the `alternative` field in vault anti-patterns, and 'supersedes' enables stronger conflict detection against existing vault entries.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#37"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "cir-pattern-not-adopted",
+        "type": "fact",
+        "title": "Change Intent Records (CIR) pattern is out of scope for knowledge-distillery",
+        "claim": "Do NOT introduce a Change Intent Records (CIR) format as a separate artifact type — the memento system already covers session-level intent, and adding a third structured format alongside decisions and mementos increases complexity without proportional benefit.",
+        "body": "## Background\nDuring PR #37, the team reviewed the Change Intent Records (CIR) pattern from Bryan Liles' blog as a potential addition alongside ADR-style decisions. CIR proposes capturing the *intent behind a change* as a distinct artifact separate from the code change itself. The evaluation was part of the same multi-LLM peer review session that produced the alternatives/supersedes fields.\n\n## Details\nCIR was rejected on two grounds:\n1. The memento-commit system already captures session-level intent (what changed and why, per session) — CIR would be largely redundant with what mementos already provide.\n2. Introducing a third structured artifact type (decisions, mementos, CIRs) adds complexity that makes the system harder to use consistently.\n\nAdditionally, pre-implementation decision recording (recording decisions before code exists) was explicitly rejected as conflicting with the knowledge-distillery design philosophy of not trusting incomplete or unverified information.\n\n## Rejected Alternatives\nThe CIR pattern itself was the evaluated alternative. The memento-commit system was judged sufficient for capturing session-level change intent without introducing a new artifact type.\n\n## Stop Conditions\nRevisit if memento notes are consistently too verbose or if CIR's lightweight format demonstrably reduces cognitive overhead for adopters.",
+        "alternative": null,
+        "considerations": "The vault entry `pr-template-enforcement-out-of-scope` follows the same 'X is out of scope' pattern and confirms this category of entry is appropriate for the vault. The CIR reference blog post: https://blog.bryanl.dev/posts/change-intent-records/",
+        "applies_to": {
+          "domains": ["skills", "docs"]
+        },
+        "evidence": [{"type": "pr", "ref": "#37"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "shell-expansion-triggers-approval-prompts",
+        "type": "anti-pattern",
+        "title": "All shell expansion patterns in agent Bash calls trigger Claude Code approval prompts",
+        "claim": "MUST NOT use any shell expansion pattern — `$(...)`, backtick, `${VAR}`, `$$`, `$RANDOM`, or bare `$VAR` references — in Bash calls authored by agents; Claude Code's approval layer detects and blocks all shell expansion patterns, not just command substitution.",
+        "body": "## Background\nPR #34 removed `$(...)` command substitution from the memento-commit workflow, but approval prompts continued to appear. Investigation in PR #38 confirmed the root cause is broader: Claude Code's security/approval layer treats ANY shell expansion as a potential risk. The intermediate approach using temp files with `$$.$RANDOM` and `${TMPDIR:-/tmp}` introduced new expansion patterns that continued to trigger prompts.\n\n## Details\nOriginal approach (before fix): `COMMIT_MSG_FILE=\"${TMPDIR:-/tmp}/kd_commit_msg.$$.$RANDOM.txt\"` with `trap 'rm -f ...' EXIT`. Even after removing `$(...)`, the `${TMPDIR}`, `$$`, and `$RANDOM` expansions in this approach continued to trigger approval prompts.\n\nThe fix replaces all shell expansion with stdin heredoc streaming:\n- `git commit -F - <<'COMMIT_EOF'` — feeds commit message via stdin, no temp file or variable\n- `git notes --ref=refs/notes/commits add --force -F - HEAD <<'MEMENTO_EOF'` — same for git notes\n\nThe same principle applies to skill documentation examples: bare shell variable-like tokens (e.g., `$GATE`) in Bash code blocks can mislead Claude Code into treating them as expansion targets. Documentation must use non-executable placeholder forms (e.g., `<knowledge-gate>`) with explicit instructions not to create a shell variable.\n\n## Rejected Alternatives\n- Temp files with `$$.$RANDOM` — rejected because `$$` and `$RANDOM` are themselves shell expansion patterns that trigger approval (discovered after PR #34).\n- Per-skill IMPORTANT notices — already present but only document skill-specific workarounds, not the generalizable constraint.",
+        "alternative": "Use stdin heredocs with `-F - <<'EOF'...EOF'` for multi-line content. Avoid ALL `$` references in Bash call strings. For CLI path placeholders in documentation, use XML-style tags (e.g., `<knowledge-gate>`) with an explicit note not to create a shell variable.",
+        "considerations": "This finding was incident-driven: PR #34 removed command substitution but the regression recurred because other expansion patterns (`${TMPDIR}`, `$$`, `$RANDOM`) were not addressed. The scope is broader than memento-commit — any skill or agent-authored Bash call that contains shell expansion patterns may trigger approval prompts. See also `skill-bash-no-command-substitution` (PR #34) which is a subset of this constraint.",
+        "applies_to": {
+          "domains": ["skills", "plugin-infra"]
+        },
+        "evidence": [{"type": "pr", "ref": "#38"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "batch-refine-parallelize-via-single-message-agent-calls",
+        "type": "fact",
+        "title": "Parallelize batch-refine PR subagents via concurrent Agent tool calls in one message",
+        "claim": "In batch-refine Step 3, MUST spawn all per-PR subagents in parallel by issuing multiple Agent tool calls in a single response message — Claude Code launches them concurrently only when all spawn calls appear in one response.",
+        "body": "## Background\nThe batch-refine pipeline processes multiple pending PRs. With sequential subagent spawning, execution time scales linearly with PR count and risks context window overflow in long batches. Each PR's pipeline (collect-evidence → extract-candidates → quality-gate) is fully independent — subagents use separate context windows with no shared state between PRs — making concurrent execution safe.\n\n## Details\nParallelism is achieved by issuing multiple Agent tool calls in a **single response message**. If calls are spread across multiple responses, they run sequentially instead. This is a platform constraint specific to Claude Code's Agent tool runtime, not a stylistic choice. Each subagent should return early on insufficient evidence or empty candidates rather than continuing to downstream stages — this reduces unnecessary token consumption in the parallel batch.\n\n## Rejected Alternatives\nSequential spawning (one Agent call per response) — rejected because it serializes independent work, causing execution time to scale linearly with the number of pending PRs.",
+        "alternative": null,
+        "considerations": "This parallelism model is specific to Claude Code's Agent tool runtime behavior. The single-message requirement is a platform constraint. Cross-PR context isolation is guaranteed by the fresh-context-window property of subagents — no shared state between concurrent PR pipelines.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#40"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "batch-refine-concurrency-ceiling-ten-subagents",
+        "type": "fact",
+        "title": "batch-refine concurrency ceiling is 10 subagents per batch",
+        "claim": "MUST spawn at most 10 concurrent PR subagents per batch in batch-refine; if pending PRs exceed 10, process in sequential groups of 10 and wait for each group to complete before launching the next.",
+        "body": "## Background\nUnlimited concurrent subagent spawning risks API rate limit exhaustion (RPM, ITPM, OTPM) and token budget overrun. Each subagent consumes its own tool definition budget plus execution tokens. A ceiling was needed to bound resource consumption.\n\n## Details\nThe ceiling was deliberately set at 10 rather than the more conservative 5 (code review suggested 5–10; 10 was chosen as appropriate for the expected audience — teams managing typical batch sizes of 5–15 PRs). The safe ceiling in practice depends on PR complexity and available token budget. Operators should monitor token and API usage during initial batch runs and adjust downward if rate limits are hit. If a subagent stalls with no progress after an extended period, treat it as a failure, log the error, and continue with remaining PRs.\n\n## Stop Conditions\nIf API rate limits are frequently hit during batch runs, reduce ceiling to 5. If batches routinely have >20 PRs, consider whether 10 is still appropriate or whether sub-batching logic should be added.",
+        "alternative": null,
+        "considerations": "The specific limit of 10 was chosen over 5 based on expected batch sizes in this project and a deliberate choice not to be overly conservative. Adjust if context window costs increase significantly or rate limits change. This ceiling applies per batch group — sequential groups of 10 can be launched one after another without bound.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#40"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "batch-refine-sort-results-by-merged-at-after-parallel",
+        "type": "fact",
+        "title": "Sort batch-refine collected results by mergedAt after parallel subagent completion",
+        "claim": "MUST sort all collected PR pipeline results by source PR `mergedAt` (ascending) before aggregating into the changeset and report — parallel subagent completion order is non-deterministic.",
+        "body": "## Background\nWith sequential subagent execution, PRs were naturally processed in mergedAt order. Switching to parallel execution breaks this: subagents complete in non-deterministic order depending on runtime scheduling, PR complexity, and API response times.\n\n## Details\nWithout an explicit sort step, changeset entries and report sections appear in arbitrary order across different batch runs, breaking downstream assertions or audits that rely on stable ordering. The fix is a post-collection sort on `mergedAt` ascending before writing the changeset JSON and report. This replaces the previous constraint that PRs be *processed* in mergedAt order — under the parallel model, processing order is irrelevant but *output* order must be enforced explicitly.\n\n## Stop Conditions\nIf output ordering becomes irrelevant for the changeset format, this constraint can be relaxed. Currently applies specifically to the aggregation phase after all subagents complete.",
+        "alternative": null,
+        "considerations": "This is a correctness constraint, not a preference. Omitting the sort produces non-deterministic output that can cause silent inconsistencies in changesets across re-runs. The sort must happen AFTER all parallel subagents complete, not during subagent execution.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#40"}],
+        "curation": []
+      }
+    },
+    {
+      "status": "accepted",
+      "data": {
+        "id": "batch-refine-intra-pr-stages-must-stay-sequential",
+        "type": "fact",
+        "title": "Intra-PR pipeline stages in batch-refine must remain sequential",
+        "claim": "Within a single PR subagent, the collect-evidence → extract-candidates → quality-gate pipeline MUST run sequentially — each stage consumes the output of the previous stage and cannot start until that output is available.",
+        "body": "## Background\nWhen parallelizing at the PR level, a question arises whether stages within a single PR subagent could also be parallelized to further reduce latency.\n\n## Details\nThe intra-PR stages have a strict data dependency chain: collect-evidence produces the Evidence Bundle consumed by extract-candidates, which produces the Candidate array consumed by quality-gate. There is no safe way to parallelize these within one subagent. The parallelism opportunity exists only at the PR level (between independent subagents), not within a subagent.\n\nThis is a data dependency constraint, not a platform limitation. Even if the platform supported intra-subagent parallelism, the stages cannot run concurrently because their inputs are outputs of the preceding stage.\n\n## Stop Conditions\nRevisit only if the pipeline stages are redesigned to remove the sequential data dependency (e.g., if collect-evidence produces a format that extract-candidates can stream rather than consuming as a complete bundle).",
+        "alternative": null,
+        "considerations": "Explicitly recording this prevents future attempts to parallelize intra-PR stages. The reason is structural (data dependency), so it applies regardless of platform changes.",
+        "applies_to": {
+          "domains": ["skills"]
+        },
+        "evidence": [{"type": "pr", "ref": "#40"}],
+        "curation": []
+      }
+    }
+  ]
+}
