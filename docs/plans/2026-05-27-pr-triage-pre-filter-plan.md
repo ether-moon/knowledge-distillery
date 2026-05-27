@@ -94,6 +94,9 @@ grep -A 20 "CREATE TABLE entries" plugins/knowledge-distillery/schema/vault.sql
 RECENT_VAULT="$TMP_DIR/recent.db"
 KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" init-db "$RECENT_VAULT" >/dev/null
 
+# knowledge-gate add 는 domain 존재를 검증함 → 먼저 test domain 등록
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" domain-add test "Test domain for backtest CLI" >/dev/null
+
 # 3개 accepted entry 삽입 (evidence ref는 #10, #20, #20, #30)
 KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
   --type fact --title "t1" --claim "c1" --body "b1" \
@@ -128,7 +131,9 @@ bash tests/knowledge-gate.sh
 
 ### Step 3: 서브커맨드 구현
 
-`plugins/knowledge-distillery/scripts/knowledge-gate` 의 `case "$CMD" in` 블록에 케이스 추가. evidence는 `pr:#NN` 형식 또는 evidence JSON 안의 `ref` 필드라고 가정 (Step 1의 실제 스키마 확인 결과를 반영). 다음은 evidence가 entries 테이블에 JSON 배열로 저장되어 있다고 가정한 sketch:
+`plugins/knowledge-distillery/scripts/knowledge-gate` 의 `case "$CMD" in` 블록에 케이스 추가. 실제 스키마 (`schema/vault.sql` 확인 결과): `entries` 와 `evidence` 는 **별도 테이블**이며 `entries.evidence` 컬럼은 존재하지 않는다. `evidence(entry_id, type, ref)` 를 JOIN 해서 `type='pr'` 행만 추출.
+
+evidence.ref 는 add 시 입력한 그대로 저장된다 (예: `#10`). PR 번호만 출력하기 위해 leading `#` 을 strip.
 
 ```bash
 recent-accepted-prs)
@@ -146,17 +151,22 @@ recent-accepted-prs)
       *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
   done
-  # entries에서 최근 LIMIT개를 가져와 evidence ref의 PR 번호 추출, 중복 제거
-  sqlite3 "$VAULT" <<SQL | awk -F'#' '/#/ { for (i=2;i<=NF;i++) { gsub(/[^0-9].*/,"",$i); if ($i!="") print $i } }' | awk '!seen[$0]++'
-SELECT evidence FROM entries
-WHERE status = 'active'
-ORDER BY created_at DESC
-LIMIT ${LIMIT};
+  # 최근 LIMIT 개의 active entry → evidence(type='pr') JOIN → ref 중복 제거 → '#' strip
+  sqlite3 "$VAULT" <<SQL | sed 's/^#//' | awk 'NF && !seen[$0]++'
+SELECT DISTINCT e.ref
+FROM evidence e
+WHERE e.type = 'pr'
+  AND e.entry_id IN (
+    SELECT id FROM entries
+    WHERE status = 'active'
+    ORDER BY created_at DESC
+    LIMIT ${LIMIT}
+  );
 SQL
   ;;
 ```
 
-> ⚠️ **Step 1의 스키마 확인 결과에 따라 SQL 컬럼명(`status`, `evidence`, `created_at`)과 evidence 파싱 로직을 조정한다.** 위 코드는 진단된 스키마에 맞춰 수정해야 한다. evidence가 별도 테이블로 분리되어 있다면 JOIN이 필요.
+> 참고: 위 SQL 은 `--limit N` 을 entries 기준으로 적용하고, 그 entries 의 모든 pr evidence ref 를 dedupe 해서 출력. 테스트 케이스 "--limit 1 → 2 lines" 는 최신 entry 1개(t3) 의 evidence 2개(`#20`, `#30`)가 반환되는 것을 검증.
 
 - [ ] **Step 3: 구현 추가**
 
@@ -222,24 +232,26 @@ Use GitHub MCP to fetch PR #{pr_number}: labels, issue comments (bodies only).
 
 | 케이스 | 조건 | 동작 |
 |---|---|---|
-| C1 | `knowledge:pending` 라벨 존재 | 사람이 extract를 명시한 manual override로 간주. Triage(Layer 1, Layer 2)를 건너뛰고 Step 2부터 진행해 Manifest를 보장한다 (없으면 새로 생성). |
+| C1a | `knowledge:pending` 라벨 **AND** Manifest 블록 존재 | 그대로 종료. Manifest 중복 게시 금지, 라벨도 유지 (`mark-evidence` 의 "exactly one Manifest" 제약 보호). |
+| C1b | `knowledge:pending` 라벨 존재 **AND** Manifest 블록 없음 | 사람이 `skipped`/`deferred` → `pending` 으로 promote 했거나 이전 실행의 부분 실패 케이스. Triage(Layer 1, Layer 2)를 건너뛰고 Step 2~8 만 실행해 Manifest를 생성한다 (Step 9 의 라벨 추가는 이미 pending 이므로 no-op). |
 | C2 | `knowledge:skipped` 라벨 AND `KD_TRIAGE_DECISION` 블록 존재 | 그대로 종료. 어떤 라벨/코멘트도 추가하지 않는다. |
 | C3 | `knowledge:deferred` 라벨 AND `KD_TRIAGE_DECISION` 블록 존재 | 그대로 종료. 어떤 라벨/코멘트도 추가하지 않는다. |
 | C4 | Manifest 블록만 존재 (triage decision 블록 없음, 위 라벨 모두 없음) | 기존 idempotency 동작. `knowledge:pending` 라벨이 없으면 다시 붙이고 종료. |
-| C5 | 위 조건 모두 해당 없음 | 신규 PR로 간주. Step 2부터 정상 흐름 (Layer 1 → Manifest → Layer 2 → 라벨 부여). |
+| C5 | 위 조건 모두 해당 없음 | 신규 PR로 간주. Step 1.5 (Layer 1) 부터 정상 흐름. |
 
-**중요**: 라벨이 사람에 의해 `skipped`/`deferred` → `pending`으로 변경된 경우(예: 사람 검토 후 promote)는 C1으로 분기해 manual override 경로를 탄다 — Triage 재실행 없이 Manifest를 보장한다.
+**중요 (manual promote 경로)**: 사람이 `skipped`/`deferred` → `pending` 으로 라벨을 바꾼 경우 보통 KD_TRIAGE_DECISION 블록만 있고 Manifest 블록은 없다. → **C1b** 로 분기해 Triage 재실행 없이 Manifest 만 생성한다. KD_TRIAGE_DECISION 블록은 그대로 보존 (이력 기록).
 ```
 
 ### Step 3: 검증 — fixture PR 시나리오 mental walkthrough
 
-- [ ] 5가지 케이스 각각에 대해 다음을 직접 따라 읽으며 분기 결과가 의도와 일치하는지 확인:
-  - 신규 PR (라벨 없음, 코멘트 없음) → C5 → 정상 흐름
-  - 기존 pending PR (이미 manifest + pending 라벨) → C1 → Triage skip + Manifest 보장
+- [ ] 6가지 케이스 각각에 대해 다음을 직접 따라 읽으며 분기 결과가 의도와 일치하는지 확인:
+  - 신규 PR (라벨 없음, 코멘트 없음) → C5 → 정상 흐름 (Layer 1 부터)
+  - 기존 pending PR (이미 manifest + pending 라벨) → **C1a** → 그대로 종료, Manifest 중복 게시 안 됨
+  - 라벨만 있고 Manifest 없는 pending PR (부분 실패 또는 promote 직후) → **C1b** → Triage skip, Manifest 만 생성
   - 이미 skipped된 PR → C2 → no-op
   - 이미 deferred된 PR → C3 → no-op
-  - 옛날 pending PR이지만 라벨이 누락된 경우 → C4 → 라벨 재부여
-  - 사람이 deferred → pending으로 변경 → C1 → Triage skip, Manifest 보장
+  - 옛날 pending PR이지만 라벨이 누락된 경우 (Manifest 만 있음) → C4 → 라벨 재부여
+  - 사람이 deferred → pending으로 변경 (KD_TRIAGE_DECISION 블록 있음, Manifest 없음) → **C1b** → Manifest 생성
 
 문제 발견 시 표 수정 후 재확인.
 
@@ -376,13 +388,13 @@ upgrade dependency, upgrade dependencies
 - [ ] **Edit 도구로 `### Step 9: Post Comment and Add Label` 직전에 다음 블록 삽입:**
 
 ```markdown
-### Step 8.5: Layer 2 LLM Triage
+### Step 8.5: Layer 2 Triage (Internal Judgment)
 
-Manifest를 사용해 분류기 호출. 출력에 따라 라벨/코멘트 동작 분기.
+**중요 — 실행 모델**: 이 Step 은 **별도 LLM 호출이 아니다**. mark-evidence 스킬을 수행하는 Claude 자신이 아래 판정 기준을 적용해 `decision payload` 를 **직접 구성**한다. payload 는 PR 코멘트에 기록할 데이터 형식이지 별도 모델의 응답이 아니다. 따라서 "JSON 파싱 실패" 같은 실패 경로는 존재하지 않는다 — 판정 신뢰가 낮으면 반드시 `extract` 를 선택한다.
 
 **입력 (의도적으로 제한 — full diff 제외):**
 
-다음 항목만 분류기 컨텍스트로 사용:
+다음 항목만 판정 컨텍스트로 사용:
 - PR title (Step 2)
 - PR body (Step 2)
 - PR labels (Step 1.5에서 페치된 라벨 또는 별도 재페치)
@@ -393,75 +405,58 @@ Manifest를 사용해 분류기 호출. 출력에 따라 라벨/코멘트 동작
 
 **제외 (반드시):** full diff, full memento 본문, full Linear 본문.
 
-**분류기 프롬프트 — 다음을 그대로 사용 (Claude 본인이 분류기 역할):**
+**판정 기준 (Claude 가 직접 적용):**
 
-```
-당신은 PR triage 분류기입니다. 다음 PR이 knowledge-distillery 파이프라인에서 처리할 가치가 있는지 판단합니다.
-
-[PR 메타데이터]
-title: <pr title>
-author: <login>
-labels: <comma-separated>
-changed_files: <path>(+N/-M), ...
-commit_messages:
-  - <msg 1 (max 200ch)>
-  - ...
-
-[Manifest 요약]
-linear: <count>
-slack: <count>
-memento: <true|false>
-greptile_comments: <count>
-notion: <count>
-
-[판정 가이드]
-- 보수 편향: 확실히 낮은 가치일 때만 "skip". 애매하면 "extract" 또는 "defer".
-- "skip" 대상 패턴:
-  - docs-only 변경 (.md, .txt, .rst, **/docs/**) + 결정/정책 신호 없음
-    - 결정 키워드 (대소문자 무시 부분 일치): decide, decision, convention, policy, ADR, deprecate, adopt, must, must not, 결정, 정책, 규칙, 채택, 금지, 폐기, 합의
-    - 결정 경로: docs/adr/, docs/decisions/, CONTEXT.md, RFC*
+- **보수 편향**: 확실히 낮은 가치일 때만 `skip`. 애매하면 `extract` 또는 `defer`. 판정 신뢰가 낮으면 무조건 `extract`.
+- `skip` 대상 패턴:
+  - docs-only 변경 (`.md`, `.txt`, `.rst`, `**/docs/**`) + 결정/정책 신호 *없음*
+    - 결정 키워드 (대소문자 무시 부분 일치): `decide`, `decision`, `convention`, `policy`, `ADR`, `deprecate`, `adopt`, `must`, `must not`, `결정`, `정책`, `규칙`, `채택`, `금지`, `폐기`, `합의`
+    - 결정 경로: `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
     - 위 신호가 *하나라도* 있으면 skip 금지.
-  - test-only 변경 (*_test.*, *.test.*, **/__tests__/**) + manifest 신호 부재 (linear/slack/memento/notion/greptile 카운트 모두 0)
-  - i18n/번역 (**/locales/**, *.po, *.pot)
-- "defer" 대상: 분류기가 신뢰 못 하는 경우. 예: 큰 PR + manifest 신호 빈약, 혼합 변경.
-- "extract": 위 외 모든 경우 (기본값).
+  - test-only 변경 (`*_test.*`, `*.test.*`, `**/__tests__/**`) + manifest 신호 부재 (linear/slack/memento/notion/greptile 카운트 모두 0)
+  - i18n/번역 (`**/locales/**`, `*.po`, `*.pot`)
+- `defer` 대상: 회색 영역 (예: 큰 PR + manifest 신호 빈약, 혼합 변경) — 사람 큐레이션이 필요한 경우.
+- `extract`: 위 외 모든 경우 (기본값) — **모든 신뢰 낮은 판정도 여기로**.
 
-[출력]
-정확히 다음 JSON 한 줄만 출력. 주석/설명 금지:
-{"decision":"skip|extract|defer","reason":"<한 문장>","signals":["<bullet>","..."]}
+**Decision Payload 형식 (PR 코멘트 기록용):**
+
+```json
+{"layer":"L2","decision":"<skip|extract|defer>","reason":"<한 문장>","signals":["<bullet>"]}
 ```
 
-**호출 방식:** 위 프롬프트를 Claude 본인이 메타-인지로 평가 (별도 모델 호출 없음 — PoC 단계). 응답은 JSON 한 줄로 받아 파싱.
+**결정별 동작 — 모든 경우에 Manifest 코멘트에 KD_TRIAGE_DECISION 블록 *추가*:**
 
-**출력 파싱:**
+| decision | 블록 추가 | 라벨 |
+|---|---|---|
+| `extract` | Manifest 코멘트에 payload 블록 추가 | `knowledge:pending` (Step 9 의 기존 흐름) |
+| `skip` | Manifest 코멘트에 payload 블록 추가 | `knowledge:skipped` (ensure → add), Step 9 건너뜀 |
+| `defer` | Manifest 코멘트에 payload 블록 추가 | `knowledge:deferred` (ensure → add), Step 9 건너뜀 |
 
-1. JSON 한 줄을 파싱.
-2. `decision` 필드가 `"skip"|"extract"|"defer"` 중 하나가 아니면 → fallback to `extract`.
-3. 파싱 자체가 실패하면 → fallback to `extract` (silently drop 회피 원칙).
+**중요 — extract 도 블록 기록 의무**: 운영 metric 의 "Layer 2 extract 수" 집계의 단일 진실원천은 KD_TRIAGE_DECISION 블록이다. extract 시에도 블록을 빼면 metric 이 비어버린다.
 
-**결정별 동작:**
+**블록 형식 (실제 PR 코멘트에 추가될 raw text):**
 
-- **`decision == "extract"`**: Step 9 (Post Comment and Add Label) 로 진행 (기존 흐름).
-- **`decision == "skip"`**:
-  1. `knowledge:skipped` 라벨 ensure (Task 3의 패턴과 동일).
-  2. Step 8에서 빌드한 Manifest 코멘트에 다음 블록을 *추가*:
-     ```markdown
-     <!-- KD_TRIAGE_DECISION_START -->
-     ```json
-     {"layer": "L2", "decision": "skip", "reason": "<reason>", "signals": [...]}
-     ```
-     <!-- KD_TRIAGE_DECISION_END -->
-     ```
-  3. `knowledge:skipped` 라벨 추가.
-  4. Step 9는 건너뜀.
-- **`decision == "defer"`**:
-  1. `knowledge:deferred` 라벨 ensure:
-     ```
-     Use GitHub MCP to ensure the label `knowledge:deferred` exists on the repository (description: "PR triage requires human curation", color: "FF8800"). If it already exists, continue without error.
-     ```
-  2. Step 8 Manifest 코멘트에 위와 동일한 형식의 triage decision 블록 추가 (`"decision": "defer"`).
-  3. `knowledge:deferred` 라벨 추가.
-  4. Step 9는 건너뜀.
+```markdown
+<!-- KD_TRIAGE_DECISION_START -->
+```json
+{"layer": "L2", "decision": "extract", "reason": "code changes present with manifest signals", "signals": ["src/ files changed", "linear ID found"]}
+```
+<!-- KD_TRIAGE_DECISION_END -->
+```
+
+(skip / defer 케이스도 동일 형식, `decision` 값만 다름.)
+
+**Defer 라벨 ensure (defer 결정 시):**
+
+```
+Use GitHub MCP to ensure the label `knowledge:deferred` exists on the repository (description: "PR triage requires human curation", color: "FF8800"). If it already exists, continue without error.
+```
+
+**처리 순서 (모든 decision 공통):**
+
+1. Manifest 코멘트에 KD_TRIAGE_DECISION 블록을 *append* (Step 8 의 Manifest 게시와 같은 PR 코멘트 본문에 추가).
+2. decision 별 라벨 ensure + add.
+3. extract 면 Step 9 의 기존 흐름 (라벨 추가 부분만 — 이미 위에서 했으니 idempotent), skip/defer 면 Step 9 건너뜀.
 ```
 
 ### Step 2: Step 9 (Post Comment and Add Label) 의 idempotency 노트 강화
@@ -493,54 +488,82 @@ notion: <count>
 ## Task 5: batch-refine Report 에 Deferred Queue 섹션 추가
 
 **Files:**
-- Modify: `plugins/knowledge-distillery/skills/batch-refine/SKILL.md` — Step 4 (Maintain Report PR) 와 "Report PR Format" 섹션
+- Modify: `plugins/knowledge-distillery/skills/batch-refine/SKILL.md` — Step 1 (Discover), Step 4 (Maintain Report PR), "Report PR Format" 섹션
 
-**책임:** 새 라벨 `knowledge:deferred` 가 붙은 PR을 사람 검토용 큐로 report에 노출. 추출 파이프라인은 건드리지 않음.
+**책임:** Step 1 디스커버리에 deferred PR 포함, 3-branch 분기 처리 (pending>0 / pending==0 AND deferred>0 / 둘 다 0). report 에 Deferred Queue 섹션 추가. spec `## deferred PR 라이프사이클` 절 반영.
 
-### Step 1: Report PR Format 에 새 섹션 템플릿 추가
+### Step 1: batch-refine Step 1 (Discover) 를 3-branch 로 재작성
 
-- [ ] `## Report PR Format` 섹션 내부, `### Insufficient Evidence (Remains Pending)` 직전(또는 직후, 위치는 문맥 흐름에 맞게)에 다음 추가:
+- [ ] `### Step 1: Discover Pending PRs` 본문 (현재 `pending` 만 조회 + "no results → exit 0") 을 다음으로 교체:
+
+```markdown
+### Step 1: Discover Pending or Deferred PRs
+
+```
+Use GitHub MCP to list merged PRs with the `knowledge:pending` label (fields: number, title, mergedAt).
+Then use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login).
+```
+
+pending PR 을 `mergedAt` ascending 으로 정렬. 다음 3-branch 로 분기:
+
+| 분기 | 조건 | 동작 |
+|---|---|---|
+| B1 | pending > 0 | Step 2 부터 기존 흐름 (추출 루프). Step 4 의 report 갱신에서 Deferred Queue 도 함께 노출. |
+| B2 | pending == 0 AND deferred > 0 | **report-only batch**. Step 2 의 branch 는 생성하되 Step 3 추출 루프는 *skip*. Step 4 의 report 갱신 시 빈 changeset (`entries: []`) 생성, Deferred Queue 섹션만 채움. PR 본문에 "이번 batch 는 deferred queue 검토 전용" 명시. |
+| B3 | pending == 0 AND deferred == 0 | 기존처럼 exit 0 (branch / commit / PR 생성 없음). |
+
+**PoC 정책 — open report PR 갱신은 범위 외**: B2 에서도 매 batch 마다 새 branch (`knowledge/batch-YYYY-MM-DD`) + 새 report PR 을 생성. 이전 batch 의 report PR 은 그대로 둔다. 운영 결과 deferred-only PR 이 자주 생성되면 후속 PR 에서 정책 조정.
+```
+
+### Step 2: Report PR Format 에 Deferred Queue 섹션 추가
+
+- [ ] `## Report PR Format` 섹션 내부, `### Insufficient Evidence (Remains Pending)` 직전에 다음 추가:
 
 ```markdown
 ### Deferred Queue (Human Curation Required)
 
-triage가 `defer` 판정을 내린 PR. 사람이 라벨을 변경해야 다음 batch에 반영됩니다.
+triage 가 `defer` 판정을 내린 PR. 사람이 라벨을 변경해야 다음 batch 에 반영됩니다.
 
 | PR | 작성자 | 제목 | Defer 사유 |
 |----|--------|------|------------|
 | #{n} | @{author} | {title} | {reason from KD_TRIAGE_DECISION block} |
 
 **사람 검토 가이드:**
-- 지식 가치가 있다고 판단 → 라벨을 `knowledge:deferred` → `knowledge:pending` 으로 변경.
+- 지식 가치가 있다고 판단 → 라벨을 `knowledge:deferred` → `knowledge:pending` 으로 변경 (mark-evidence 의 idempotency C1b 로 진입).
 - 영구 제외 → 라벨을 `knowledge:deferred` → `knowledge:skipped` 로 변경 (사유는 PR 코멘트에 남길 것 권장).
 ```
 
-### Step 2: Step 4 (Maintain Report PR) 에 deferred 수집 절차 추가
+(B2 분기의 report-only PR 본문에는 위 섹션만 채워지고 Summary / Accepted Entries / Rejected Candidates 등은 비어 있음을 명시.)
 
-- [ ] `### Step 4: Maintain Report PR` 의 끝 부분(reviewers 처리 직후, "MUST NOT auto-merge" 직전)에 다음 단락 추가:
+### Step 3: Step 4 (Maintain Report PR) 에 deferred 수집 절차 추가
+
+- [ ] `### Step 4: Maintain Report PR` 의 끝 부분 (reviewers 처리 직후, "MUST NOT auto-merge" 직전) 에 다음 단락 추가:
 
 ```markdown
-**Deferred Queue 수집 (Report 갱신 시마다):**
+**Deferred Queue 수집 (Report 갱신 시마다, B1 / B2 분기 공통):**
 
 ```
-Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login). For each PR, also fetch the issue comments and locate the latest `<!-- KD_TRIAGE_DECISION_START -->` block to extract the `reason` field from the JSON payload.
+Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login). For each PR, fetch the issue comments and locate the latest `<!-- KD_TRIAGE_DECISION_START -->` block to extract the `reason` field from the JSON payload.
 ```
 
-- 수집된 PR을 Report PR Format의 "Deferred Queue" 섹션 표에 채워 넣는다. 없으면 표는 빈 상태(헤더만)로 둔다.
+- 수집된 PR 을 Report PR Format 의 "Deferred Queue" 섹션 표에 채워 넣는다. 없으면 표는 빈 상태 (헤더만) 로 둔다.
 - 이 수집은 추출 파이프라인을 실행하지 않는다 — 단순 리스팅만 수행.
+- B2 분기 (deferred-only batch) 에서는 이 수집이 report 본문의 *유일한 동적 컨텐츠*다.
 ```
 
-### Step 3: 검증 절차
+### Step 4: 검증 절차
 
 - [ ] 다음 시나리오 mental walkthrough:
 
-1. deferred 라벨 PR이 0개인 batch run → 섹션 헤더만 있고 표는 빈 상태.
-2. deferred PR 2개 (PR #100, #101) → 두 행이 정확한 author/title/reason 으로 채워짐.
-3. PR이 `deferred → pending`으로 라벨 변경된 후 다음 batch → 해당 PR이 Deferred Queue에서 빠지고 Step 1 디스커버리에 잡혀 정상 처리.
+1. pending > 0, deferred 0 → B1, 기존 흐름, Deferred Queue 빈 표.
+2. pending > 0, deferred 2 (PR #100, #101) → B1, 추출 + Deferred Queue 표에 2 행.
+3. pending 0, deferred 3 → **B2**, branch 생성 / 빈 changeset / report-only PR, Deferred Queue 표에 3 행.
+4. pending 0, deferred 0 → B3, exit 0, 부수효과 없음.
+5. PR 이 `deferred → pending` 으로 라벨 변경 → 다음 batch B1 으로 진입, 해당 PR 추출 루프에 포함, Deferred Queue 에서 빠짐.
 
-### Step 4: 커밋
+### Step 5: 커밋
 
-- [ ] 커밋 메시지: `feat(batch-refine): report에 Deferred Queue 섹션 추가`
+- [ ] 커밋 메시지: `feat(batch-refine): Step 1 3-branch + report Deferred Queue 섹션`
 
 ---
 
@@ -578,15 +601,30 @@ Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: n
 ```markdown
 **운영 Metric 수집 (Report 갱신 시마다):**
 
-batch에 포함된 PR 또는 repo 전체 라벨 카운트로 집계. 비용을 줄이려면 batch에 포함된 PR만 보면 됨.
+모든 Layer 2 결정 (skip / extract / defer) 은 PR 코멘트의 `KD_TRIAGE_DECISION` 블록에 기록되어 있다 (spec 합의). 따라서 라벨별로 PR 을 조회한 뒤 각 PR 의 최신 KD_TRIAGE_DECISION 블록을 파싱해 layer / decision / reason 으로 group by.
 
-1. `knowledge:skipped` 라벨 PR을 조회하여 `KD_TRIAGE_DECISION` 블록의 `layer` 와 `rule`/`reason` 으로 group by:
+1. **Layer 1 skip** — `knowledge:skipped` 라벨 PR 중 블록의 `layer == "L1"` 인 것:
    ```
    Use GitHub MCP to list merged PRs with the `knowledge:skipped` label (fields: number, body of latest KD_TRIAGE_DECISION comment).
    ```
-2. 위 결과를 layer (L1/L2) 와 reason 별로 카운트하여 표에 채움.
-3. `knowledge:pending` 큐 길이는 Step 1에서 이미 가져왔으므로 그 값을 사용.
-4. positive-recall regression rate 는 별도 수동 실행 결과 (`.knowledge/reports/triage-backtest-YYYY-MM-DD.md`) 의 최신 값. 파일이 없으면 "N/A".
+   - 파싱 후 `layer == "L1"` 인 것만 `rule` 별 카운트 → 표의 "Layer 1 skip 수 (reason breakdown)" 채움.
+
+2. **Layer 2 skip** — 같은 조회 결과에서 `layer == "L2"` AND `decision == "skip"` 카운트.
+
+3. **Layer 2 defer** — `knowledge:deferred` 라벨 PR (Task 5 의 Deferred Queue 수집에서 이미 조회됨) 의 수 = `decision == "defer"` 카운트와 동일.
+
+4. **Layer 2 extract** — `knowledge:pending` 라벨 또는 이미 처리된 (`knowledge:collected`) PR 중 블록이 있고 `decision == "extract"` 인 것:
+   ```
+   Use GitHub MCP to list merged PRs with the `knowledge:pending` OR `knowledge:collected` label. For each, fetch latest KD_TRIAGE_DECISION block (may be absent for PRs marked before triage was introduced — skip those).
+   ```
+
+5. **`knowledge:pending` 큐 길이 (batch 시작 시)** — Step 1 의 B1 / B2 / B3 분기 평가 시 이미 카운트했으므로 그 값을 그대로 사용.
+
+6. **`knowledge:skipped` 누적 PR 수 (전체)** — Step 1 의 블록과 같은 GitHub MCP list 호출의 total 사용.
+
+7. **최근 positive-recall regression rate (수동 backtest)** — `.knowledge/reports/triage-backtest-YYYY-MM-DD.md` 중 가장 최근 파일의 결과를 인용. 파일이 없으면 "N/A".
+
+**비용 주의**: 매 batch 마다 전체 라벨 카운트를 다시 조회하는 것이 부담되면, PoC 단계에서는 *이번 batch 에 포함된 PR* 만 집계해도 좋다. 정확성보다 추세 추적이 목적.
 ```
 
 ### Step 3: 검증
@@ -680,6 +718,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GATE="${SCRIPT_DIR}/knowledge-gate"
+# ROOT = repo top (scripts → plugin → kd → repo)
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # --- Argument parsing ---
 MODE="full"  # full | layer1-only | layer2-only
@@ -693,6 +733,17 @@ while [ $# -gt 0 ]; do
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# --- Lazy dependency check (mode-conditional) ---
+require_tool() {
+  for tool in "$@"; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "Required tool not found: $tool" >&2; exit 3; }
+  done
+}
+case "$MODE" in
+  layer1-only) require_tool jq ;;
+  layer2-only|full) require_tool jq gh claude sqlite3 ;;
+esac
 
 # --- Layer 1 rule patterns ---
 LOCKFILE_REGEX='^(.*-lock\.json|.*\.lock|Gemfile\.lock|Cargo\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|composer\.lock|mix\.lock|go\.sum)$'
@@ -880,15 +931,28 @@ FIRST=true
 
 for pr_num in $PR_NUMBERS; do
   TOTAL=$((TOTAL + 1))
-  # PR metadata fetch via gh
-  pr_meta=$(gh pr view "$pr_num" --json author,title,body,files,labels 2>/dev/null || echo "")
+  # PR metadata fetch via gh — labels, files (path+additions+deletions), comments(for manifest)
+  pr_meta=$(gh pr view "$pr_num" --json author,title,body,files,labels,comments 2>/dev/null || echo "")
   if [ -z "$pr_meta" ]; then
     continue
   fi
-  # files 배열을 path 만으로 reshape (gh는 {path, additions, deletions} 구조)
-  pr_json=$(echo "$pr_meta" | jq '{author: .author, title: .title, body: .body, files: [.files[].path]}')
 
-  l1=$(layer1_eval "$pr_json")
+  # Manifest summary 추출 — production L2 입력과 동일하게 맞추기 위해
+  # 기존 PR 코멘트의 EVIDENCE_BUNDLE_MANIFEST 블록에서 identifier 카운트만 뽑음
+  manifest_json=$(echo "$pr_meta" | jq -r '.comments[].body' \
+    | awk 'BEGIN{p=0;j=0} /<!-- EVIDENCE_BUNDLE_MANIFEST_START -->/{p=1;next} /<!-- EVIDENCE_BUNDLE_MANIFEST_END -->/{p=0;next} p && /^```json$/{j=1;next} p && j && /^```$/{j=0;next} p && j' \
+    | jq -s '.[0] // {}' 2>/dev/null || echo '{}')
+  manifest_summary=$(echo "$manifest_json" | jq '{
+    linear: ((.identifiers.linear // []) | length),
+    slack: ((.identifiers.slack // []) | length),
+    memento: (((.identifiers.memento // []) | length) > 0),
+    greptile_comments: ([(.identifiers.greptile // [])[] | (.comment_count // 0)] | add // 0),
+    notion: ((.identifiers.notion // []) | length)
+  }')
+
+  # Layer 1 입력 — Layer 1 은 author/title/files/body 만 사용 (labels/sizes 무시)
+  l1_input=$(echo "$pr_meta" | jq '{author: .author, title: .title, body: .body, files: [.files[].path]}')
+  l1=$(layer1_eval "$l1_input")
   l1_dec=$(echo "$l1" | jq -r '.decision')
   if [ "$l1_dec" = "skip" ]; then
     SKIPPED=$((SKIPPED + 1))
@@ -896,7 +960,16 @@ for pr_num in $PR_NUMBERS; do
     REASONS_L1["$rule"]=$((${REASONS_L1["$rule"]:-0} + 1))
     entry=$(jq -c -n --arg pr "$pr_num" --argjson l1 "$l1" '{pr:$pr, layer:"L1", result:$l1}')
   else
-    l2=$(layer2_eval "$pr_json")
+    # Layer 2 입력 — production 과 동일하게 labels + additions/deletions + manifest_summary 포함
+    l2_input=$(echo "$pr_meta" | jq --argjson ms "$manifest_summary" '{
+      author: .author,
+      title: .title,
+      body: .body,
+      labels: [.labels[].name],
+      files: [.files[] | {path: .path, additions: .additions, deletions: .deletions}],
+      manifest_summary: $ms
+    }')
+    l2=$(layer2_eval "$l2_input")
     l2_dec=$(echo "$l2" | jq -r '.decision')
     if [ "$l2_dec" = "skip" ]; then
       SKIPPED=$((SKIPPED + 1))
@@ -942,25 +1015,7 @@ mv "$REPORT_JSON.tmp" "$REPORT_JSON"
 echo "Backtest complete. Report: $REPORT_MD"
 ```
 
-### Step 3: 의존성 확인
-
-- [ ] 다음 도구가 PATH에 있는지 확인 (실패 시 fallback 메시지):
-  - `gh` (GitHub CLI)
-  - `claude` (Claude Code CLI)
-  - `jq`
-
-스크립트 상단에 다음 추가 (Argument parsing 직전):
-
-```bash
-for tool in gh claude jq sqlite3; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Required tool not found: $tool" >&2
-    exit 3
-  fi
-done
-```
-
-### Step 4: 테스트
+### Step 3: 테스트
 
 - [ ] `tests/triage-backtest.sh` 의 L1 테스트는 그대로 통과해야 함:
 
@@ -977,7 +1032,7 @@ bash plugins/knowledge-distillery/scripts/triage-backtest.sh --limit 5
 cat .knowledge/reports/triage-backtest-*.md
 ```
 
-### Step 5: 커밋
+### Step 4: 커밋
 
 - [ ] 커밋 메시지: `feat(triage-backtest): Layer 2 LLM 통합 + full backtest 모드`
 
@@ -1103,15 +1158,28 @@ EOF
 |---|---|
 | 아키텍처 (Layer 1 in skill, future promotion path) | Task 3 |
 | Layer 1 결정론적 규칙 (R1-R4) | Task 3, Task 7 (bash 재구현) |
-| Layer 2 LLM Triage | Task 4, Task 8 |
-| 라벨 + skip 사유 기록 | Task 3 (L1 코멘트), Task 4 (L2 블록), Task 10 (라벨 생성) |
-| idempotency 5-case | Task 2 |
-| deferred PR 라이프사이클 | Task 5 |
-| 운영 metric | Task 6 |
-| Validation: positive-recall 샘플링 | Task 1, 7, 8, 9 |
-| 에러 처리 (fallback to extract) | Task 4 (출력 파싱), Task 8 (claude CLI 호출 실패) |
-| 변경 영향 요약 | 모든 task의 Files 섹션과 일치 |
+| Layer 2 Triage (internal judgment, decision payload) | Task 4 (skill), Task 8 (backtest simulation) |
+| 라벨 + 모든 결정 기록 (skip / extract / defer 블록) | Task 3 (L1 코멘트), Task 4 (L2 블록 — extract 포함), Task 10 (라벨 생성) |
+| idempotency C1a/C1b/C2/C3/C4/C5 | Task 2 |
+| deferred PR 라이프사이클 (3-branch B1/B2/B3) | Task 5 |
+| 운영 metric (모든 L2 결정 집계) | Task 6 |
+| Validation: positive-recall 샘플링 (시뮬레이션 명시) | Task 1, 7, 8, 9 |
+| 에러 처리 (low-confidence → extract) | Task 4 (skill), Task 8 (backtest claude CLI 호출 실패) |
+| 변경 영향 요약 (batch-refine Step 1 포함) | 모든 task의 Files 섹션과 일치 |
 
 **Placeholder scan 결과:** 없음. 모든 step 에 구체 코드/명령/검증 절차 포함.
 
-**Type consistency:** decision 값 `"skip"|"extract"|"defer"`, layer 값 `"L1"|"L2"`, rule 값 `bot-dependency-update|lockfile-only|generated-only|auto-revert` — 전체 plan 에서 일관.
+**Type consistency:** decision 값 `"skip"|"extract"|"defer"`, layer 값 `"L1"|"L2"`, rule 값 `bot-dependency-update|lockfile-only|generated-only|auto-revert` — 전체 plan 에서 일관. 라벨 매핑 `skip → knowledge:skipped`, `defer → knowledge:deferred`, `extract → knowledge:pending` 일관.
+
+**리뷰 피드백 반영 결과 (2026-05-27 외부 리뷰):**
+
+| 리뷰 지적 | 반영 위치 |
+|---|---|
+| #1 Manifest 중복 게시 | Task 2 — C1 → C1a (종료) + C1b (Triage skip 후 Manifest 만 생성) 분리 |
+| #2 Deferred-only report 누락 | Task 5 — Step 1 을 pending OR deferred 로 확장, 3-branch (B1/B2/B3) |
+| #3 L2 self-prompting 모순 | Task 4 — "출력 스키마/JSON 파싱" → "internal judgment / decision payload 구성" |
+| #4 L2 extract metric 집계 불가 | Task 4 — extract 시에도 KD_TRIAGE_DECISION 블록 기록 의무화 / Task 6 — pending+collected 라벨도 조회 |
+| #5 Task 1 테스트 domain 미생성 | Task 1 Step 2 — `domain-add test "Test domain"` 선행 |
+| #6 recent-accepted-prs SQL 스키마 불일치 | Task 1 Step 3 — JOIN 기반 SQL (entries + evidence 별도 테이블) |
+| #7 backtest ROOT 미정의 + dep check 위치 | Task 7 Step 2 — ROOT = `git rev-parse --show-toplevel`, dep check 를 mode-conditional 로 |
+| #8 backtest L2 입력이 production 과 다름 | Task 8 Step 2 — labels + additions/deletions + manifest_summary 포함 |
