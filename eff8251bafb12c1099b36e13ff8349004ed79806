@@ -1,0 +1,29 @@
+## Decisions Made
+- Layer 2 표현을 "출력 스키마"가 아닌 "Decision Payload 스키마"로 정정: 별도 LLM 호출/응답 파싱 모델이 아니라 skill 내부 판정의 PR 코멘트 기록 형식. self-prompting + self-parsing의 모순 제거
+- 모든 L2 결정 (skip/extract/defer)에 KD_TRIAGE_DECISION 블록 기록 의무화: extract도 예외 없음. metric의 L2 extract 수 집계 가능하게 single source of truth 확립
+- deferred-only 시 batch-refine은 report-only PR 생성 (옵션 a): 사용자 검토 surface 보장. PoC 정책으로 매 batch 새 branch/PR — open report PR 갱신은 범위 외
+- Backtest와 production 실행 경로 차이 명시: production L2는 skill 내부 판정, backtest L2는 `claude --print` 별도 호출. regression rate는 경향 proxy로 해석
+- 에러 처리 표 재구성: production L2에는 "LLM 호출 실패/JSON 파싱 실패"가 존재하지 않음 → backtest 항목으로 이동
+
+## Problems Encountered
+- 이전 spec에서 Layer 2를 "출력 스키마 + JSON 파싱"으로 표현해 self-prompting 모델과 모순됨: → "decision payload 구성"으로 명확화
+- 운영 metric의 "Layer 2 extract 수" 집계 경로가 spec과 모순: extract 시 decision block을 안 남기면 집계 불가 → 모든 결정 기록 의무화로 해결
+- deferred-only 상태에서 batch-refine이 branch/PR을 생성 안 해 사용자 검토 surface 누락: → Step 1을 pending OR deferred로 확장, 3-branch 명시
+
+## Constraints Identified
+- production L2는 LLM 별도 호출 없이 skill 내부 self-assessment: error mode가 "호출 실패"가 아닌 "판정 신뢰 낮음 → extract"
+- deferred-only batch도 매번 새 branch/PR 생성 (PoC): open report PR 갱신 mechanism은 본 범위 외 (별도 개선)
+- changeset 파일은 deferred-only 분기에서도 빈 entries로 생성: 기존 파이프라인의 changeset 존재 가정 유지
+
+## Open Questions
+- 운영 1주일 후 deferred-only PR이 너무 자주 생성되면 (시각적 노이즈) open report PR 갱신으로 정책 전환 가능성
+- backtest의 경향 proxy 신뢰도가 production과 얼마나 일치하는지 — 첫 운영 데이터로 검증 필요
+
+## Context
+설계 검토 피드백 8개 중 #2 (deferred-only surface)와 #3 (L2 모델 명확화) 및 #4 (extract metric)을 spec에 반영. 나머지 5개 지적 (mechanical bug fix)은 plan 패치에서 처리 예정. 변경 파일: `docs/specs/2026-05-27-pr-triage-pre-filter-design.md` (+52/-12). 다음 단계는 plan 1117라인의 일괄 패치.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
