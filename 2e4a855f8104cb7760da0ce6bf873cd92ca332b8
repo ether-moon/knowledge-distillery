@@ -1,0 +1,32 @@
+## Decisions Made
+- 사전 필터링 위치는 Stage A (mark-evidence 스킬 내부): 처리량 문제이므로 큐 진입 자체를 막아야 효과적이고 batch-refine의 atomic 보장에 영향 없음
+- Triage 구성은 하이브리드 (Layer 1 결정론적 규칙 + Layer 2 cheap LLM): 결정론만으로는 docs-only nuance 못 다루고 LLM-only는 봇 PR 같은 명백한 케이스도 호출
+- batch-refine은 변경하지 않음: serial 처리 / atomic commit / graceful handoff는 의도된 설계
+- 일별 mini-batch 전환은 본 설계 범위 외 (별도 PR)
+- 라벨 분리: `knowledge:skipped`(영구 제외) vs `knowledge:deferred`(사람 큐레이션 큐)
+- Triage 보수 편향: 애매하면 extract, 확실히 낮은 가치만 skip. Layer 2 LLM 실패 시 extract로 기본값
+- false-negative ≤5% 임계로 backtest 도구로 검증, 초과 시 규칙 수정 후 재실행
+- 레포별 triage 규칙 외부화는 YAGNI (첫 운영 1주일 데이터 본 후 결정)
+
+## Problems Encountered
+- 초기 제안 중 PR 병렬화는 현 설계와 충돌: changeset/report 충돌, label race, 중복 처리 발생 → 병렬화 제외, 사전 필터링으로 방향 전환
+- 초기 제안의 docs-only 일괄 skip은 false positive 위험: 설계 결정이 문서 PR에 담기는 경우 多 → Layer 2가 "docs-only + 결정 신호 없음" 조건으로 좁혀서 판정
+
+## Constraints Identified
+- batch-refine의 PR-atomic commit/label 업데이트와 token 만료 전 graceful handoff는 의도된 설계: 변경 시 데이터 정합성 깨짐
+- mark-evidence는 절대 실패하면 안 됨: silently drop 회피 원칙, Layer 2 LLM 실패는 extract 기본값으로
+- Triage 입력에서 full diff 제외: 비용 절감 효과 보존이 핵심 목적
+- decision/policy 신호 검출은 키워드(decide, decision, ADR, deprecate 등) + 경로(`docs/adr/`, `CONTEXT.md` 등)로 표현
+
+## Open Questions
+- 첫 운영 1주일 결과 본 후 레포별 triage 규칙 외부화 여부
+- vault 데이터 누적 후 backtest 자동화 CI 포함 여부
+
+## Context
+한 달에 100+ PR이 생성되는 레포에 적용한 knowledge-distillery가 주간 batch-refine으로 큐의 10%도 처리 못 하는 처리량 문제를 진단하고 사전 필터링 설계를 합의했다. Stage A의 mark-evidence 스킬 내부에 2단계 triage(결정론적 규칙 + cheap LLM)를 도입하고 `knowledge:skipped`/`knowledge:deferred` 라벨로 false-negative 검증 가능한 상태를 유지하기로 했다. 설계 문서를 `docs/specs/2026-05-27-pr-triage-pre-filter-design.md`에 작성하고 구현 계획은 별도 단계로 분리했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
