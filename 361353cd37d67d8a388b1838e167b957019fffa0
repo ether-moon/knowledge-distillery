@@ -1,0 +1,34 @@
+## Decisions Made
+- C1 manual override를 C1a/C1b로 split: pending 라벨이 있고 Manifest도 있으면 종료, 라벨만 있고 Manifest 없으면 (promote 직후 또는 부분 실패) Triage 우회 후 Manifest만 생성. mark-evidence의 "exactly one Manifest" 제약 보호
+- batch-refine Step 1을 pending OR deferred 조회로 확장하고 3-branch (B1/B2/B3) 명시. B2 (deferred-only)는 report-only PR 생성 — 빈 changeset + Deferred Queue만 노출
+- Layer 2를 "별도 LLM 호출"이 아닌 "internal judgment with decision payload"로 표현 통일: self-prompting/self-parsing 모순 제거
+- 모든 L2 결정 (extract 포함)에 KD_TRIAGE_DECISION 블록 기록 의무화: metric 집계 single source of truth
+- backtest의 Layer 2 입력에 labels + additions/deletions + manifest_summary 추가: production L2 입력과 일치시켜 regression rate의 신뢰성 확보
+- Task 7의 dep check는 mode-conditional: layer1-only는 jq만, full/layer2-only는 gh/claude/sqlite3 모두 필요. 단위 테스트(L1) 환경에 외부 도구 강제 안 함
+- ROOT는 `git rev-parse --show-toplevel` 우선, fallback으로 SCRIPT_DIR 기반 상대 경로
+- Task 6 metric 수집은 knowledge:pending OR knowledge:collected 라벨 PR도 조회: extract 결정 블록 카운트를 위해
+
+## Problems Encountered
+- 외부 리뷰가 8개 차단/정확도 이슈 지적: 모두 valid로 평가됨. fix는 spec 패치(#2/#3/#4) + plan 패치(#1/#5/#6/#7/#8 + #2/#3/#4 반영)로 처리
+- B2 분기에서 changeset 파일 누락 가능성: 빈 entries 배열로 생성하기로 결정 — 기존 파이프라인의 changeset 존재 가정 유지
+- L1 dep check를 grouping 안 하면 unit 테스트가 gh/claude 미설치 환경에서 실패: case 별 lazy check로 해결
+
+## Constraints Identified
+- mark-evidence의 "exactly one Manifest comment per PR" 제약은 절대 위반 금지: C1a/C1b split의 근거
+- evidence 테이블은 별도 (entries.evidence 컬럼 없음): vault.sql:49 확인. CLI 구현은 JOIN 필수
+- knowledge-gate add는 domain 활성 상태 검증 (knowledge-gate:687): 테스트 전 domain-add 선행 필요
+- batch-refine의 deferred-only PR은 매주 새 branch/PR 생성 (PoC 정책): open report PR 갱신 mechanism은 본 범위 외
+
+## Open Questions
+- 운영 1주일 후 deferred-only PR 빈도가 너무 높으면 open report PR 갱신 정책 전환 필요성
+- B2 분기의 빈 changeset이 batch-refine 의 다른 step (예: Step 6 Changeset, Step 7 Domain Summary)에 부작용 없는지 — 구현 단계에서 mental walkthrough 추가 필요
+- Manifest 요약 파싱이 backtest에서 모든 과거 PR에 대해 일관되게 동작하는지 (triage 도입 전 PR은 manifest 없음 → 기본값 0으로 처리)
+
+## Context
+외부 리뷰의 8개 지적을 spec과 plan에 분배해 반영. spec 패치는 직전 커밋(eff8251)에 완료, 이번 커밋은 plan 1117라인 → 1185라인 (+207/-139)로 8개 모두 mechanical fix + spec consistency 확보. Self-review 표에 리뷰 추적 표 추가. 다음은 다시 사용자 검토 후 실행 방식 선택.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
