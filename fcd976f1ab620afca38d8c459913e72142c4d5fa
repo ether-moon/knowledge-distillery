@@ -1,0 +1,28 @@
+## Decisions Made
+- 보완계획(2026-05-29) 채택, 테스트 러너 경로 1건 보정: 계획이 가정한 tests/lib/orchestration-fixture.sh는 미존재 → 기존 skill-orchestration-harness.sh 패턴으로 mark-evidence-orchestration.sh 작성.
+- triage 기능 본체와 보완을 단일 커밋으로 통합(사용자 선택 "2번"). 기능 전체가 미커밋 상태였음.
+- 무효 backtest smoke 리포트(.knowledge/reports/triage-backtest-2026-05-28.*, L2가 전부 claude-call-fallback)는 커밋 제외.
+
+## Problems Encountered
+- 계획이 가정한 tests/lib/orchestration-fixture.sh가 없어 실제 하네스 패턴(skill-orchestration-harness.sh <root> <fixture>)으로 대체.
+- 브랜치에 PR/upstream 없음, triage 구현 전체가 워킹트리에 미커밋이었음.
+
+## Constraints Identified
+- vault.db 직접 수정 금지 — recent-accepted-prs는 read-only SELECT(entries⋈evidence, status='active', type='pr').
+- backtest fallback-only run은 유효 baseline 아님 → 해당 리포트는 커밋 금지.
+
+## Open Questions
+- Layer 2 backtest 유효 baseline은 비-fallback claude 세션에서 재실행 필요.
+- L1-skip 도중 크래시(결정블록만 있고 Manifest/라벨 없음) idempotency 엣지는 이번 패스 미커버(재실행 시 결정론적 수렴으로 수용).
+
+## Context
+- PR triage 사전 필터링을 운영 투입 전 리뷰 지적사항(High collected 재큐잉 등) 기준으로 보완하는 패스. PoC 범위 유지, repo별 규칙 외부화는 out of scope.
+
+## Recorded Decisions
+- (없음 — record-decision 트리거 해당 없음)
+
+## Vault Entries Referenced
+- vault-changeset-not-direct-db
+- combine-commit-note-single-shell-call
+- push-notes-ref-after-commit
+- memento-commit-no-glob-staging
