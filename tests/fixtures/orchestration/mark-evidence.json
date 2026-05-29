@@ -1,0 +1,30 @@
+{
+  "name": "mark-evidence orchestration regression harness",
+  "documents": {
+    "mark_evidence_skill": "plugins/knowledge-distillery/skills/mark-evidence/SKILL.md"
+  },
+  "scenarios": [
+    {
+      "id": "collected-pr-is-terminal",
+      "checks": [
+        {
+          "doc": "mark_evidence_skill",
+          "contains": "Labels: `knowledge:pending`, `knowledge:skipped`, `knowledge:deferred`, `knowledge:collected`"
+        },
+        {
+          "doc": "mark_evidence_skill",
+          "contains": "| C0 | `knowledge:collected` label exists | Exit successfully. Do not post another Manifest. Do not modify labels. |"
+        }
+      ]
+    },
+    {
+      "id": "manifest-with-triage-decision-does-not-rerun-triage",
+      "checks": [
+        {
+          "doc": "mark_evidence_skill",
+          "contains": "If a Manifest and `KD_TRIAGE_DECISION` block exist but no knowledge state label exists, recover the label from the latest decision block and exit successfully. Do not rebuild the Manifest or rerun triage."
+        }
+      ]
+    }
+  ]
+}

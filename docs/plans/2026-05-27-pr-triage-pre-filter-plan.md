@@ -4,7 +4,7 @@
 
 **Goal:** mark-evidence 스킬 내부에 2단계 triage(결정론적 규칙 + LLM)를 추가해 `knowledge:pending` 큐 진입 PR을 줄이고, batch-refine report에 deferred queue와 운영 metric을 노출하며, recall regression 검증용 backtest 도구를 빌드한다.
 
-**Architecture:** Layer 1(결정론적, manifest 빌드 전) + Layer 2(LLM, manifest 빌드 후)가 mark-evidence skill 내부에 순차 배치됨. 새 라벨 `knowledge:skipped` / `knowledge:deferred` 와 PR 코멘트 내 `<!-- KD_TRIAGE_DECISION_* -->` 블록이 상태 머신의 single source of truth. batch-refine은 처리 루프는 변경하지 않고 report 생성에만 deferred queue + metric 섹션을 추가한다. `triage-backtest.sh` 는 `knowledge-gate` CLI의 새 `recent-accepted-prs` 서브커맨드로 과거 accepted entry의 source PR을 가져와 Layer 1(bash 재구현) + Layer 2(`claude` CLI) 시뮬레이션 후 positive-recall regression rate 산출.
+**Architecture:** Layer 1(결정론적, manifest 빌드 전) + Layer 2(LLM, manifest 빌드 후)가 mark-evidence skill 내부에 순차 배치됨. 새 라벨 `knowledge:skipped` / `knowledge:deferred` 와 PR 코멘트 내 `<!-- KD_TRIAGE_DECISION_* -->` 블록이 상태 머신의 single source of truth. batch-refine의 per-PR 추출 루프는 변경하지 않는다. 다만 Step 1 discovery는 `knowledge:pending` 또는 `knowledge:deferred` 로 확장하고, `pending == 0 && deferred > 0` 이면 추출 없이 report-only batch 를 생성한다. `triage-backtest.sh` 는 `knowledge-gate` CLI의 새 `recent-accepted-prs` 서브커맨드로 과거 accepted entry의 source PR을 가져와 Layer 1(bash 재구현) + Layer 2(`claude` CLI) 시뮬레이션 후 positive-recall regression rate 산출.
 
 **Tech Stack:** Bash + `gh` CLI + `git` + GitHub MCP + Linear MCP + `claude` CLI + sqlite3(knowledge-gate 내부). 스킬 본체는 markdown 지시문.
 
@@ -233,7 +233,7 @@ Use GitHub MCP to fetch PR #{pr_number}: labels, issue comments (bodies only).
 | 케이스 | 조건 | 동작 |
 |---|---|---|
 | C1a | `knowledge:pending` 라벨 **AND** Manifest 블록 존재 | 그대로 종료. Manifest 중복 게시 금지, 라벨도 유지 (`mark-evidence` 의 "exactly one Manifest" 제약 보호). |
-| C1b | `knowledge:pending` 라벨 존재 **AND** Manifest 블록 없음 | 사람이 `skipped`/`deferred` → `pending` 으로 promote 했거나 이전 실행의 부분 실패 케이스. Triage(Layer 1, Layer 2)를 건너뛰고 Step 2~8 만 실행해 Manifest를 생성한다 (Step 9 의 라벨 추가는 이미 pending 이므로 no-op). |
+| C1b | `knowledge:pending` 라벨 존재 **AND** Manifest 블록 없음 | 사람이 `skipped`/`deferred` → `pending` 으로 promote 했거나 이전 실행의 부분 실패 케이스. Triage(Layer 1, Layer 2)를 건너뛰고 Step 2~8 로 Manifest를 구성한 뒤 Step 9 의 Manifest comment 게시까지 실행한다. Step 9 의 pending 라벨 추가는 이미 pending 이므로 no-op. |
 | C2 | `knowledge:skipped` 라벨 AND `KD_TRIAGE_DECISION` 블록 존재 | 그대로 종료. 어떤 라벨/코멘트도 추가하지 않는다. |
 | C3 | `knowledge:deferred` 라벨 AND `KD_TRIAGE_DECISION` 블록 존재 | 그대로 종료. 어떤 라벨/코멘트도 추가하지 않는다. |
 | C4 | Manifest 블록만 존재 (triage decision 블록 없음, 위 라벨 모두 없음) | 기존 idempotency 동작. `knowledge:pending` 라벨이 없으면 다시 붙이고 종료. |
