@@ -27,7 +27,7 @@ The current implementation serves as a proof of concept. Do not over-engineer fo
   - Fetch full details only for the specific entries you need: `knowledge-gate get <id>` or `knowledge-gate get-many <id...>`
 - MUST/MUST-NOT rules from returned entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
-- Do not directly read files in the .knowledge/ directory
+- Do not hand-read vault knowledge: never read `.knowledge/vault.db` or its entries directly — always go through `knowledge-gate`. (Pipeline skills that own `.knowledge/` — `mark-evidence`, `batch-refine`, `triage-backtest` — may read and write the changeset and report files they generate.)
 
 ## Memento
 - After every git commit, attach a memento session summary as a git note on `refs/notes/commits`

@@ -486,7 +486,13 @@ KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
 KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
   --type fact --title "t3" --claim "c3" --body "b3" \
   --domain test --considerations "x" --evidence "pr:#20,pr:#30" >/dev/null
+# Seed-style entry whose 'pr' evidence ref is not a PR number (e.g. bootstrap
+# knowledge). recent-accepted-prs must not emit it as a PR (gh pr view would 404).
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
+  --type fact --title "t0" --claim "c0" --body "b0" \
+  --domain test --considerations "x" --evidence "pr:#0-seed" >/dev/null
 sqlite3 "$RECENT_VAULT" "
+  UPDATE entries SET created_at = '2026-01-01 00:00:00' WHERE id = 't0';
   UPDATE entries SET created_at = '2026-01-01 00:00:01' WHERE id = 't1';
   UPDATE entries SET created_at = '2026-01-01 00:00:02' WHERE id = 't2';
   UPDATE entries SET created_at = '2026-01-01 00:00:03' WHERE id = 't3';
@@ -498,6 +504,9 @@ assert_eq "3" "$recent_count" "recent-accepted-prs should dedupe and return 3 un
 assert_contains "$recent_output" "10" "recent-accepted-prs should contain PR 10"
 assert_contains "$recent_output" "20" "recent-accepted-prs should contain PR 20"
 assert_contains "$recent_output" "30" "recent-accepted-prs should contain PR 30"
+if echo "$recent_output" | grep -q '0-seed'; then
+  fail "recent-accepted-prs should exclude non-numeric (non-PR) evidence refs"
+fi
 
 recent_limited="$(KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" recent-accepted-prs --limit 1)"
 recent_limited_count="$(echo "$recent_limited" | wc -l | tr -d ' ')"

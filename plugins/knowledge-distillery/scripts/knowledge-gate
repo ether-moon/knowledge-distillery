@@ -1514,7 +1514,7 @@ case "$CMD" in
       JOIN evidence ev ON ev.entry_id = recent.id
       WHERE ev.type = 'pr'
       ORDER BY datetime(recent.created_at) DESC, recent.id DESC, ev.ref;
-    " | sed 's/^#//' | awk 'NF && !seen[$0]++'
+    " | sed 's/^#//' | awk 'NF && /^[0-9]+$/ && !seen[$0]++'
     ;;
 
   # Domain Query Commands
