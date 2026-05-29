@@ -1487,6 +1487,35 @@ case "$CMD" in
       esac
     done
     list_entries "$ids_only" ;;
+  recent-accepted-prs)
+    limit=50
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --limit|--entry-limit)
+          limit="${2:-}"
+          if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid $1: $limit" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        *) echo "Usage: knowledge-gate recent-accepted-prs [--limit N|--entry-limit N]" >&2; exit 1 ;;
+      esac
+    done
+    sqlite3 "$VAULT" "
+      SELECT ev.ref
+      FROM (
+        SELECT id, created_at
+        FROM entries
+        WHERE status = 'active'
+        ORDER BY datetime(created_at) DESC, id DESC
+        LIMIT ${limit}
+      ) recent
+      JOIN evidence ev ON ev.entry_id = recent.id
+      WHERE ev.type = 'pr'
+      ORDER BY datetime(recent.created_at) DESC, recent.id DESC, ev.ref;
+    " | sed 's/^#//' | awk 'NF && /^[0-9]+$/ && !seen[$0]++'
+    ;;
 
   # Domain Query Commands
   domain-info)
@@ -1579,6 +1608,8 @@ case "$CMD" in
     echo "  get <id>                      Get full entry details (including body)"
     echo "  get-many <id>...              Get full details for multiple entries in one call"
     echo "  list [--ids-only]             List all active entries (summary index by default)"
+    echo "  recent-accepted-prs [--limit N|--entry-limit N]  Recent active entries' source PR numbers"
+    echo "      N is a recent active entry limit; output PRs are deduplicated"
     echo ""
     echo "Domain Queries:"
     echo "  domain-info <domain>          Domain details (description, patterns, entry count)"

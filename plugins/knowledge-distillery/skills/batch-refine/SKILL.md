@@ -121,15 +121,24 @@ When a retrigger run starts, it picks up the existing branch + Report PR, reads 
 
 ## Execution Steps
 
-### Step 1: Discover Pending PRs
+### Step 1: Discover Pending and Deferred PRs
 
 ```
 Use GitHub MCP to list all merged PRs with the `knowledge:pending` label (fields: number, title, mergedAt).
+Use GitHub MCP to list all merged PRs with the `knowledge:deferred` label (fields: number, title, author.login, mergedAt).
 ```
 
-Sort by `mergedAt` ascending (oldest first).
+Sort pending PRs by `mergedAt` ascending (oldest first). Deferred PRs are not extraction targets; they are report-only human curation items.
 
-**If no results:** Log "No pending PRs" and exit 0. Do NOT create a branch, commit, or PR.
+Branch by queue state:
+
+| State | Behavior |
+|---|---|
+| `pending > 0` | Run the normal extraction loop for pending PRs. Also include deferred PRs in the report's Deferred Queue section. |
+| `pending == 0 AND deferred > 0` | Create a report-only batch. Do not run the extraction loop. Create an empty changeset (`entries: []`) and a report PR whose dynamic content is the Deferred Queue section. |
+| `pending == 0 AND deferred == 0` | Log "No pending or deferred PRs" and exit 0. Do NOT create a branch, commit, or PR. |
+
+PoC policy: even for deferred-only batches, create a new `knowledge/batch-YYYY-MM-DD` branch and Report PR using the normal batch naming rules. Updating older open report PRs is out of scope.
 
 ### Step 2: Create or Resume Working Branch
 
@@ -142,6 +151,8 @@ If the branch already exists (re-run or self-retrigger scenario), checkout the e
 When resuming an existing branch, also locate the existing Report PR (if any) and re-read the progress table to confirm which PRs are already marked complete. The PR's `knowledge:collected` label is the authoritative signal; treat the progress table as a human-readable mirror.
 
 ### Step 3: Per-PR Atomic Loop
+
+Skip this step entirely for a deferred-only report batch (`pending == 0 AND deferred > 0` from Step 1). In that case, create `.knowledge/changesets/batch-YYYY-MM-DD.json` with `entries: []` and `.knowledge/reports/batch-YYYY-MM-DD.md` with the Deferred Queue section. For a deferred-only report batch, write the empty changeset and report file, then commit and push them before Step 4 creates the Report PR. The push creates the remote branch that Step 4's PR creation depends on.
 
 Process pending PRs **one at a time** in `mergedAt` ascending order. For each PR run the full per-PR pipeline and immediately persist progress before moving on. This guarantees that any kind of mid-run termination (graceful handoff, 401, runner timeout) leaves a consistent state.
 
@@ -220,6 +231,30 @@ Else:
 ```
 
 If GitHub MCP rejects the entire `reviewers` argument on PR creation, retry the create call once without it so the PR is still created, then log a warning. The reviewer set will be reconciled by `gh pr edit --add-reviewer` on the next refresh.
+
+**Deferred Queue collection (on every Report PR create / refresh):**
+
+```
+Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login). For each PR, fetch issue comments and locate the latest `<!-- KD_TRIAGE_DECISION_START -->` block. Extract the JSON payload's `reason` field.
+```
+
+- Fill the Report PR Format's "Deferred Queue (Human Curation Required)" table.
+- If none exist, render the section with the empty-state sentence.
+- This collection is read-only and MUST NOT run `collect-evidence`, `extract-candidates`, or `quality-gate`.
+- In a deferred-only report batch, this section is the report's only dynamic review content; Summary and candidate sections should explicitly show zero/empty values.
+
+**Triage metric collection (on every Report PR create / refresh):**
+
+All Layer 2 decisions (`skip`, `extract`, `defer`) are recorded in PR comments as `KD_TRIAGE_DECISION` blocks by `mark-evidence`.
+
+1. Query merged PRs with `knowledge:skipped`; parse their latest `KD_TRIAGE_DECISION` blocks.
+   - `layer == "L1"` contributes to Layer 1 skip count grouped by `rule`.
+   - `layer == "L2" AND decision == "skip"` contributes to Layer 2 skip count grouped by `reason`.
+2. Query merged PRs with `knowledge:deferred`; parse latest decision blocks where `layer == "L2" AND decision == "defer"`.
+3. Query merged PRs with `knowledge:pending` and merged PRs with `knowledge:collected` separately, union the results, then parse latest decision blocks where `layer == "L2" AND decision == "extract"`. (These two labels are mutually exclusive, so a single both-labels query would always return zero — they must be queried as two separate sets.)
+4. Use the pending PR count from Step 1 as `knowledge:pending queue length at batch start`.
+5. Use the total `knowledge:skipped` result count as cumulative skipped PR count.
+6. For recent positive-recall regression rate, read the newest `.knowledge/reports/triage-backtest-YYYY-MM-DD.md` if present. If absent, render `N/A`.
 
 **MUST NOT auto-merge the report PR.** Human review is the intervention point.
 
@@ -341,6 +376,20 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 | Rejected | J |
 | Insufficient evidence (deferred) | D |
 
+### 운영 Metric (Triage)
+
+이번 batch 기준 누적값입니다. 추세 추적용입니다.
+
+| Metric | 값 |
+|--------|----|
+| Layer 1 skip 수 | {N} ({bot-dependency-update=N, lockfile-only=N, generated-only=N, auto-revert=N}) |
+| Layer 2 skip 수 | {N} |
+| Layer 2 defer 수 | {N} |
+| Layer 2 extract 수 | {N} |
+| `knowledge:pending` 큐 길이 (batch 시작 시) | {N} |
+| `knowledge:skipped` 누적 PR 수 (전체) | {N} |
+| 최근 positive-recall regression rate (수동 backtest) | {X.X% or N/A} |
+
 ### Accepted Entries
 
 {Group entries by source PR author, then by PR number (mergedAt order within each author). For each author, create an H4 section. Under each PR, render a table of entries:}
@@ -388,6 +437,20 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 
 {If none: "All PRs had sufficient evidence."}
 
+### Deferred Queue (Human Curation Required)
+
+triage가 `defer` 판정을 내린 PR입니다. 사람이 라벨을 변경해야 다음 batch에 반영됩니다.
+
+| PR | 작성자 | 제목 | Defer 사유 |
+|----|--------|------|------------|
+| #{pr_number} | @{author} | {title} | {reason from KD_TRIAGE_DECISION block} |
+
+{If empty: "No deferred PRs."}
+
+**사람 검토 가이드:**
+- 지식 가치가 있다고 판단 → 라벨을 `knowledge:deferred` → `knowledge:pending` 으로 변경.
+- 영구 제외 → 라벨을 `knowledge:deferred` → `knowledge:skipped` 로 변경. 사유를 PR 코멘트에 남기는 것을 권장.
+
 ---
 
 ### How to Curate This Report
@@ -418,7 +481,8 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 
 | Failure Mode | Behavior |
 |-------------|----------|
-| No pending PRs | Exit 0. No branch, no PR. |
+| No pending or deferred PRs | Exit 0. No branch, no PR. |
+| No pending PRs but deferred PRs exist | Create a report-only batch with empty changeset and Deferred Queue section. |
 | Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |
 | GitHub MCP 401/403 mid-run | Stop loop. Do **not** retrigger (token already dead). Exit non-zero. Next cron resumes. |
 | Per-PR pipeline fails (non-auth) | Record `❌ failed: <error>` row, leave PR labeled `knowledge:pending`, continue with next PR. |
