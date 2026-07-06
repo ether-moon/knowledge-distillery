@@ -221,15 +221,10 @@ Apply two questions in sequence:
 > - To survive Q2, the candidate must answer: **"Why THIS approach and not an obvious alternative?"** — with genuinely non-obvious context (a past incident, an external policy, a counterintuitive tradeoff). If the answer is "because that's the standard/correct way to do it", Q2=no.
 > - A well-written body (Background, Rejected Alternatives, etc.) does NOT rescue a how-it-works claim. The body's rationale itself must be non-obvious.
 
-Examples:
-- "The `/curate` workflow checks branch prefix `knowledge/batch-*`" → Q1=yes (YAML file), Q2=no → **skip**
+Examples (skip = derivable, keep = residual value):
 - "`get-many` MUST exit 1 when requested IDs are missing" → Q1=yes (code + error message), Q2=no (fail-fast rationale is self-evident from pattern) → **skip**
-- "Query commands MUST reject unknown flags with usage error" → Q1=yes (catch-all in code), Q2=no (standard CLI error handling) → **skip**
 - "`.mcp.json` MUST be gitignored" → Q1=yes (already in `.gitignore`), Q2=no (runtime config with potential secrets → standard practice) → **skip**
-- "Branch name validation MUST use env var + regex instead of direct interpolation" → Q1=yes (workflow YAML), Q2=no (shell injection prevention via env var is a well-known pattern) → **skip**
-- "The batch-refine pipeline sorts results by `mergedAt` ascending before aggregating" → Q1=yes (code in orchestrator), Q2=no (how-it-works — describes implementation mechanics readable from code) → **skip**
-- "The curate-report skill classifies feedback into REJECT, UPDATE, KEEP, and UNRESOLVED actions" → Q1=yes (SKILL.md documents the action types), Q2=no (how-it-works — restates what the skill definition already says) → **skip**
-- "The `collect-evidence` skill records identifiers only at marking time, not evidence content" → Q1=yes (SKILL.md + code), Q2=no (how-it-works — design directly readable from implementation and docs) → **skip**
+- "The batch-refine pipeline sorts results by `mergedAt` ascending before aggregating" → Q1=yes (code in orchestrator), Q2=no (how-it-works — implementation mechanics readable from code) → **skip**
 - "Archive rejected vault entries instead of deleting to preserve audit history" → Q1=partially (function exists), Q2=yes (audit trail requirement is not self-evident from the archive function alone) → **keep**
 - "PR body template enforcement is out of scope for knowledge-distillery" → Q1=no (scope decisions aren't in code), Q2=yes (boundary + rejected alternative) → **keep**
 - "Use React Server Components for data-fetching pages because SSR hydration cost was causing 3s delays on the dashboard" → Q1=yes (code uses RSC), Q2=yes (the 3s delay incident and performance threshold are not in the code) → **keep**

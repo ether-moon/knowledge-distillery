@@ -9,11 +9,28 @@
   },
   "scenarios": [
     {
-      "id": "no-pending-prs-short-circuit",
+      "id": "no-pending-or-deferred-prs-short-circuit",
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "**If no results:** Log \"No pending PRs\" and exit 0. Do NOT create a branch, commit, or PR."
+          "contains": "| `pending == 0 AND deferred == 0` | Log \"No pending or deferred PRs\" and exit 0. Do NOT create a branch, commit, or PR. |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| `pending == 0 AND deferred > 0` | Create a report-only batch. Do not run the extraction loop. Create an empty changeset (`entries: []`) and a report PR whose dynamic content is the Deferred Queue section. |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For a deferred-only report batch, write the empty changeset and report file, then commit and push them before Step 4 creates the Report PR."
+        }
+      ]
+    },
+    {
+      "id": "extract-metric-queries-pending-and-collected-as-union",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Query merged PRs with `knowledge:pending` and merged PRs with `knowledge:collected` separately, union the results, then parse latest decision blocks where `layer == \"L2\" AND decision == \"extract\"`."
         }
       ]
     },
@@ -35,6 +52,23 @@
         {
           "doc": "quality_gate_skill",
           "contains": "If the candidate array is empty, return an empty verdict array immediately. This is not an error."
+        }
+      ]
+    },
+    {
+      "id": "quality-gate-is-lazy-layer2-skipped-on-layer1-failure",
+      "checks": [
+        {
+          "doc": "quality_gate_skill",
+          "contains": "**Layer 2 runs only for candidates that pass Layer 1.**"
+        },
+        {
+          "doc": "quality_gate_skill",
+          "contains": "MUST run Layer 2 only for candidates that pass Layer 1 (a Layer 1 failure is an immediate FAIL and skips Layer 2); within Layer 2, run R7 only when no rejection code exists yet"
+        },
+        {
+          "doc": "quality_gate_skill",
+          "contains": "run R7 only for candidates that still have **no rejection code** after R1 and R6."
         }
       ]
     },

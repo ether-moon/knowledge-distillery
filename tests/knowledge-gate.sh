@@ -473,6 +473,55 @@ assert_contains "${domain_report_output}" "orphan -- created" "domain-report sho
 assert_contains "${domain_report_output}" "Broadest pattern: src/" "domain-report should warn about broad path patterns"
 assert_contains "${domain_report_output}" "docs/missing/ -- no domain mapping" "domain-report should surface structural mismatches"
 
+RECENT_VAULT="$TMP_DIR/recent.db"
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" init-db "$RECENT_VAULT" >/dev/null
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" domain-add test "Test domain for backtest CLI" >/dev/null
+
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
+  --type fact --title "t1" --claim "c1" --body "b1" \
+  --domain test --considerations "x" --evidence "pr:#10" >/dev/null
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
+  --type fact --title "t2" --claim "c2" --body "b2" \
+  --domain test --considerations "x" --evidence "pr:#20" >/dev/null
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
+  --type fact --title "t3" --claim "c3" --body "b3" \
+  --domain test --considerations "x" --evidence "pr:#20,pr:#30" >/dev/null
+# Seed-style entry whose 'pr' evidence ref is not a PR number (e.g. bootstrap
+# knowledge). recent-accepted-prs must not emit it as a PR (gh pr view would 404).
+KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" add \
+  --type fact --title "t0" --claim "c0" --body "b0" \
+  --domain test --considerations "x" --evidence "pr:#0-seed" >/dev/null
+sqlite3 "$RECENT_VAULT" "
+  UPDATE entries SET created_at = '2026-01-01 00:00:00' WHERE id = 't0';
+  UPDATE entries SET created_at = '2026-01-01 00:00:01' WHERE id = 't1';
+  UPDATE entries SET created_at = '2026-01-01 00:00:02' WHERE id = 't2';
+  UPDATE entries SET created_at = '2026-01-01 00:00:03' WHERE id = 't3';
+"
+
+recent_output="$(KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" recent-accepted-prs --limit 50)"
+recent_count="$(echo "$recent_output" | wc -l | tr -d ' ')"
+assert_eq "3" "$recent_count" "recent-accepted-prs should dedupe and return 3 unique PRs"
+assert_contains "$recent_output" "10" "recent-accepted-prs should contain PR 10"
+assert_contains "$recent_output" "20" "recent-accepted-prs should contain PR 20"
+assert_contains "$recent_output" "30" "recent-accepted-prs should contain PR 30"
+if echo "$recent_output" | grep -q '0-seed'; then
+  fail "recent-accepted-prs should exclude non-numeric (non-PR) evidence refs"
+fi
+
+recent_limited="$(KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" recent-accepted-prs --limit 1)"
+recent_limited_count="$(echo "$recent_limited" | wc -l | tr -d ' ')"
+assert_eq "2" "$recent_limited_count" "recent-accepted-prs --limit 1 should return refs from the most recent entry only"
+assert_contains "$recent_limited" "20" "recent-accepted-prs --limit 1 should contain PR 20"
+assert_contains "$recent_limited" "30" "recent-accepted-prs --limit 1 should contain PR 30"
+
+recent_entry_limited="$(KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" recent-accepted-prs --entry-limit 1)"
+assert_eq "$recent_limited" "$recent_entry_limited" "recent-accepted-prs --entry-limit should alias --limit"
+
+if recent_invalid_output="$(KNOWLEDGE_VAULT_PATH="$RECENT_VAULT" "$GATE" recent-accepted-prs --limit 0 2>&1)"; then
+  fail "recent-accepted-prs should reject invalid limits"
+fi
+assert_contains "$recent_invalid_output" "Invalid --limit" "recent-accepted-prs should explain invalid limits"
+
 export KNOWLEDGE_VAULT_PATH="${REPO_DIR}/.knowledge/vault.db"
 migrate_output="$("${GATE}" migrate)"
 assert_contains "${migrate_output}" "Already at version" "migrate should no-op cleanly when no migrations apply"
@@ -480,6 +529,8 @@ assert_contains "${migrate_output}" "Already at version" "migrate should no-op c
 help_output="$("${GATE}" help)"
 assert_contains "${help_output}" "query-domain [--ids-only] <domain>" "help should document lightweight entry indexes"
 assert_contains "${help_output}" "get-many <id>..." "help should document batch detail retrieval"
+assert_contains "${help_output}" "recent-accepted-prs [--limit N|--entry-limit N]" "help should document recent accepted PR lookup"
+assert_contains "${help_output}" "N is a recent active entry limit; output PRs are deduplicated" "help should explain recent accepted PR limit semantics"
 assert_contains "${help_output}" "domain-list [--status X] [--ids-only]" "help should document lightweight domain indexes"
 assert_contains "${help_output}" "_pipeline-update <id>" "help should document pipeline update"
 

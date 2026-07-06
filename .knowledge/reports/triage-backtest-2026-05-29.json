@@ -1,0 +1,21 @@
+[
+{"pr":"46","layer":"L2","result":{"decision":"extract","reason":"파일 수준 패턴 허용 결정과 검증 로직 변경이 함께 포함되어 있고 decision 파일과 memento 신호가 존재함","signals":["decision file: allow-file-level-patterns.md","memento=true","validation logic change in knowledge-gate script","test updates accompanying the behavior change"]}}
+,
+{"pr":"24","layer":"L2","result":{"decision":"skip","reason":"Test-only PR adding regression harnesses with no decision signals and no manifest signals (no linear/slack/notion/greptile)","signals":["all files under tests/ or .github/workflows/test-harness.yml","title prefix 'test:' indicates test additions","body describes test coverage expansion only","no decision keywords (decide/policy/ADR/convention) in title or body","manifest_summary shows linear=0, slack=0, notion=0, greptile_comments=0","memento=true but no other external evidence signals"]}}
+,
+{"pr":"23","layer":"L2","result":{"decision":"extract","reason":"Docs changes encode policy decisions (new R7 rule, criterion 4d replacement, fact-type narrowing) with explicit rationale and design tradeoffs.","signals":["decision keywords: decision, must, reject, criterion","policy/convention changes in extract-candidates and quality-gate skills","rationale documented (2026-03-24 batch false positives)","scoping decision: R7 as heuristic, git log traceability not a reject reason"]}}
+,
+{"pr":"20","layer":"L2","result":{"decision":"extract","reason":"버그 픽스와 함께 memento-commit 워크플로우 사용을 의무화하는 결정 파일이 포함되어 있어 추출 가치가 있음","signals":["decisions/ 경로에 ADR 추가 (always-use-memento-commit)","skill 수정으로 notes push 동작 변경","manifest 신호는 약하나 결정 경로 명확"]}}
+,
+{"pr":"21","layer":"L2","result":{"decision":"extract","reason":"Contains decision records (ADR-style files in .knowledge/decisions/) and meaningful CLI/skill changes with memento evidence.","signals":["2 decision files in .knowledge/decisions/ (domain naming quality, registry reuse policy)","New CLI flag --ids-only with 53 additions to knowledge-gate script","extract-candidates SKILL.md +67 lines (domain naming guidance)","memento manifest signal present","Test additions cover new contract (prompt-contracts.sh)"]}}
+,
+{"pr":"17","layer":"L2","result":{"decision":"extract","reason":"Architectural change replacing binary vault.db commits with text changeset flow — clear convention/policy signals in workflow design","signals":["new apply-changeset.yml workflow establishes post-merge convention","SKILL.md updates encode new batch-refine/curate-report procedures","structural decision: vault.db only modified on main (architectural rule)","CLI adds _changeset-apply command — new convention","knowledge:collected label indicates evidence already gathered"]}}
+,
+{"pr":"13","layer":"L2","result":{"decision":"extract","reason":"플러그인 스킬 메타데이터 및 안전성 수정(.env 스테이징 방지, --only 사용)이 포함된 결정/정책 변경","signals":["safety fix: git add -A → 선택적 스테이징 규칙","record-decision에 git commit --only 적용으로 누설 방지","pipeline-internal 스킬 user-invocable:false 정책 확립","skill description/argument-hint 컨벤션 정립"]}}
+,
+{"pr":"11","layer":"L2","result":{"decision":"extract","reason":"신규 skill 추가 + AGENTS.md에 Decision Recording 섹션(정책/규칙 신호) + decisions/ 경로의 결정 기록 포함","signals":["AGENTS.md에 Decision Recording 정책 섹션 추가","`.knowledge/decisions/` 경로의 결정 기록 파일 포함","record-decision 스킬 신규 추가 (컨벤션/정책 정의)"]}}
+,
+{"pr":"10","layer":"L2","result":{"decision":"extract","reason":"코드 + 워크플로 + 스킬 신규 추가로 큐레이션 기능 도입 결정과 컨벤션 신호가 명확하다.","signals":["new workflow file curate-report.yml","new skill curate-report/SKILL.md (190 lines)","CLI commands _pipeline-archive/_pipeline-update added","convention: /curate comment trigger on knowledge/batch-* branches"]}}
+,
+{"pr":"7","layer":"L2","result":{"decision":"extract","reason":"AGENTS.md/CLAUDE.md 디렉티브 이전과 memento 워크플로우 정책을 신설하는 결정 신호가 명확함.","signals":["AGENTS.md에 Knowledge Vault/Memento 운영 규칙 신설(+14)","CLAUDE.md @AGENTS.md 위임 패턴 채택","PostToolUse 훅으로 메멘토 노트 강제 정책 도입","init skill이 디렉티브 파일 패턴 감지 규칙 추가"]}}
+]
