@@ -1,0 +1,23 @@
+## Decisions Made
+- Minor release bump: Used the user-requested minor version level and promoted the plugin manifest from 0.3.0 to 0.4.0.
+- Base branch release path: Per repository versioning policy, performed the bump on latest origin/main in an isolated worktree.
+
+## Problems Encountered
+- knowledge-gate not on PATH: Used the repository-shipped plugins/knowledge-distillery/scripts/knowledge-gate entry point instead.
+- No 0.3.0 bump commit found: Treated the checked-in plugin manifest version as the source of truth and bumped from 0.3.0.
+
+## Constraints Identified
+- Plugin marketplace layout: Vault guidance requires plugin assets to remain under plugins/<name>, so the existing plugin manifest path was preserved.
+- Memento requirement: Repository policy requires every commit to carry a refs/notes/commits session note.
+
+## Open Questions
+- None
+
+## Context
+The session prepared a deployable minor version update for the Knowledge Distillery Claude Code plugin on the base branch. The release changed CHANGELOG.md and plugins/knowledge-distillery/.claude-plugin/plugin.json only. The resulting version is 0.4.0 with a 2026-07-06 changelog entry.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+- `marketplace-structure-for-plugin-distribution` [followed]: Confirmed the manifest remains under the required plugins/<name> marketplace structure.
