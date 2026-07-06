@@ -47,4 +47,30 @@ assert_contains "$OUT" '"rule":"bot-dependency-update"' "R1 should win for subst
 OUT="$(echo '{"author":{"login":"dependabot[bot]","is_bot":true},"title":"Revert \"bump foo\"","files":["package-lock.json"],"body":"This reverts commit abc123."}' | bash "$SCRIPT" --layer1-only)"
 assert_contains "$OUT" '"rule":"bot-dependency-update"' "R1 should run before R4 when multiple rules match"
 
+# R5 docs-only (no decision signal) → skip
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"docs: update readme","files":["README.md","docs/guide.md"],"body":"Fix typos and clarify wording."}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"skip"' "R5 docs-only with no decision signal should skip"
+assert_contains "$OUT" '"rule":"docs-only"' "R5 reason should be docs-only"
+
+# R5 guard: decision keyword in body → pass (not skipped)
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"docs: architecture notes","files":["docs/notes.md"],"body":"We decided to adopt the new convention."}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"pass"' "R5 guard: docs with a decision keyword must not skip"
+
+# R5 guard: decision path (docs/adr/) → pass
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"docs: add record","files":["docs/adr/0001-foo.md"],"body":"Background only."}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"pass"' "R5 guard: docs under docs/adr/ must not skip"
+
+# R5 guard: decision keyword in title → pass
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"docs: deprecate old policy","files":["docs/x.md"],"body":""}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"pass"' "R5 guard: decision keyword in title must not skip"
+
+# R5 not all-docs (one code file) → pass
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"docs and code","files":["README.md","src/x.ts"],"body":"mixed"}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"pass"' "R5 requires ALL files to be docs"
+
+# R6 i18n-only → skip
+OUT="$(echo '{"author":{"login":"alice","is_bot":false},"title":"i18n: korean","files":["frontend/locales/ko.po","frontend/locales/en.po"],"body":""}' | bash "$SCRIPT" --layer1-only)"
+assert_contains "$OUT" '"decision":"skip"' "R6 i18n-only should skip"
+assert_contains "$OUT" '"rule":"i18n-only"' "R6 reason should be i18n-only"
+
 echo "triage-backtest tests passed"

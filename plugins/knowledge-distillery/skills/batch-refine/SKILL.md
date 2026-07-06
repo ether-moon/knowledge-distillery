@@ -197,64 +197,21 @@ for pr in pending_prs (sorted by mergedAt asc):
 
 **Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), record the failure in the progress table for that PR (`❌ failed: <error>`), do not flip its label, and continue with the next PR. PR-level failures MUST NOT block the rest of the batch.
 
-### Step 4: Maintain Report PR
+### Step 4: Maintain Report PR (per-commit — cheap)
 
-After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md` and reconcile the reviewer set.
-
-**Why reviewers are auto-assigned:** Source PR authors of every accumulated changeset entry get review-requested on the Report PR so they receive a fast feedback loop on how their PR was distilled. The changeset grows incrementally across the per-PR loop (and across self-retrigger runs), so the reviewer set is reconciled on every Report PR refresh — new authors get added; previously-requested ones stay.
-
-**Reviewer collection procedure (run on every create / refresh):**
-
-1. Iterate every entry in `.knowledge/changesets/batch-YYYY-MM-DD.json` (`entries[]` — every `status` is included; entries of every status share the same `data.evidence[]` shape). Collect every PR number from `entries[].data.evidence[].ref` (e.g., `"#27"` → `27`).
-2. Deduplicate the PR-number set.
-3. For each unique PR number, resolve the author and bot flag using the `gh` CLI (not GitHub MCP — the `jq` pipe format below is what the next step parses):
-   ```bash
-   gh pr view <num> --json author --jq '.author.login + "|" + (.author.is_bot | tostring)'
-   ```
-   On error for a single PR, log a warning and skip — continue collecting other authors.
-4. Filter the resolved authors:
-   - Drop entries where `is_bot == true`.
-   - Drop empty / null logins (deleted accounts).
-   - Deduplicate by login.
+After the **first** PR commits successfully and pushes the branch, ensure a Report PR exists. After every subsequent PR commit, refresh the PR body from `.knowledge/reports/batch-YYYY-MM-DD.md`. Both operations are cheap: they read the already-committed report file and touch only this batch's PR.
 
 **Create or refresh the Report PR:**
 
 ```text
 If no PR with head=knowledge/batch-YYYY-MM-DD exists:
   Use GitHub MCP to create a PR (title/body/base/head per "Report PR Format" below).
-  Pass `reviewers` = the filtered author list (omit the argument entirely when the list is empty).
+  Do NOT compute or pass `reviewers` here — the reviewer set is reconciled once at batch completion (Step 7b).
 Else:
   Use GitHub MCP to update the existing PR's body from the latest report file.
-  Then add any new reviewers idempotently:
-    gh pr edit <pr_number> --add-reviewer <login1>,<login2>,...
-  `--add-reviewer` re-requesting an already-requested reviewer is a no-op, so the call is safe to make on every refresh with the full current set. Skip the call when the list is empty.
 ```
 
-If GitHub MCP rejects the entire `reviewers` argument on PR creation, retry the create call once without it so the PR is still created, then log a warning. The reviewer set will be reconciled by `gh pr edit --add-reviewer` on the next refresh.
-
-**Deferred Queue collection (on every Report PR create / refresh):**
-
-```
-Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login). For each PR, fetch issue comments and locate the latest `<!-- KD_TRIAGE_DECISION_START -->` block. Extract the JSON payload's `reason` field.
-```
-
-- Fill the Report PR Format's "Deferred Queue (Human Curation Required)" table.
-- If none exist, render the section with the empty-state sentence.
-- This collection is read-only and MUST NOT run `collect-evidence`, `extract-candidates`, or `quality-gate`.
-- In a deferred-only report batch, this section is the report's only dynamic review content; Summary and candidate sections should explicitly show zero/empty values.
-
-**Triage metric collection (on every Report PR create / refresh):**
-
-All Layer 2 decisions (`skip`, `extract`, `defer`) are recorded in PR comments as `KD_TRIAGE_DECISION` blocks by `mark-evidence`.
-
-1. Query merged PRs with `knowledge:skipped`; parse their latest `KD_TRIAGE_DECISION` blocks.
-   - `layer == "L1"` contributes to Layer 1 skip count grouped by `rule`.
-   - `layer == "L2" AND decision == "skip"` contributes to Layer 2 skip count grouped by `reason`.
-2. Query merged PRs with `knowledge:deferred`; parse latest decision blocks where `layer == "L2" AND decision == "defer"`.
-3. Query merged PRs with `knowledge:pending` and merged PRs with `knowledge:collected` separately, union the results, then parse latest decision blocks where `layer == "L2" AND decision == "extract"`. (These two labels are mutually exclusive, so a single both-labels query would always return zero — they must be queried as two separate sets.)
-4. Use the pending PR count from Step 1 as `knowledge:pending queue length at batch start`.
-5. Use the total `knowledge:skipped` result count as cumulative skipped PR count.
-6. For recent positive-recall regression rate, read the newest `.knowledge/reports/triage-backtest-YYYY-MM-DD.md` if present. If absent, render `N/A`.
+**Do NOT run reviewer reconciliation, Deferred Queue collection, or triage metric collection on every per-PR refresh.** Each is O(all labeled PRs); running them per PR multiplies that by the batch size and by every self-retrigger — the exact scan cost this pipeline is meant to reduce. They run **once, at batch completion** (Step 7b). Keep the per-PR loop cheap so throughput scales with queue size.
 
 **MUST NOT auto-merge the report PR.** Human review is the intervention point.
 
@@ -314,9 +271,13 @@ Notes:
 - Preserve `_domain_maintenance` annotations from extract-candidates so the report can surface follow-up domain cleanup suggestions.
 - Preserve `_vault_feedback` annotations from extract-candidates so the report can surface feedback on existing vault entries.
 
-### Step 7: Domain Change Summary (after the PR loop)
+### Step 7: Domain Change Summary + Batch-Completion Reconciliation (after the PR loop)
 
-Run this after the per-PR loop ends — either because all PRs are processed, or because a graceful handoff is about to fire. Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data accumulated so far.
+Run this after the per-PR loop ends — either because all PRs are processed, or because a graceful handoff is about to fire.
+
+#### Step 7a: Domain Change Summary (runs on completion AND handoff)
+
+Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data accumulated so far.
 
 ```bash
 <knowledge-gate> domain-list --ids-only
@@ -330,9 +291,49 @@ Run this after the per-PR loop ends — either because all PRs are processed, or
 - Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
 - Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
-Append the domain summary to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run **only on full completion** — on the handoff path, the Graceful Handoff Procedure performs an additional handoff-row commit after Step 8.
+#### Step 7b: Batch-completion reconciliation (runs ONLY on full completion — skip on graceful handoff)
 
-**Linear ordering on budget hit:** Step 7 (Domain Change Summary) → Step 8 (Cleanup Verification) → Graceful Handoff Procedure (handoff row commit + retrigger decision) → exit 0.
+Reviewer reconciliation, Deferred Queue collection, and triage metric collection are each O(all labeled PRs). Run them **once**, on the run that completes the batch (all pending PRs processed, or a deferred-only report batch). On a graceful-handoff exit (`goto_graceful_handoff=1`), **skip Step 7b entirely** — an intermediate retrigger must not pay the O(N) scan; the final run that completes the batch runs it. Triage metrics are trend-only (see the Report's "운영 Metric" note), so surfacing them only on the completing run is acceptable, and reviewer assignment only needs to be correct at the point a human reviews (batch complete).
+
+**Reviewer reconciliation:** Source PR authors of accumulated changeset entries get review-requested on the Report PR so they get feedback on how their PR was distilled.
+
+1. Iterate every entry in `.knowledge/changesets/batch-YYYY-MM-DD.json` (`entries[]` — every `status` is included; entries of every status share the same `data.evidence[]` shape). Collect every PR number from `entries[].data.evidence[].ref` (e.g., `"#27"` → `27`).
+2. Deduplicate the PR-number set.
+3. For each unique PR number, resolve the author and bot flag using the `gh` CLI (not GitHub MCP — the `jq` pipe format below is what the next step parses):
+   ```bash
+   gh pr view <num> --json author --jq '.author.login + "|" + (.author.is_bot | tostring)'
+   ```
+   On error for a single PR, log a warning and skip — continue collecting other authors.
+4. Filter the resolved authors: drop entries where `is_bot == true`, drop empty / null logins (deleted accounts), deduplicate by login.
+5. Add the filtered set to the Report PR idempotently: `gh pr edit <pr_number> --add-reviewer <login1>,<login2>,...`. Re-requesting an already-requested reviewer is a no-op. Skip the call when the list is empty.
+
+**Deferred Queue collection:**
+
+```
+Use GitHub MCP to list merged PRs with the `knowledge:deferred` label (fields: number, title, author.login). For each PR, fetch issue comments and locate the latest `<!-- KD_TRIAGE_DECISION_START -->` block. Extract the JSON payload's `reason` field.
+```
+
+- Fill the Report PR Format's "Deferred Queue (Human Curation Required)" table.
+- If none exist, render the section with the empty-state sentence.
+- This collection is read-only and MUST NOT run `collect-evidence`, `extract-candidates`, or `quality-gate`.
+- In a deferred-only report batch, this section is the report's only dynamic review content; Summary and candidate sections should explicitly show zero/empty values.
+
+**Triage metric collection:**
+
+All Layer 2 decisions (`skip`, `extract`, `defer`) are recorded in PR comments as `KD_TRIAGE_DECISION` blocks by `mark-evidence`.
+
+1. Query merged PRs with `knowledge:skipped`; parse their latest `KD_TRIAGE_DECISION` blocks.
+   - `layer == "L1"` contributes to Layer 1 skip count grouped by `rule`.
+   - `layer == "L2" AND decision == "skip"` contributes to Layer 2 skip count grouped by `reason`.
+2. Query merged PRs with `knowledge:deferred`; parse latest decision blocks where `layer == "L2" AND decision == "defer"`.
+3. Query merged PRs with `knowledge:pending` and merged PRs with `knowledge:collected` separately, union the results, then parse latest decision blocks where `layer == "L2" AND decision == "extract"`. (These two labels are mutually exclusive, so a single both-labels query would always return zero — they must be queried as two separate sets.)
+4. Use the pending PR count from Step 1 as `knowledge:pending queue length at batch start`.
+5. Use the total `knowledge:skipped` result count as cumulative skipped PR count.
+6. For recent positive-recall regression rate, read the newest `.knowledge/reports/triage-backtest-YYYY-MM-DD.md` if present. If absent, render `N/A`.
+
+Append the domain summary (and, on full completion, the reconciled Deferred Queue and triage metrics) to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run **only on full completion** — on the handoff path, the Graceful Handoff Procedure performs an additional handoff-row commit after Step 8.
+
+**Linear ordering on budget hit:** Step 7a (Domain Change Summary; Step 7b reconciliation is skipped on handoff) → Step 8 (Cleanup Verification) → Graceful Handoff Procedure (handoff row commit + retrigger decision) → exit 0.
 
 ### Step 8: Cleanup Verification
 
@@ -382,7 +383,7 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 
 | Metric | 값 |
 |--------|----|
-| Layer 1 skip 수 | {N} ({bot-dependency-update=N, lockfile-only=N, generated-only=N, auto-revert=N}) |
+| Layer 1 skip 수 | {N} ({bot-dependency-update=N, lockfile-only=N, generated-only=N, auto-revert=N, docs-only=N, i18n-only=N}) |
 | Layer 2 skip 수 | {N} |
 | Layer 2 defer 수 | {N} |
 | Layer 2 extract 수 | {N} |
@@ -494,8 +495,8 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | Branch already exists | Checkout existing branch (supports re-runs and self-retriggers). |
 | `MAX_RETRY_COUNT` reached | Append `❗ 재시도 한도 도달` row, do not retrigger, exit 0. |
 | `gh pr view` fails for a single PR while collecting reviewers | Skip that PR's author, log a warning, continue with the others. |
-| Resolved reviewer list is empty after filtering | Skip the `reviewers` argument on create / skip the `gh pr edit --add-reviewer` call on refresh. |
-| GitHub MCP rejects the `reviewers` argument on PR creation | Retry the create call once without `reviewers`; log a warning. PR creation must still succeed. Reviewers will be reconciled via `gh pr edit --add-reviewer` on the next refresh. |
+| Resolved reviewer list is empty after filtering | Skip the `gh pr edit --add-reviewer` call in Step 7b. |
+| `gh pr edit --add-reviewer` fails or a login is rejected at completion (Step 7b) | Log a warning and continue — reviewer assignment is best-effort and not correctness-critical; the PR is already created. |
 | GitHub silently drops some reviewers (no repo access, etc.) | No action — treat the result as successful. GitHub handles it. |
 
 ## Constraints

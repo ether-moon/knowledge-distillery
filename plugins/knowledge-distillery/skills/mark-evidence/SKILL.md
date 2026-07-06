@@ -74,7 +74,7 @@ If a Manifest and `KD_TRIAGE_DECISION` block exist but no knowledge state label 
 
 Skip this step when Step 1 matched C1b. Manual promote and partial-failure recovery must create a Manifest without rerunning triage.
 
-Before building the Manifest, evaluate four deterministic rules. If any rule matches, skip the PR immediately and do not run Step 2 or later steps.
+Before building the Manifest, evaluate six deterministic rules. If any rule matches, skip the PR immediately and do not run Step 2 or later steps.
 
 **Fetch only the minimum input first:**
 
@@ -90,6 +90,8 @@ Use GitHub MCP to fetch PR #{pr_number}: title, body, author (login + is_bot), c
 | R2 | Every changed file matches a lockfile pattern | `lockfile-only` |
 | R3 | Every changed file matches a generated pattern | `generated-only` |
 | R4 | PR title starts with `Revert "` AND body is empty or only matches GitHub's auto-revert text (`This reverts commit <sha>.`) | `auto-revert` |
+| R5 | Every changed file matches a docs pattern AND no decision signal is present (see decision-signal guard below) | `docs-only` |
+| R6 | Every changed file matches an i18n/translation pattern | `i18n-only` |
 
 **Lockfile patterns:**
 
@@ -119,6 +121,25 @@ Cargo.toml, composer.json, mix.exs
 dependabot, renovate, bump, update dependency, update dependencies,
 upgrade dependency, upgrade dependencies
 ```
+
+**Docs patterns (R5 only):**
+
+```
+*.md, *.txt, *.rst, docs/**
+```
+
+**i18n/translation patterns (R6 only):**
+
+```
+**/locales/**, *.po, *.pot
+```
+
+**Decision-signal guard (R5 only — if ANY signal is present, R5 does NOT match; fall through to Layer 2):**
+
+- Keywords (case-insensitive substring, in title OR body): `decide`, `decision`, `convention`, `policy`, `ADR`, `deprecate`, `adopt`, `must`, `must not`, `결정`, `정책`, `규칙`, `채택`, `금지`, `폐기`, `합의`
+- Paths (any changed file): `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
+
+This guard mirrors the Layer 2 docs-only criteria so a docs PR that encodes a real decision (ADR/RFC/policy) is never deterministically skipped — the value of a missed decision outweighs the cost of one extra Layer 2 pass.
 
 **On skip:**
 

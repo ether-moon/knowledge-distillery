@@ -56,6 +56,23 @@
       ]
     },
     {
+      "id": "quality-gate-is-lazy-layer2-skipped-on-layer1-failure",
+      "checks": [
+        {
+          "doc": "quality_gate_skill",
+          "contains": "**Layer 2 runs only for candidates that pass Layer 1.**"
+        },
+        {
+          "doc": "quality_gate_skill",
+          "contains": "MUST run Layer 2 only for candidates that pass Layer 1 (a Layer 1 failure is an immediate FAIL and skips Layer 2); within Layer 2, run R7 only when no rejection code exists yet"
+        },
+        {
+          "doc": "quality_gate_skill",
+          "contains": "run R7 only for candidates that still have **no rejection code** after R1 and R6."
+        }
+      ]
+    },
+    {
       "id": "partial-failures-do-not-stop-the-batch",
       "checks": [
         {

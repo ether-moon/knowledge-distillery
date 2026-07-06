@@ -114,7 +114,11 @@ jobs:
               `gh workflow run batch-refine.yml -f retry_count=$((RETRY_COUNT + 1))` if
               RETRY_COUNT < MAX_RETRY_COUNT and pending PRs remain) and exit 0.
             - RETRY_COUNT=$RETRY_COUNT, MAX_RETRY_COUNT=$MAX_RETRY_COUNT.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          # Session default: Sonnet + medium effort. This covers the orchestrator's
+          # mechanical bookkeeping and the per-PR collect-evidence + extract-candidates
+          # work. The precision-critical quality-gate upgrades itself to `effort: high`
+          # via its own SKILL.md frontmatter while that skill is active.
+          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files

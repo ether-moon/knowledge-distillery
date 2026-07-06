@@ -77,6 +77,54 @@ is_dependency_metadata() {
   esac
 }
 
+is_docs() {
+  local path="$1"
+  local base
+  base="$(path_basename "$path")"
+  case "$path" in
+    docs/*|*/docs/*) return 0 ;;
+  esac
+  case "$base" in
+    *.md|*.txt|*.rst) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_i18n() {
+  local path="$1"
+  local base
+  base="$(path_basename "$path")"
+  case "$path" in
+    locales/*|*/locales/*) return 0 ;;
+  esac
+  case "$base" in
+    *.po|*.pot) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Decision-signal guard for the docs-only rule. Mirrors mark-evidence/SKILL.md
+# L2 keywords/paths so a docs PR that encodes a decision is NOT skipped.
+has_decision_signal() {
+  local pr_json="$1"
+  local combined file
+  combined="$(echo "$pr_json" | jq -r '((.title // "") + "\n" + (.body // ""))' | tr '[:upper:]' '[:lower:]')"
+  case "$combined" in
+    *decide*|*decision*|*convention*|*policy*|*adr*|*deprecate*|*adopt*|*must*|*결정*|*정책*|*규칙*|*채택*|*금지*|*폐기*|*합의*)
+      return 0 ;;
+  esac
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    case "$file" in
+      docs/adr/*|*/docs/adr/*|docs/decisions/*|*/docs/decisions/*|CONTEXT.md|*/CONTEXT.md|RFC*|*/RFC*)
+        return 0 ;;
+    esac
+  done <<EOF
+$(echo "$pr_json" | json_files)
+EOF
+  return 1
+}
+
 json_files() {
   jq -r '.files[]? | if type == "string" then . else .path end'
 }
@@ -119,7 +167,8 @@ layer1_eval() {
   body="$(echo "$pr_json" | jq -r '.body // ""')"
 
   # Rule order mirrors mark-evidence/SKILL.md (first match wins):
-  # R1 bot-dependency-update → R2 lockfile-only → R3 generated-only → R4 auto-revert.
+  # R1 bot-dependency-update → R2 lockfile-only → R3 generated-only → R4 auto-revert
+  # → R5 docs-only (no decision signal) → R6 i18n-only.
   if [ "$author_is_bot" = "true" ] && [[ "$title_lower" =~ dependabot|renovate|bump|update\ dependenc|upgrade\ dependenc ]]; then
     if all_files_dep_related "$pr_json"; then
       echo '{"decision":"skip","rule":"bot-dependency-update"}'
@@ -139,6 +188,16 @@ layer1_eval() {
 
   if [[ "$title" == Revert\ \"* ]] && { [ -z "$body" ] || [[ "$body" =~ ^This\ reverts\ commit\ [a-f0-9]+\.$ ]]; }; then
     echo '{"decision":"skip","rule":"auto-revert"}'
+    return
+  fi
+
+  if all_files_match "$pr_json" is_docs && ! has_decision_signal "$pr_json"; then
+    echo '{"decision":"skip","rule":"docs-only"}'
+    return
+  fi
+
+  if all_files_match "$pr_json" is_i18n; then
+    echo '{"decision":"skip","rule":"i18n-only"}'
     return
   fi
 
@@ -169,7 +228,10 @@ EOF
 )
   err_file="$(mktemp)"
   status=0
-  response=$(echo "$prompt" | claude --print 2>"$err_file") || status=$?
+  # Match the production Stage A tier (mark-evidence runs Sonnet + medium effort) so
+  # the backtest approximates the real L2 classifier. A model/effort change here defines
+  # a NEW baseline — do not compare recall across the tiering boundary.
+  response=$(echo "$prompt" | claude --print --model claude-sonnet-5 --effort medium 2>"$err_file") || status=$?
   if [ "$status" -ne 0 ]; then
     first_err="$(head -1 "$err_file" | tr -d '\r')"
     rm -f "$err_file"

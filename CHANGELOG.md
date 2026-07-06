@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-07-06
+
+### Improved
+
+- **pipeline (model tiering)**: Pin explicit models — Stage A (`mark-evidence`), the `batch-refine` session, and the triage backtest now run on Sonnet 5 with medium reasoning effort; the precision-critical `quality-gate` raises itself to high effort via SKILL.md frontmatter. Cuts token/latency on the high-frequency, low-judgment paths while protecting the gate against false positives.
+- **mark-evidence (Layer 1)**: Widen deterministic triage with `docs-only` (guarded by a decision-signal check so ADR/RFC/policy docs are never skipped) and `i18n-only` rules — these PRs now skip without an LLM triage call or manifest build.
+- **batch-refine (throughput)**: Run triage-metric collection, reviewer reconciliation, and Deferred Queue collection once per batch at completion (Step 7b) instead of on every per-PR Report PR refresh — removes the O(all labeled PRs) × PRs-in-batch × retriggers scan that grew with repo history.
+- **quality-gate (lazy evaluation)**: Skip Layer 2 (R6 vault queries, R7 artifact reads) for candidates that already failed Layer 1, and short-circuit the expensive R7 check once any rejection code exists.
+- **extract-candidates**: Trim redundant derivability (§4d) examples while preserving the Q1/Q2 test, conservative-extraction principle, and the git-history nuance.
+
 ## [0.2.6] - 2026-04-14
 
 ### Fixed
