@@ -214,14 +214,13 @@ Missing memento notes do NOT trigger `insufficient`.
 
 For each entry in `identifiers.greptile`:
 
-1. Fetch PR comments from the Greptile bot:
-   ```
-   Use GitHub MCP to list all review comments for PR #{pr_number}. Filter for comments by users whose login contains "greptile" (case-insensitive).
-   ```
+1. Derive Greptile comments **in-memory** from the comments already collected in Step 2 — do NOT issue new GitHub MCP calls. Filter both sources for entries whose author login contains "greptile" (case-insensitive):
+   - the review comments from Step 2 item 4 (`evidence.pr.review_comments`), and
+   - the issue-level comments from Step 2 item 5 (`evidence.pr.issue_comments`).
 
-2. Also check issue-level comments for Greptile bot comments.
+   Step 2 already retrieves both with the `author` field, so re-issuing the GitHub MCP "list review comments" / "list issue comments" calls here would be a redundant round-trip against the same paginated endpoints — it MUST NOT be repeated.
 
-3. Collect: `{ "path": "...", "line": N, "body": "..." }` for each comment.
+2. Collect: `{ "path": "...", "line": N, "body": "..." }` for each matching comment. Issue-level comments carry no `path`/`line` — include them with those fields omitted or `null`.
 
 Missing Greptile data does NOT trigger `insufficient`.
 

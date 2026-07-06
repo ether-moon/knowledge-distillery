@@ -123,6 +123,8 @@ Collect all existing active entries for these domains. These are needed for:
 - Identifying conflicts with existing entries
 - Understanding existing coverage
 
+> **Reused downstream — keep in-memory:** This existing-entry set is consumed again by the quality-gate's R6 duplicate check, which runs in the **same subagent context** for this PR. Preserve it in-memory so R6 can reuse it instead of re-issuing `query-domain` per domain. R6 is the authoritative duplicate/conflict decider (Step 4b below only sets hints).
+
 ### Step 2.5: Aggregate Vault Feedback
 
 Collect `vault_refs` from all memento entries in the Evidence Bundle:
@@ -166,10 +168,9 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 
 > **Conservative extraction principle:** "Explicitly stated agreement only" is intentionally narrow. False positives (wrong knowledge entering the vault) cost more than false negatives (missing valid knowledge). Wrong entries silently misguide agents and are hard to discover; missed knowledge can be re-extracted in the next refinement cycle. Resist the FOMO of "we might miss something."
 
-**4b. Not already known** — Compare against existing vault entries from Step 2.
+**4b. Not already known (hints only)** — Compare against existing vault entries from Step 2 to set *hints*, not to make the authoritative duplicate decision. The quality-gate's R6 is the single authoritative duplicate/conflict judge and re-checks at `effort: high`, so do NOT hard-drop borderline candidates here — that would decide a duplicate at the cheaper tier and can wrongly discard a valid entry. This mirrors the skill's own rule that filtering is the quality gate's job (see the Output section).
 
-- If a semantically identical entry exists → skip (not a candidate)
-- If a related but different entry exists → set `conflict_check` to that entry's ID
+- If a related or near-duplicate entry exists → keep the candidate and set `conflict_check` to that entry's ID so R6 can adjudicate. Skip outright **only** for a verbatim restatement that adds no new scope; when unsure, keep it and let R6 decide.
 - If vault feedback from Step 2.5 shows `outdated`/`conflicted` signals for an existing entry, AND this candidate covers the same scope → strengthen the conflict signal. Attach a `_vault_feedback` annotation to the candidate with the relevant feedback entries.
 
 **4c. Actionable** — The knowledge can guide future coding decisions.
@@ -177,13 +178,13 @@ Only explicit textual agreement counts. If no explicit agreement is visible in c
 - "We chose React" → not actionable for daily coding (too broad)
 - "Use React Server Components for data-fetching pages" → actionable
 
-**4d. Not directly derivable** — The knowledge adds value beyond what current repo artifacts already convey.
+**4d. Not directly derivable (cheap pre-filter)** — The knowledge adds value beyond what current repo artifacts already convey.
 
-**MUST: Verify Q1 against actual repo artifacts.** Do not guess derivability from the candidate text alone. Find and read the relevant artifacts — check `applies_to.paths`, grep for the class/function/pattern/config mentioned in the claim, or navigate from the evidence PR's changed files. Confirm whether the claim is already visible in the current codebase before deciding Q1. Skipping this step is the primary cause of false-positive extractions.
+**This is a cheap text-level pre-filter, NOT the authoritative derivability check.** Do NOT read repo files here. Estimate derivability from the candidate text and the evidence snippets already in the Evidence Bundle, and drop only **high-confidence** derivable candidates (primarily the "how-it-works" shapes below). **When you are unsure whether a claim is derivable, keep the candidate** — the quality-gate's R7 performs the authoritative, artifact-verified Q1/Q2 check at `effort: high`, re-reading the actual files and explicitly distrusting this pre-filter's self-description (see decision `2026-07-06-r7-sole-derivability-authority`). Because R7 re-verifies every survivor from scratch, a borderline candidate loses no precision by surviving to R7; over-dropping here only causes false negatives (lost knowledge), which the conservative-extraction principle re-extracts next cycle.
 
-Apply two questions in sequence:
+Apply two questions in sequence as a **heuristic estimate** (not a file-verified verdict):
 
-- **Q1 — Derivability:** Can the claim be directly derived by reading current repo artifacts? **You must read the relevant files to answer this — do not infer from the candidate text.** Any of the following makes Q1=yes:
+- **Q1 — Derivability (heuristic):** Would the claim likely be directly derivable by reading current repo artifacts? Judge from the candidate text and the bundle's evidence, not by reading files. Any of the following patterns makes Q1≈yes:
   - **Code structure** — functions, classes, modules, or control flow express the behavior described in the claim
   - **Comments / docstrings / error messages** — inline text already conveys the intent
   - **Config files** — `.gitignore`, YAML workflows, JSON configs, `package.json` scripts embody the rule
@@ -353,7 +354,7 @@ Note: `_proposed_domain` is only present when new domains are proposed (see Step
 - MUST NOT infer agreement from silence or approval-without-comment. Only explicit textual agreement counts.
 - MUST NOT create candidates with empty `considerations`
 - MUST NOT create anti-pattern candidates without `alternative`
-- MUST NOT duplicate existing vault entries (check via `knowledge-gate`)
+- SHOULD flag likely duplicates via `conflict_check` (compared against `query-domain` results) rather than hard-dropping them — the quality-gate's R6 is the authoritative duplicate check; skip outright only for verbatim restatements with no new scope
 - MUST NOT access vault.db directly — use `knowledge-gate` CLI only
 - MUST NOT call `_pipeline-insert`, `_pipeline-archive`, `_pipeline-update`, or `_changeset-apply` — these mutate vault.db. Candidates are returned in-memory to the orchestrator, which writes the changeset file.
 - MUST NOT write files to disk
