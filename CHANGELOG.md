@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0] - 2026-07-06
+
+### Improved
+
+- **release**: Prepare the base branch deployment by promoting the current Knowledge Distillery plugin package from 0.3.0 to 0.4.0.
+
 ## [0.3.0] - 2026-07-06
 
 ### Improved
