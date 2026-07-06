@@ -139,7 +139,7 @@ upgrade dependency, upgrade dependencies
 - Keywords (case-insensitive substring, in title OR body): `decide`, `decision`, `convention`, `policy`, `ADR`, `deprecate`, `adopt`, `must`, `must not`, `결정`, `정책`, `규칙`, `채택`, `금지`, `폐기`, `합의`
 - Paths (any changed file): `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
 
-This guard mirrors the Layer 2 docs-only criteria so a docs PR that encodes a real decision (ADR/RFC/policy) is never deterministically skipped — the value of a missed decision outweighs the cost of one extra Layer 2 pass.
+These R5/R6 pattern and guard blocks are the **single source of truth** for the docs-only/i18n skip criteria — the Layer 2 decision guide references them rather than restating them, so the two layers cannot drift. The guard keeps docs-only conservative so a docs PR that encodes a real decision (ADR/RFC/policy) is never deterministically skipped — the value of a missed decision outweighs the cost of one extra Layer 2 pass.
 
 **On skip:**
 
@@ -355,12 +355,7 @@ This step is not a separate model call. The Claude instance executing this skill
 **Decision guide:**
 
 - Conservative default: choose `skip` only when the PR is clearly low-value for knowledge extraction. If ambiguous, choose `extract` or `defer`.
-- Choose `skip` for:
-  - docs-only changes (`.md`, `.txt`, `.rst`, or `docs/**`) with no decision/policy signal.
-    - Decision keywords: `decide`, `decision`, `convention`, `policy`, `ADR`, `deprecate`, `adopt`, `must`, `must not`, `결정`, `정책`, `규칙`, `채택`, `금지`, `폐기`, `합의`
-    - Decision paths: `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
-    - If any signal is present, do not skip.
-  - i18n or translation-only changes (`**/locales/**`, `*.po`, `*.pot`).
+- Choose `skip` for `docs-only` (with its decision-signal guard) or `i18n-only` changes. **These use the exact patterns, keywords, and paths defined once in the Layer 1 R5/R6 blocks above — that is the single source of truth; do not restate them here.** Layer 1 already skips the clear-cut docs-only/i18n cases deterministically before this step, so at Layer 2 only skip a residual case those rules missed. If any decision signal is present, do not skip.
 - Choose `defer` when classification is not trustworthy and human curation is needed, such as large mixed changes with weak manifest signals, or test-only changes (`tests/**`, `test/**`, `*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping.
 - Choose `extract` for everything else.
 
