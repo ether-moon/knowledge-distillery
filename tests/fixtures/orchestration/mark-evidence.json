@@ -25,6 +25,15 @@
           "contains": "If a Manifest and `KD_TRIAGE_DECISION` block exist but no knowledge state label exists, recover the label from the latest decision block and exit successfully. Do not rebuild the Manifest or rerun triage."
         }
       ]
+    },
+    {
+      "id": "test-only-defers-not-skips",
+      "checks": [
+        {
+          "doc": "mark_evidence_skill",
+          "contains": "or test-only changes (`*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping."
+        }
+      ]
     }
   ]
 }

@@ -339,9 +339,8 @@ This step is not a separate model call. The Claude instance executing this skill
     - Decision keywords: `decide`, `decision`, `convention`, `policy`, `ADR`, `deprecate`, `adopt`, `must`, `must not`, `결정`, `정책`, `규칙`, `채택`, `금지`, `폐기`, `합의`
     - Decision paths: `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
     - If any signal is present, do not skip.
-  - test-only changes (`*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals (`linear`, `slack`, `memento`, `notion`, and `greptile_comments` are all zero/false).
   - i18n or translation-only changes (`**/locales/**`, `*.po`, `*.pot`).
-- Choose `defer` when classification is not trustworthy and human curation is needed, such as large mixed changes with weak manifest signals.
+- Choose `defer` when classification is not trustworthy and human curation is needed, such as large mixed changes with weak manifest signals, or test-only changes (`*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping.
 - Choose `extract` for everything else.
 
 **Decision payload format:**

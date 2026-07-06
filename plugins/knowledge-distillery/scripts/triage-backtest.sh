@@ -157,10 +157,10 @@ $(echo "$pr_json" | jq .)
 
 [판정 가이드]
 - 보수 편향: 확실히 낮은 가치일 때만 "skip". 애매하면 "extract" 또는 "defer".
-- "skip" 대상: docs-only + 결정 신호 없음, test-only + manifest 신호 부재, i18n only.
+- "skip" 대상: docs-only + 결정 신호 없음, i18n only.
   - 결정 키워드: decide, decision, convention, policy, ADR, deprecate, adopt, must, must not, 결정, 정책, 규칙, 채택, 금지, 폐기, 합의
   - 결정 경로: docs/adr/, docs/decisions/, CONTEXT.md, RFC*
-- "defer": 큰 PR + manifest 신호 빈약, 혼합 변경 등 신뢰 못 할 때.
+- "defer": 큰 PR + manifest 신호 빈약, 혼합 변경, test-only + manifest 신호 부재(테스트가 컨벤션을 담을 수 있어 drop 대신 사람 큐레이션) 등 신뢰 못 할 때.
 - "extract": 기본값.
 
 [출력] JSON 한 줄. 주석 금지:
