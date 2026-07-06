@@ -340,7 +340,7 @@ This step is not a separate model call. The Claude instance executing this skill
     - Decision paths: `docs/adr/`, `docs/decisions/`, `CONTEXT.md`, `RFC*`
     - If any signal is present, do not skip.
   - i18n or translation-only changes (`**/locales/**`, `*.po`, `*.pot`).
-- Choose `defer` when classification is not trustworthy and human curation is needed, such as large mixed changes with weak manifest signals, or test-only changes (`*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping.
+- Choose `defer` when classification is not trustworthy and human curation is needed, such as large mixed changes with weak manifest signals, or test-only changes (`tests/**`, `test/**`, `*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping.
 - Choose `extract` for everything else.
 
 **Decision payload format:**

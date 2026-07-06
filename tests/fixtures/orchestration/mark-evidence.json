@@ -31,7 +31,7 @@
       "checks": [
         {
           "doc": "mark_evidence_skill",
-          "contains": "or test-only changes (`*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping."
+          "contains": "or test-only changes (`tests/**`, `test/**`, `*_test.*`, `*.test.*`, `**/__tests__/**`) with no manifest signals — tests can still encode conventions worth capturing, so defer for human curation rather than skipping."
         }
       ]
     }
