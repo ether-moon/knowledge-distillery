@@ -1,0 +1,25 @@
+## Decisions Made
+- L2 triage에서 "test-only + manifest 신호 없음"을 skip → defer로 완화(recall 보호, 사람 큐레이션). 사용자 선택(option 1).
+- production 가이드(mark-evidence)와 backtest L2 프롬프트를 동시 수정해 fidelity 유지.
+- degraded backtest 리포트(3/10 fallback)는 커밋하지 않음. committed 2026-05-29(10%)은 완화 이전 "before"로 유지.
+
+## Problems Encountered
+- 완화 검증용 backtest 재실행이 claude rate limit으로 매번 3/10 L2 fallback 발생 → fallback-free 리포트 확보 실패. 단 핵심 PR #24는 fallback 아닌 실제 defer 판정(재실행 일관).
+
+## Constraints Identified
+- degraded 리포트의 0% skip은 fallback PR의 잠재적 skip을 가릴 수 있어 신뢰 불가 → usable(baseline validity) 리포트만 커밋.
+
+## Open Questions
+- fallback-free 세션에서 backtest 재실행해 공식 0% baseline 재기록 필요(현재 유일한 잔여 후속).
+
+## Context
+- PR #51: 정상 동작하게 된 backtest가 발견한 recall 회귀(PR #24)를 L2 가이드 완화로 대응. PoC 범위 유지.
+
+## Recorded Decisions
+- (없음 — record-decision 트리거 해당 없음)
+
+## Vault Entries Referenced
+- vault-changeset-not-direct-db
+- combine-commit-note-single-shell-call
+- push-notes-ref-after-commit
+- memento-commit-no-glob-staging
