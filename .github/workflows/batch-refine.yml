@@ -118,7 +118,7 @@ jobs:
           # mechanical bookkeeping and the per-PR collect-evidence + extract-candidates
           # work. The precision-critical quality-gate upgrades itself to `effort: high`
           # via its own SKILL.md frontmatter while that skill is active.
-          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files

@@ -86,7 +86,7 @@ jobs:
             Read all PR comments, classify feedback into reject/update/keep actions,
             update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary.
             Do NOT modify vault.db directly — operate on the changeset file only.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          claude_args: "--plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files
