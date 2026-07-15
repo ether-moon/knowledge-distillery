@@ -40,7 +40,14 @@ if [ "$remaining" -le 0 ]; then
 fi
 ```
 
-If `goto_graceful_handoff=1`, stop the loop and run the **Graceful Handoff Procedure** below. Do **not** start a new PR after the deadline — even a "small" PR can blow through the remaining margin once an LLM call stalls.
+If `goto_graceful_handoff=1`, stop the loop and continue to the **Post-budget completion gate** below. Only that gate's **Pending remains** branch enters the Graceful Handoff Procedure. Do **not** start a new PR after the deadline — even a "small" PR can blow through the remaining margin once an LLM call stalls.
+
+### Post-budget completion gate (before Step 7 and Step 8)
+
+After the deadline stops new dispatches and all in-flight work settles, re-query the current `knowledge:pending` count before running Step 7, Step 8, or any numbered Graceful Handoff step.
+
+- **Zero pending:** clear `goto_graceful_handoff`, reclassify the run as full completion, run Step 7 exactly once, then Step 8 exactly once, and exit through the normal full-completion path. Do not append a handoff row or self-retrigger.
+- **Pending remains:** keep `goto_graceful_handoff=1`, skip both Step 7a and Step 7b, run Step 8 exactly once, then enter the numbered Graceful Handoff steps.
 
 ### PR-atomic commit pattern
 
@@ -59,7 +66,7 @@ The order is intentional: **changeset/report committed and pushed before label f
 
 ### Graceful Handoff Procedure
 
-Triggered when the time-budget check fails. Performed once, after the last in-flight PR finishes (or never starts).
+Reached only from the Post-budget completion gate's **Pending remains** branch, after Step 8 has run exactly once. The numbered steps are performed once, after the last in-flight PR finishes (or never starts).
 
 1. **Confirm progress is committed.** If any in-flight changeset/report changes are uncommitted, commit + push now while the token is still valid.
 2. **Append a handoff row to the Report PR progress table** using the exact Markdown table row format below (matching the table schema in the "Report PR Progress Table" section — never use bullets here):
@@ -76,7 +83,6 @@ Triggered when the time-budget check fails. Performed once, after the last in-fl
    ```
    If retrigger succeeds, append `재트리거함 → run #<new_run_id>` (best-effort link) to the same row. If retrigger fails (401 already, or `actions: write` denied), do not retry — the next cron will pick up the leftover PRs.
 5. **If `MAX_RETRY_COUNT` reached:** append `❗ 재시도 한도 도달, 다음 cron까지 대기` to the row. Do **not** retrigger. Leave remaining PRs labeled `knowledge:pending`.
-   **If no `knowledge:pending` PRs remain (`classify_handoff` → `no-pending`, `format_handoff_row` → `남은 0개`):** still append the handoff row and commit/push, but do **not** retrigger even if `RETRY_COUNT < MAX_RETRY_COUNT`. The batch is naturally complete.
 6. **Exit 0.** A graceful handoff is a successful workflow run, not a failure. Failing the workflow would only generate noise.
 
 ### Unexpected 401 (ungraceful path)
@@ -164,7 +170,7 @@ for pr in pending_prs (sorted by mergedAt asc):
   # 3a. Time budget gate
   elapsed=$(( $(date +%s) - BATCH_START_TS ))
   if [ "$elapsed" -ge "$DEADLINE_SECONDS" ]; then
-    break   # → Graceful Handoff Procedure
+    break   # → Post-budget completion gate
   fi
 
   # 3b. Run pipeline for this single PR — MUST run in a fresh subagent
@@ -192,6 +198,7 @@ for pr in pending_prs (sorted by mergedAt asc):
   # 3c. Persist this PR's outcome (atomic checkpoint)
   - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
   - Append a progress table row with duration + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
+  - Append the result's compact KD_BATCH_PR_META line immediately after its per-PR detail
   - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
   - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
 
@@ -215,6 +222,14 @@ The per-PR subagent MUST measure its own `duration_seconds`. Start immediately b
 ```
 
 Format a known duration as `XmYs` in the progress status cell. Insufficient and non-auth failure rows MUST also include the duration. If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`. A `github_auth` payload follows the Unexpected 401 path: log its duration, but do not persist the auth-dead PR's row or timing.
+
+For every non-auth result persisted by Step 3c (`processed`, `insufficient`, or `failed`), serialize the result payload's PR identity and changed-file list as compact valid JSON on exactly one hidden report line immediately after that PR's detail:
+
+```markdown
+<!-- KD_BATCH_PR_META {"pr_number":1234,"changed_files":["path/to/file"]} -->
+```
+
+Normalize a missing `changed_files` field to `[]` before serializing the compact JSON. Generate the JSON with a JSON serializer so unusual path characters remain valid; do not construct it by string interpolation. Never write a `KD_BATCH_PR_META` marker for a `github_auth` result. The marker is part of the same atomic report commit as the human-readable row, and Report PR body refreshes MUST preserve it verbatim.
 
 #### Orchestrator timing and Actions logs
 
@@ -302,11 +317,11 @@ Notes:
 - Preserve `_domain_maintenance` annotations from extract-candidates so the report can surface follow-up domain cleanup suggestions.
 - Preserve `_vault_feedback` annotations from extract-candidates so the report can surface feedback on existing vault entries.
 
-### Step 7: Domain Change Summary + Batch-Completion Reconciliation (after the PR loop)
+### Step 7: Domain Change Summary + Batch-Completion Reconciliation (runs ONLY on full completion — skip entirely on graceful handoff)
 
-Run this after the per-PR loop ends — either because all PRs are processed, or because a graceful handoff is about to fire.
+Run this only after the per-PR loop exhausts the discovered work list, for a deferred-only report batch, or after the zero-pending reclassification in the Post-budget completion gate. On a graceful-handoff exit (`goto_graceful_handoff=1`), skip both Step 7a and Step 7b entirely and proceed directly to Step 8.
 
-#### Step 7a: Domain Change Summary (runs on completion AND handoff)
+#### Step 7a: Domain Change Summary (runs ONLY on full completion — skip on graceful handoff)
 
 Since entries are not yet inserted into vault.db, `domain-report` cannot reflect this batch's changes. Instead, generate domain change information from the changeset data accumulated so far.
 
@@ -319,7 +334,7 @@ Since entries are not yet inserted into vault.db, `domain-report` cannot reflect
 - List suggested path patterns for new domains
 - Read `_domain_maintenance` annotations from accepted candidates and summarize them by domain / issue / suggestion
 - Highlight suspicious near-duplicates among newly proposed domain names and existing registry names, especially when `_domain_maintenance` marks `near-duplicate`
-- Review the processed batch PRs' `changed_files` lists and highlight repeated path prefixes that still have no domain mapping
+- Parse every accumulated `KD_BATCH_PR_META` line from `.knowledge/reports/batch-YYYY-MM-DD.md` and deduplicate changed paths by `(pr_number, path)`. Use that persisted set — never transient current-run subagent memory — to highlight repeated path prefixes that still have no domain mapping. Continue to read `_proposed_domain` and `_domain_maintenance` only from accepted changeset entries; the hidden metadata does not replace those annotations.
 - Do NOT auto-run domain merge/split/deprecate actions in this stage. Domain reorganization is a manual follow-up.
 
 #### Step 7b: Batch-completion reconciliation (runs ONLY on full completion — skip on graceful handoff)
@@ -362,9 +377,9 @@ All Layer 2 decisions (`skip`, `extract`, `defer`) are recorded in PR comments a
 5. Use the total `knowledge:skipped` result count as cumulative skipped PR count.
 6. For recent positive-recall regression rate, read the newest `.knowledge/reports/triage-backtest-YYYY-MM-DD.md` if present. If absent, render `N/A`.
 
-Append the domain summary (and, on full completion, the reconciled Deferred Queue and triage metrics) to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This is the **final** commit of the run **only on full completion** — on the handoff path, the Graceful Handoff Procedure performs an additional handoff-row commit after Step 8.
+Append the domain summary, reconciled Deferred Queue, and triage metrics to `.knowledge/reports/batch-YYYY-MM-DD.md`, commit, push, and refresh the Report PR body. This Step 7 commit is the final commit of the run and happens only on full completion. On the handoff path, do not write any Step 7 content; the Graceful Handoff Procedure performs the run's final handoff-row commit after Step 8.
 
-**Linear ordering on budget hit:** Step 7a (Domain Change Summary; Step 7b reconciliation is skipped on handoff) → Step 8 (Cleanup Verification) → Graceful Handoff Procedure (handoff row commit + retrigger decision) → exit 0.
+**Linear ordering on budget hit:** Post-budget completion gate → zero pending: Step 7 exactly once → Step 8 exactly once → normal full-completion exit; pending remains: skip Step 7a and Step 7b → Step 8 exactly once → numbered Graceful Handoff steps → exit 0.
 
 ### Step 8: Cleanup Verification
 
@@ -374,6 +389,7 @@ Run before exit (whether the exit is full completion or graceful handoff):
 - Every PR still labeled `knowledge:pending` either: (a) was deferred as `insufficient`, (b) has not been reached yet (graceful handoff case), or (c) failed mid-pipeline with a non-auth error and has a `❌ failed` row.
 - `.knowledge/changesets/batch-YYYY-MM-DD.json` is valid JSON.
 - `.knowledge/reports/batch-YYYY-MM-DD.md` is present.
+- Every persisted non-auth PR detail has one valid `KD_BATCH_PR_META` line; auth-dead PRs have none.
 - Report PR exists and is open.
 
 If any check fails, log it but **do not fail the workflow** — the next run will reconcile.
@@ -470,6 +486,9 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 - #{pr_number} "{title}": {missing sources}
 
 {If none: "All PRs had sufficient evidence."}
+
+{Retain one compact hidden metadata line for every persisted non-auth PR outcome, in append order. These lines are machine-readable cross-run state and MUST remain byte-for-byte unchanged during Report PR refresh or curation:}
+<!-- KD_BATCH_PR_META {"pr_number":1234,"changed_files":["path/to/file"]} -->
 
 ### Deferred Queue (Human Curation Required)
 

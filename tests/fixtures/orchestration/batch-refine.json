@@ -3,6 +3,7 @@
   "documents": {
     "batch_refine_skill": "plugins/knowledge-distillery/skills/batch-refine/SKILL.md",
     "collect_evidence_skill": "plugins/knowledge-distillery/skills/collect-evidence/SKILL.md",
+    "curate_report_skill": "plugins/knowledge-distillery/skills/curate-report/SKILL.md",
     "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
     "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
     "batch_refine_workflow": ".github/workflows/batch-refine.yml"
@@ -536,6 +537,89 @@
         {
           "doc": "batch_refine_skill",
           "contains": "do **not** regenerate it from current label state, as that would erase handoff history"
+        }
+      ]
+    },
+    {
+      "id": "step-7-runs-only-on-full-completion",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "### Step 7: Domain Change Summary + Batch-Completion Reconciliation (runs ONLY on full completion — skip entirely on graceful handoff)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "On a graceful-handoff exit (`goto_graceful_handoff=1`), skip both Step 7a and Step 7b entirely and proceed directly to Step 8."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "#### Step 7a: Domain Change Summary (runs ONLY on full completion — skip on graceful handoff)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "This Step 7 commit is the final commit of the run and happens only on full completion."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**Linear ordering on budget hit:** Post-budget completion gate → zero pending: Step 7 exactly once → Step 8 exactly once → normal full-completion exit; pending remains: skip Step 7a and Step 7b → Step 8 exactly once → numbered Graceful Handoff steps → exit 0."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "Step 7a: Domain Change Summary (runs on completion AND handoff)"
+        }
+      ]
+    },
+    {
+      "id": "handoff-with-no-pending-becomes-full-completion",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "### Post-budget completion gate (before Step 7 and Step 8)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "After the deadline stops new dispatches and all in-flight work settles, re-query the current `knowledge:pending` count before running Step 7, Step 8, or any numbered Graceful Handoff step."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "- **Zero pending:** clear `goto_graceful_handoff`, reclassify the run as full completion, run Step 7 exactly once, then Step 8 exactly once, and exit through the normal full-completion path. Do not append a handoff row or self-retrigger."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "- **Pending remains:** keep `goto_graceful_handoff=1`, skip both Step 7a and Step 7b, run Step 8 exactly once, then enter the numbered Graceful Handoff steps."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "Before entering the numbered handoff steps, re-query"
+        }
+      ]
+    },
+    {
+      "id": "changed-files-survive-retriggers-as-report-metadata",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "<!-- KD_BATCH_PR_META {\"pr_number\":1234,\"changed_files\":[\"path/to/file\"]} -->"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Normalize a missing `changed_files` field to `[]` before serializing the compact JSON."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Never write a `KD_BATCH_PR_META` marker for a `github_auth` result."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Parse every accumulated `KD_BATCH_PR_META` line from `.knowledge/reports/batch-YYYY-MM-DD.md` and deduplicate changed paths by `(pr_number, path)`."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Snapshot the complete `### 진행 상황` block and every one-line `KD_BATCH_PR_META` marker before regenerating the report."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Restore the progress block and metadata marker lines verbatim after regeneration"
         }
       ]
     },

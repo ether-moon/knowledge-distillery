@@ -93,8 +93,8 @@ assert_eq "retriggered" "$(classify_handoff 0 5 3 0)" \
 assert_eq "max-reached" "$(classify_handoff 5 5 3 0)" \
   "classify_handoff: retry exhausted with pending PRs"
 
-assert_eq "no-pending" "$(classify_handoff 0 5 0 0)" \
-  "classify_handoff: nothing left to do"
+assert_eq "full-completion" "$(classify_handoff 0 5 0 0)" \
+  "classify_handoff: zero pending must run completion work instead of handoff"
 
 assert_eq "skip-handoff" "$(classify_handoff 0 5 3 1)" \
   "classify_handoff: auth failure must skip handoff entirely (no row produced)"
@@ -113,12 +113,6 @@ assert_contains "${row}" "처리 2개, 남은 1개" "retrigger row should show p
 row="$(format_handoff_row 200 5 5 0 3 max-reached)"
 assert_contains "${row}" "❗ 재시도 한도 도달" "max-reached row should mark retry limit"
 assert_contains "${row}" "다음 cron까지 대기" "max-reached row should explain wait"
-
-row="$(format_handoff_row 300 2 5 4 0 no-pending)"
-assert_contains "${row}" "처리 4개, 남은 0개" "no-pending row should show all done"
-if [[ "${row}" == *"재트리거함"* ]]; then
-  fail "no-pending row should not claim retrigger"
-fi
 
 # -- Auth-dead must NOT produce a row ------------------------------------
 # Skill prose ("Unexpected 401" section) requires the handoff procedure to be
@@ -140,6 +134,12 @@ fi
 
 if format_handoff_row 1 0 5 0 0 skip-handoff >/dev/null 2>&1; then
   fail "format_handoff_row: skip-handoff must not be accepted as a row action"
+fi
+
+# -- full-completion is a control signal, not a row action ----------------
+
+if format_handoff_row 1 0 5 0 0 full-completion >/dev/null 2>&1; then
+  fail "format_handoff_row: full-completion must not produce a handoff row"
 fi
 
 echo "handoff structure tests passed"

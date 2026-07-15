@@ -82,6 +82,23 @@ assert_contains "${report_output}" '- `payment-service-object-pattern` <-> `lega
 assert_contains "${report_output}" '- New domain `billing-integration`: Billing provider integration rules (patterns: app/services/billing/)' "report should summarize proposed domains"
 assert_contains "${report_output}" '- #1235 "Capture missing evidence bundle": manifest' "report should keep insufficient PRs pending in a dedicated section"
 assert_contains "${report_output}" '- #1236 "Attempted refinement with flaky Linear context": failed during refinement (extract-candidates subagent crashed).' "report should include failed PR outcomes"
+assert_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1234,"changed_files":["app/services/payment/orchestrator.rb"]} -->' "processed PR details should retain compact changed-file metadata"
+assert_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1235,"changed_files":[]} -->' "missing changed_files should normalize to an empty metadata array"
+assert_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1236,"changed_files":[]} -->' "failed results should retain normalized metadata"
+assert_not_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1299' "auth-dead PRs must not persist metadata"
+
+marker_payloads="$({
+  awk '/^<!-- KD_BATCH_PR_META / {
+    sub(/^<!-- KD_BATCH_PR_META /, "")
+    sub(/ -->$/, "")
+    print
+  }' "${REPORT}"
+} | jq -s '.')"
+assert_eq "3" "$(jq 'length' <<<"${marker_payloads}")" "report metadata should be valid compact JSON for every persisted PR"
+assert_eq \
+  '["app/services/payment/orchestrator.rb"]' \
+  "$(jq -c '[.[] | select(.pr_number == 1234) | .changed_files[]] | unique' <<<"${marker_payloads}")" \
+  "metadata should round-trip the processed PR changed-file list"
 
 ZERO_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-batch-all-rejected.json"
 ZERO_CHANGESET="${TMP_DIR}/batch-2026-03-31.json"

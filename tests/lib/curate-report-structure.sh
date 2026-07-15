@@ -117,10 +117,30 @@ render_curation_report() {
   local batch_date
   local accepted_count
   local rejected_count
+  local progress_snapshot
+  local metadata_snapshot
+  local rendered_file
+  local restored_file
 
   batch_date="$(jq -r '.batch_date' "${changeset_file}")"
   accepted_count="$(jq '[.entries[] | select(.status == "accepted")] | length' "${changeset_file}")"
   rejected_count="$(jq '[.entries[] | select(.status == "rejected")] | length' "${changeset_file}")"
+  progress_snapshot="$(mktemp)"
+  metadata_snapshot="$(mktemp)"
+  rendered_file="$(mktemp)"
+  restored_file="$(mktemp)"
+
+  if [ -f "${report_file}" ]; then
+    awk '
+      /^### 진행 상황$/ { in_progress = 1 }
+      in_progress && /^### / && $0 != "### 진행 상황" { exit }
+      in_progress { print }
+    ' "${report_file}" > "${progress_snapshot}"
+    awk '/^<!-- KD_BATCH_PR_META .* -->$/' "${report_file}" > "${metadata_snapshot}"
+  else
+    : > "${progress_snapshot}"
+    : > "${metadata_snapshot}"
+  fi
 
   {
     printf '## Knowledge Distillery Batch Report — %s\n\n' "${batch_date}"
@@ -154,5 +174,24 @@ render_curation_report() {
     printf '| Action | Entry ID | Details | Timestamp |\n'
     printf '|--------|----------|---------|-----------|\n'
     awk -F '\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }' "${action_log_file}"
-  } > "${report_file}"
+  } > "${rendered_file}"
+
+  awk -v progress_file="${progress_snapshot}" '
+    !inserted && /^### Summary$/ {
+      while ((getline line < progress_file) > 0) {
+        print line
+      }
+      close(progress_file)
+      inserted = 1
+    }
+    { print }
+  ' "${rendered_file}" > "${restored_file}"
+
+  mv "${restored_file}" "${report_file}"
+  if [ -s "${metadata_snapshot}" ]; then
+    printf '\n' >> "${report_file}"
+    awk '{ print }' "${metadata_snapshot}" >> "${report_file}"
+  fi
+
+  rm -f "${progress_snapshot}" "${metadata_snapshot}" "${rendered_file}"
 }

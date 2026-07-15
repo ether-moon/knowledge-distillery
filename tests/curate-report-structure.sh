@@ -37,9 +37,20 @@ PR_BODY="${ROOT}/tests/fixtures/structure/curate-report/report-pr-body.md"
 WHITELIST="${TMP_DIR}/whitelist.txt"
 ACTION_LOG="${TMP_DIR}/curation.log"
 REPORT="${TMP_DIR}/batch-2026-03-24.md"
+EXPECTED_PROGRESS="${TMP_DIR}/expected-progress.md"
+EXPECTED_METADATA="${TMP_DIR}/expected-metadata.md"
+ACTUAL_PROGRESS="${TMP_DIR}/actual-progress.md"
+ACTUAL_METADATA="${TMP_DIR}/actual-metadata.md"
 
 cp "${ROOT}/tests/fixtures/structure/curate-report/input-changeset.json" "${CHANGESET}"
+cp "${PR_BODY}" "${REPORT}"
 : > "${ACTION_LOG}"
+awk '
+  /^### 진행 상황$/ { in_progress = 1 }
+  in_progress && /^### / && $0 != "### 진행 상황" { exit }
+  in_progress { print }
+' "${REPORT}" > "${EXPECTED_PROGRESS}"
+awk '/^<!-- KD_BATCH_PR_META .* -->$/' "${REPORT}" > "${EXPECTED_METADATA}"
 
 extract_whitelist_from_pr_body "${PR_BODY}" > "${WHITELIST}"
 
@@ -108,6 +119,31 @@ assert_eq \
 render_curation_report "${CHANGESET}" "${ACTION_LOG}" "${REPORT}"
 
 report_output="$(cat "${REPORT}")"
+awk '
+  /^### 진행 상황$/ { in_progress = 1 }
+  in_progress && /^### / && $0 != "### 진행 상황" { exit }
+  in_progress { print }
+' "${REPORT}" > "${ACTUAL_PROGRESS}"
+awk '/^<!-- KD_BATCH_PR_META .* -->$/' "${REPORT}" > "${ACTUAL_METADATA}"
+if ! cmp -s "${EXPECTED_PROGRESS}" "${ACTUAL_PROGRESS}"; then
+  fail "curation regeneration should restore the complete progress block verbatim"
+fi
+if ! cmp -s "${EXPECTED_METADATA}" "${ACTUAL_METADATA}"; then
+  fail "curation regeneration should restore every metadata marker verbatim and in order"
+fi
+assert_eq "1" "$(grep -cF '### 진행 상황' "${REPORT}")" "curation regeneration should retain exactly one progress block"
+assert_eq "1" "$(grep -cF '<!-- KD_BATCH_PR_META {"pr_number":1234,"changed_files":["app/services/payment/orchestrator.rb"]} -->' "${REPORT}")" "curation regeneration should retain the first marker exactly once"
+assert_eq "1" "$(grep -cF '<!-- KD_BATCH_PR_META {"pr_number":1235,"changed_files":[]} -->' "${REPORT}")" "curation regeneration should retain the second marker exactly once"
+assert_contains "${report_output}" "### 진행 상황" "curation regeneration should preserve the append-only progress heading"
+assert_contains "${report_output}" "| #1234 | ✅ 처리 완료 (1 accepted, 4m12s, run #100) |" "curation regeneration should preserve prior PR progress verbatim"
+assert_contains "${report_output}" "| run #100 | ⏱ 시간 예산 도달 — 처리 1개, 남은 1개, 재트리거함 → run #101 |" "curation regeneration should preserve handoff history verbatim"
+assert_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1234,"changed_files":["app/services/payment/orchestrator.rb"]} -->' "curation regeneration should preserve changed-file metadata verbatim"
+assert_contains "${report_output}" '<!-- KD_BATCH_PR_META {"pr_number":1235,"changed_files":[]} -->' "curation regeneration should preserve empty changed-file metadata verbatim"
+progress_line="$(grep -nF '### 진행 상황' "${REPORT}" | cut -d: -f1)"
+summary_line="$(grep -nF '### Summary' "${REPORT}" | cut -d: -f1)"
+if [ "${progress_line}" -ge "${summary_line}" ]; then
+  fail "curation regeneration should restore progress before summary"
+fi
 assert_contains "${report_output}" "| Accepted entries | 1 |" "report summary should update accepted count"
 assert_contains "${report_output}" "| Rejected via curation | 1 |" "report summary should update rejected count"
 assert_contains "${report_output}" "### Rejected Entries (via Curation)" "report should include rejected entries section"

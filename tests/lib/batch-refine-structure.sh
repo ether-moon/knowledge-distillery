@@ -186,13 +186,16 @@ render_batch_report() {
     jq -r '
       .prs[]
       | select(.outcome != "github_auth")
-      | if .outcome == "processed" then
-          "- #\(.number) \"\(.title)\": processed, \([.candidate_results[]? | select(.verdict.verdict == "pass")] | length) accepted, \([.candidate_results[]? | select(.verdict.verdict == "fail")] | length) rejected."
-        elif .outcome == "insufficient" then
-          "- #\(.number) \"\(.title)\": insufficient evidence, deferred."
-        else
-          "- #\(.number) \"\(.title)\": failed during refinement (\(.error))."
-        end
+      | (
+          (if .outcome == "processed" then
+             "- #\(.number) \"\(.title)\": processed, \([.candidate_results[]? | select(.verdict.verdict == "pass")] | length) accepted, \([.candidate_results[]? | select(.verdict.verdict == "fail")] | length) rejected."
+           elif .outcome == "insufficient" then
+             "- #\(.number) \"\(.title)\": insufficient evidence, deferred."
+           else
+             "- #\(.number) \"\(.title)\": failed during refinement (\(.error))."
+           end),
+          "<!-- KD_BATCH_PR_META \({pr_number: .number, changed_files: (.changed_files // [])} | tojson) -->"
+        )
     ' "${batch_fixture}"
     printf '\n'
 
