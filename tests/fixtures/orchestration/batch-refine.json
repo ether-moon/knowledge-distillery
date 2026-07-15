@@ -566,6 +566,14 @@
         {
           "doc": "batch_refine_skill",
           "absent": "Step 7a: Domain Change Summary (runs on completion AND handoff)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| Time budget reached | MUST enter the **Post-budget completion gate** first. Zero pending → full completion (Step 7 then Step 8); pending remains → Step 8 then **Graceful Handoff Procedure**. Exit 0. |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "| Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |"
         }
       ]
     },
@@ -620,6 +628,18 @@
         {
           "doc": "curate_report_skill",
           "contains": "Restore the progress block and metadata marker lines verbatim after regeneration"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Build the regenerated content, restored progress block, and all metadata marker lines in a temporary file in the report's own directory."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Only after that temporary file is complete, replace the report with one final atomic `mv`."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "On any failure before the final `mv`, remove every temporary file and leave the existing report untouched."
         }
       ]
     },

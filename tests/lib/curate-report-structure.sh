@@ -110,25 +110,43 @@ apply_claim_update_action() {
   append_action_log "${log_file}" "Updated" "${entry_id}" "Changed: claim" "${timestamp}"
 }
 
-render_curation_report() {
+render_curation_report() (
   local changeset_file="$1"
   local action_log_file="$2"
   local report_file="$3"
   local batch_date
   local accepted_count
   local rejected_count
-  local progress_snapshot
-  local metadata_snapshot
-  local rendered_file
-  local restored_file
+  local report_dir
+  local report_name
+  local progress_snapshot=""
+  local metadata_snapshot=""
+  local rendered_file=""
+  local destination_file=""
+
+  cleanup_curation_report_temps() {
+    local temp_file
+    for temp_file in \
+      "${progress_snapshot}" \
+      "${metadata_snapshot}" \
+      "${rendered_file}" \
+      "${destination_file}"; do
+      if [ -n "${temp_file}" ]; then
+        rm -f "${temp_file}" || true
+      fi
+    done
+  }
+  trap cleanup_curation_report_temps EXIT
 
   batch_date="$(jq -r '.batch_date' "${changeset_file}")"
   accepted_count="$(jq '[.entries[] | select(.status == "accepted")] | length' "${changeset_file}")"
   rejected_count="$(jq '[.entries[] | select(.status == "rejected")] | length' "${changeset_file}")"
-  progress_snapshot="$(mktemp)"
-  metadata_snapshot="$(mktemp)"
-  rendered_file="$(mktemp)"
-  restored_file="$(mktemp)"
+  report_dir="$(dirname "${report_file}")"
+  report_name="$(basename "${report_file}")"
+  progress_snapshot="$(mktemp "${report_dir}/.${report_name}.progress.XXXXXX")"
+  metadata_snapshot="$(mktemp "${report_dir}/.${report_name}.metadata.XXXXXX")"
+  rendered_file="$(mktemp "${report_dir}/.${report_name}.rendered.XXXXXX")"
+  destination_file="$(mktemp "${report_dir}/.${report_name}.destination.XXXXXX")"
 
   if [ -f "${report_file}" ]; then
     awk '
@@ -185,13 +203,12 @@ render_curation_report() {
       inserted = 1
     }
     { print }
-  ' "${rendered_file}" > "${restored_file}"
+  ' "${rendered_file}" > "${destination_file}"
 
-  mv "${restored_file}" "${report_file}"
   if [ -s "${metadata_snapshot}" ]; then
-    printf '\n' >> "${report_file}"
-    awk '{ print }' "${metadata_snapshot}" >> "${report_file}"
+    printf '\n' >> "${destination_file}"
+    awk '{ print }' "${metadata_snapshot}" >> "${destination_file}"
   fi
 
-  rm -f "${progress_snapshot}" "${metadata_snapshot}" "${rendered_file}"
-}
+  mv "${destination_file}" "${report_file}"
+)

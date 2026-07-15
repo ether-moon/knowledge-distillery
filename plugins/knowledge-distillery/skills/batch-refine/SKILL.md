@@ -536,7 +536,7 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 |-------------|----------|
 | No pending or deferred PRs | Exit 0. No branch, no PR. |
 | No pending PRs but deferred PRs exist | Create a report-only batch with empty changeset and Deferred Queue section. |
-| Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |
+| Time budget reached | MUST enter the **Post-budget completion gate** first. Zero pending → full completion (Step 7 then Step 8); pending remains → Step 8 then **Graceful Handoff Procedure**. Exit 0. |
 | GitHub MCP 401/403 mid-run | Stop loop. Do **not** retrigger (token already dead). Exit non-zero. Next cron resumes. |
 | Per-PR pipeline fails (non-auth) | Record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` row, leave PR labeled `knowledge:pending`, continue with next PR. |
 | Insufficient evidence on a PR | Record row, leave label `knowledge:pending`. Picked up by next batch. |

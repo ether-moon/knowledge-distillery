@@ -129,6 +129,8 @@ Also update the PR body's "Summary" table metrics (accepted count, etc.) to refl
 
 Restore the progress block and metadata marker lines verbatim after regeneration, before updating the PR body: place the progress block immediately before `### Summary`, and retain all marker lines in their original order. Curation may change candidate sections and metrics, but it MUST NOT erase or rewrite this append-only history.
 
+Build the regenerated content, restored progress block, and all metadata marker lines in a temporary file in the report's own directory. Only after that temporary file is complete, replace the report with one final atomic `mv`. On any failure before the final `mv`, remove every temporary file and leave the existing report untouched.
+
 ### Step 8: Commit and Push
 
 ```bash

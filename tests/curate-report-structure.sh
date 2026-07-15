@@ -37,10 +37,21 @@ PR_BODY="${ROOT}/tests/fixtures/structure/curate-report/report-pr-body.md"
 WHITELIST="${TMP_DIR}/whitelist.txt"
 ACTION_LOG="${TMP_DIR}/curation.log"
 REPORT="${TMP_DIR}/batch-2026-03-24.md"
+CURATE_HELPER="${ROOT}/tests/lib/curate-report-structure.sh"
 EXPECTED_PROGRESS="${TMP_DIR}/expected-progress.md"
 EXPECTED_METADATA="${TMP_DIR}/expected-metadata.md"
 ACTUAL_PROGRESS="${TMP_DIR}/actual-progress.md"
 ACTUAL_METADATA="${TMP_DIR}/actual-metadata.md"
+
+helper_source="$(cat "${CURATE_HELPER}")"
+assert_contains "${helper_source}" 'destination_file="$(mktemp "${report_dir}/.${report_name}.destination.XXXXXX")"' "curation should build the complete destination beside the report"
+assert_contains "${helper_source}" 'trap cleanup_curation_report_temps EXIT' "curation should clean temporary files on every function exit"
+metadata_append_line="$(grep -nF 'awk '\''{ print }'\'' "${metadata_snapshot}" >> "${destination_file}"' "${CURATE_HELPER}" | cut -d: -f1)"
+replace_line="$(grep -nF 'mv "${destination_file}" "${report_file}"' "${CURATE_HELPER}" | cut -d: -f1)"
+if [ -z "${metadata_append_line}" ] || [ -z "${replace_line}" ] || [ "${metadata_append_line}" -ge "${replace_line}" ]; then
+  fail "curation must append all metadata to the destination before the single report replacement"
+fi
+assert_eq "1" "$(grep -cF 'mv "${destination_file}" "${report_file}"' "${CURATE_HELPER}")" "curation should replace the report exactly once"
 
 cp "${ROOT}/tests/fixtures/structure/curate-report/input-changeset.json" "${CHANGESET}"
 cp "${PR_BODY}" "${REPORT}"
@@ -153,5 +164,30 @@ assert_contains "${report_output}" "| Rejected | no-api-in-callbacks | Reason: R
 assert_contains "${report_output}" "| Updated | payment-service-object-pattern | Changed: claim | 2026-03-24T12:05:00Z |" "curation log should record update actions"
 assert_contains "${report_output}" "| Failed | no-api-in-callbacks | Cannot update rejected entry | 2026-03-24T12:10:00Z |" "curation log should record blocked updates"
 assert_contains "${report_output}" "| Unresolved | entry-not-in-batch | Entry not in this batch | 2026-03-24T12:15:00Z |" "curation log should record out-of-batch feedback"
+
+FAILURE_REPORT="${TMP_DIR}/batch-2026-03-24-failure.md"
+FAILURE_ORIGINAL="${TMP_DIR}/batch-2026-03-24-failure.original.md"
+cp "${PR_BODY}" "${FAILURE_REPORT}"
+cp "${FAILURE_REPORT}" "${FAILURE_ORIGINAL}"
+set +e
+(
+  set -e
+  render_curation_report \
+    "${CHANGESET}" \
+    "${TMP_DIR}/missing-action.log" \
+    "${FAILURE_REPORT}"
+) 2>/dev/null
+failure_status=$?
+set -e
+if [ "${failure_status}" -eq 0 ]; then
+  fail "curation failure probe should fail before replacing the report"
+fi
+if ! cmp -s "${FAILURE_ORIGINAL}" "${FAILURE_REPORT}"; then
+  fail "curation failure before final replace must leave the original report untouched"
+fi
+failure_temps=("${TMP_DIR}/.batch-2026-03-24-failure.md."*)
+if [ -e "${failure_temps[0]}" ]; then
+  fail "curation failure should clean every same-directory temporary file"
+fi
 
 echo "curate-report structure tests passed"
