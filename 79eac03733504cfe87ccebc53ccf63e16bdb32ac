@@ -1,0 +1,27 @@
+## Decisions Made
+- Per-PR timing is measured inside each fresh per-PR subagent: This bounds duration to collect-evidence through the terminal pipeline outcome and keeps the result contract additive.
+- Run wall-clock timing is measured by the orchestrator: It covers first dispatch through last PR persistence and is never derived from summed per-PR durations.
+- Auth-dead outcomes are log-only: A dead token cannot safely persist a progress row, while payload-less crashes use the explicit `duration unknown` marker.
+- Dispatch and persistence timings remain serial-compatible: The current one-PR dispatch unit gains telemetry without implementing future bounded-wave behavior.
+
+## Problems Encountered
+- The first orchestration RED exposed the missing timing contract: The skill was updated and the focused harness reached 26 passing scenarios.
+- The first structure RED showed that the fixture renderer omitted the progress section: Shell/jq rendering was extended with duration rows and wall-clock Summary output.
+- An existing auth-path exact-string check failed during GREEN: The wording was adjusted to preserve the established contract while clarifying that the orchestrator owns the transition.
+
+## Constraints Identified
+- Tests must remain shell/jq-based with no Python dependency: Duration formatting and report rendering use Bash plus jq only.
+- Progress table schema and per-PR skill order are stable contracts: The two-column header and collect-evidence to extract-candidates to quality-gate sequence were preserved.
+- Task 1 is additive telemetry only: Serial processing remains unchanged and vault.db was not modified.
+
+## Open Questions
+- None
+
+## Context
+Task 1 adds per-PR duration payloads and orchestrator wall-clock reporting to the batch-refine executable skill prose. Orchestration fixtures lock the additive outcome contract, while structure fixtures and shell helpers render duration-bearing progress rows and a run-scoped Summary value. The full shell test suite passed before commit.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
