@@ -142,18 +142,36 @@ name: Knowledge Distillery — Batch Refine
 
 on:
   schedule:
-    - cron: '0 9 * * 1'  # Every Monday 09:00 UTC
+    - cron: '23 9 * * *'  # Every day 09:23 UTC
   workflow_dispatch:
+    inputs:
+      retry_count:
+        description: "Self-retrigger count (passed automatically by graceful handoff). Leave 0 for fresh runs."
+        required: false
+        default: "0"
+
+concurrency:
+  group: knowledge-batch-refine
+  cancel-in-progress: false   # keep the active run; coalesce pending triggers to the latest one
 
 jobs:
   collect-and-refine:
     runs-on: ubuntu-latest
+    timeout-minutes: 60   # safety net only; graceful handoff fires earlier at DEADLINE_SECONDS
     permissions:
       contents: write
       pull-requests: write
       issues: write
+      actions: write       # required for `gh workflow run` self-retrigger
       id-token: write
+    env:
+      DEADLINE_SECONDS: "2700"   # 45 min — keep a provisional 15 min handoff margin
+      MAX_RETRY_COUNT: "5"
+      RETRY_COUNT: ${{ inputs.retry_count || '0' }}
     steps:
+      - name: Record batch start timestamp
+        run: echo "BATCH_START_TS=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -217,6 +235,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Use skill /knowledge-distillery:batch-refine.
             Find all PRs with 'knowledge:pending' label,
@@ -230,7 +249,23 @@ jobs:
             On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
             Create a Report PR with change summary.
             Do NOT modify vault.db directly — the changeset will be applied on merge.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+
+            Time budget and self-retrigger:
+            - BATCH_START_TS=$BATCH_START_TS, DEADLINE_SECONDS=$DEADLINE_SECONDS.
+            - Before starting each PR, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`.
+            - When the budget is reached, follow the skill's "Post-budget completion gate":
+              re-query `knowledge:pending` after all in-flight work settles. Zero pending
+              follows full completion (Step 7, then Step 8) without handoff or retrigger.
+            - Only the Pending remains branch enters the skill's "Graceful Handoff Procedure":
+              run Step 8, commit/push progress, update the Report PR progress table, then run
+              `gh workflow run batch-refine.yml -f retry_count=$((RETRY_COUNT + 1))` if
+              RETRY_COUNT < MAX_RETRY_COUNT and pending PRs remain, and exit 0.
+            - RETRY_COUNT=$RETRY_COUNT, MAX_RETRY_COUNT=$MAX_RETRY_COUNT.
+          # Session default: Sonnet + medium effort. This covers the orchestrator's
+          # mechanical bookkeeping and the per-PR collect-evidence + extract-candidates
+          # work. The precision-critical quality-gate upgrades itself to `effort: high`
+          # via its own SKILL.md frontmatter while that skill is active.
+          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files

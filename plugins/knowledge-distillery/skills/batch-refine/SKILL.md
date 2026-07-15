@@ -1,13 +1,13 @@
 ---
 name: batch-refine
-description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, writes a changeset file for accepted entries, and creates a report PR for human review. Triggered on schedule (weekly/biweekly) or manual dispatch. Use when you need to process accumulated knowledge from merged PRs, run the refinement pipeline, or manually trigger a batch distillation cycle."
+description: "Orchestrates the Stage B distillation pipeline: discovers merged PRs labeled knowledge:pending, runs per-PR evidence collection → candidate extraction → quality gate, writes a changeset file for accepted entries, and creates a report PR for human review. Triggered on a daily schedule or manual dispatch. Use when you need to process accumulated knowledge from merged PRs, run the refinement pipeline, or manually trigger a batch distillation cycle."
 ---
 
 # batch-refine — Stage B Pipeline Orchestrator
 
 ## When This Skill Runs
 
-- Cron schedule (weekly/biweekly) via GitHub Actions
+- Daily cron schedule via GitHub Actions
 - Manual dispatch via `workflow_dispatch`
 - Self-retrigger via `gh workflow run batch-refine.yml -f retry_count=N` (graceful handoff path)
 - Invoked as `/knowledge-distillery:batch-refine`
@@ -21,11 +21,15 @@ The GitHub token used by this workflow expires roughly one hour after the workfl
 | Variable | Meaning |
 |----------|---------|
 | `BATCH_START_TS` | Unix timestamp when this run started (proxy for token issuance time). |
-| `DEADLINE_SECONDS` | Maximum elapsed seconds before refusing to start a new PR (e.g. `2100` = 35 min). |
+| `DEADLINE_SECONDS` | Maximum elapsed seconds before refusing to start a new PR (e.g. `2700` = 45 min). |
 | `RETRY_COUNT` | How many self-retriggers preceded this run. Cron starts at `0`. |
 | `MAX_RETRY_COUNT` | Hard ceiling on self-retriggers per batch (e.g. `5`). |
 
-The deadline (35 min) is well under the token lifetime (~60 min) so all handoff operations complete with a valid token. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but PR-atomic commits preserve everything completed so far, and the next cron run resumes naturally.
+The deadline is 45 minutes, leaving 15 minutes before the token's approximate 60-minute lifetime. **The 15-minute margin is provisional until the first wall-clock measurements**: in the current serial loop it assumes enough time for the final PR tail plus a 1–2 minute handoff; after bounded waves are introduced it must cover the final wave tail plus that handoff. This is an operating assumption, not a guarantee, and must be revisited from the timing logs. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but PR-atomic commits preserve everything completed so far, and the next cron run resumes naturally.
+
+### Workflow concurrency and trigger coalescing
+
+The workflow-level `knowledge-batch-refine` concurrency group ensures the **active run is never cancelled and only the latest pending trigger is retained**. The single pending slot intentionally coalesces stale drain requests instead of building a FIFO queue of self-retriggers, cron runs, and manual dispatches. If a cron or manual dispatch replaces a pending self-retrigger, treat it as a fresh chain with `retry_count=0`; **labels and commits are the durable state, not the retry counter**, so the replacement run resumes the same remaining work safely.
 
 ### Time budget check (before each PR)
 

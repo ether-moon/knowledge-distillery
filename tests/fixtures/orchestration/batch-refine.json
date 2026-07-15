@@ -6,7 +6,8 @@
     "curate_report_skill": "plugins/knowledge-distillery/skills/curate-report/SKILL.md",
     "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
     "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
-    "batch_refine_workflow": ".github/workflows/batch-refine.yml"
+    "batch_refine_workflow": ".github/workflows/batch-refine.yml",
+    "setup_skill": "plugins/knowledge-distillery/skills/setup/SKILL.md"
   },
   "scenarios": [
     {
@@ -437,6 +438,90 @@
       ]
     },
     {
+      "id": "workflow-daily-deadline-and-root-concurrency",
+      "checks": [
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "- cron: '23 9 * * *'  # Every day 09:23 UTC"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "DEADLINE_SECONDS: \"2700\"   # 45 min"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "ordered_contains": [
+            "workflow_dispatch:",
+            "concurrency:",
+            "group: knowledge-batch-refine",
+            "cancel-in-progress: false",
+            "jobs:"
+          ]
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "absent": "WAVE_SIZE"
+        }
+      ]
+    },
+    {
+      "id": "setup-template-carries-live-serial-workflow-contract",
+      "checks": [
+        {
+          "doc": "setup_skill",
+          "ordered_contains": [
+            "#### `.github/workflows/batch-refine.yml`",
+            "workflow_dispatch:",
+            "inputs:",
+            "retry_count:",
+            "concurrency:",
+            "jobs:",
+            "timeout-minutes: 60",
+            "actions: write",
+            "DEADLINE_SECONDS: \"2700\"",
+            "echo \"BATCH_START_TS=$(date +%s)\" >> \"$GITHUB_ENV\"",
+            "github_token: ${{ secrets.GITHUB_TOKEN }}",
+            "follow the skill's \"Post-budget completion gate\"",
+            "Only the Pending remains branch enters the skill's \"Graceful Handoff Procedure\"",
+            "--model claude-sonnet-5 --effort medium"
+          ]
+        },
+        {
+          "doc": "setup_skill",
+          "absent": "WAVE_SIZE"
+        }
+      ]
+    },
+    {
+      "id": "daily-cadence-provisional-margin-and-coalescing-are-explicit",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Triggered on a daily schedule or manual dispatch."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "- Daily cron schedule via GitHub Actions"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The 15-minute margin is provisional until the first wall-clock measurements"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "active run is never cancelled and only the latest pending trigger is retained"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "labels and commits are the durable state, not the retry counter"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "WAVE_SIZE"
+        }
+      ]
+    },
+    {
       "id": "serial-pr-loop-is-the-cancellation-point",
       "checks": [
         {
@@ -501,7 +586,19 @@
       "checks": [
         {
           "doc": "batch_refine_workflow",
-          "contains": "follow the skill's \"Graceful Handoff Procedure\""
+          "contains": "follow the skill's \"Post-budget completion gate\""
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Only the Pending remains branch enters the skill's \"Graceful Handoff Procedure\""
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
+        },
+        {
+          "doc": "setup_skill",
+          "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {
           "doc": "batch_refine_workflow",
