@@ -324,11 +324,11 @@
       ]
     },
     {
-      "id": "time-budget-check-precedes-each-pr",
+      "id": "time-budget-check-precedes-each-wave",
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "Run this check at the **top of every PR iteration**, before invoking `collect-evidence`:"
+          "contains": "Run this check at the **top of every wave iteration**, before issuing any Agent call:"
         },
         {
           "doc": "batch_refine_skill",
@@ -336,7 +336,27 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "Do **not** start a new PR after the deadline"
+          "contains": "Do **not** start a new wave after the deadline"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Once a wave starts, let every Agent settle and finish that wave's auth barrier and sequential checkpoints even if the deadline passes."
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
+        },
+        {
+          "doc": "setup_skill",
+          "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
+        },
+        {
+          "doc": "setup_skill",
+          "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         }
       ]
     },
@@ -460,12 +480,12 @@
         },
         {
           "doc": "batch_refine_workflow",
-          "absent": "WAVE_SIZE"
+          "contains": "WAVE_SIZE: \"3\""
         }
       ]
     },
     {
-      "id": "setup-template-carries-live-serial-workflow-contract",
+      "id": "setup-template-carries-live-bounded-wave-workflow-contract",
       "checks": [
         {
           "doc": "setup_skill",
@@ -479,16 +499,13 @@
             "timeout-minutes: 60",
             "actions: write",
             "DEADLINE_SECONDS: \"2700\"",
+            "WAVE_SIZE: \"3\"",
             "echo \"BATCH_START_TS=$(date +%s)\" >> \"$GITHUB_ENV\"",
             "github_token: ${{ secrets.GITHUB_TOKEN }}",
             "follow the skill's \"Post-budget completion gate\"",
             "Only the Pending remains branch enters the skill's \"Graceful Handoff Procedure\"",
             "--model claude-sonnet-5 --effort medium"
           ]
-        },
-        {
-          "doc": "setup_skill",
-          "absent": "WAVE_SIZE"
         }
       ]
     },
@@ -517,20 +534,42 @@
         },
         {
           "doc": "batch_refine_skill",
-          "absent": "WAVE_SIZE"
+          "contains": "Set `K=${WAVE_SIZE:-3}` and require a positive integer before dispatching anything."
         }
       ]
     },
     {
-      "id": "serial-pr-loop-is-the-cancellation-point",
+      "id": "bounded-wave-loop-is-the-cancellation-point",
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "PRs MUST be processed serially in `mergedAt` ascending order so the time-budget cancellation point is well-defined"
+          "contains": "Waves MUST be formed from pending PRs in `mergedAt` ascending order; only the orchestrator may persist results sequentially in that same order"
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "Why serial, not parallel?"
+          "contains": "Why bounded waves?"
+        }
+      ]
+    },
+    {
+      "id": "wave-all-settle-auth-barrier-precedes-persist",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "Wait until every Agent call in the wave has settled.",
+            "Before any Step 3c write, scan the complete settled result set for `outcome == \"github_auth\"`.",
+            "If any auth result exists, discard every unpersisted result in the wave",
+            "Only after the auth scan passes, process the original `wave_prs` in `mergedAt` ascending order."
+          ]
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The original invocation slot and PR number are authoritative; reject duplicate slots, foreign PR numbers, or mismatched results before persistence."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "A missing non-auth payload becomes that slot's `failed` result with `duration unknown` and `changed_files=[]`."
         }
       ]
     },
@@ -543,7 +582,36 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "The PR's `knowledge:collected` label is the authoritative signal"
+          "contains": "When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do not rerun its analysis or append another changeset/report checkpoint."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Insufficient and failed rows are not reconciliation successes"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Auth during label-only reconciliation before any wave starts"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "there is no in-flight wave to settle or discard"
+        }
+      ]
+    },
+    {
+      "id": "persist-failure-aborts-before-next-pr",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "If a Step 3c write or commit fails, or if `git push` still fails after one retry, abort the batch immediately with a non-zero exit."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Never continue to the next PR with dirty files or an unpushed local commit."
         }
       ]
     },
@@ -560,7 +628,11 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "spawn-agent (single Agent tool call, fresh context):"
+          "contains": "spawn wave (K separate Agent tool calls in one message, each fresh context):"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Issue every Agent call in the same orchestrator message before waiting for any result."
         }
       ]
     },
@@ -806,11 +878,23 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "Log each dispatch unit's `dispatch → all settled` duration and its `sequential persist` duration separately"
+          "contains": "Log every wave as `wave_duration_seconds=<dispatch-to-all-settled> persist_duration_seconds=<first-Step-3c-write-to-last-commit-push> run_elapsed_seconds=<BATCH_START_TS-to-now>`."
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "At handoff and completion, also log run elapsed time from `BATCH_START_TS`"
+          "contains": "For an auth-dead wave, log `persist_duration_seconds=0` because no Step 3c write may begin."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "At handoff and completion, also log `run_elapsed_seconds` from `BATCH_START_TS`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "intermediate Step 3d label transitions are naturally included; only the final PR's post-push label transition falls after its terminal boundary"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "`persist_duration_seconds` excludes label changes"
         }
       ]
     }

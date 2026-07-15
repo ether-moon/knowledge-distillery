@@ -41,6 +41,77 @@ assert_not_contains() {
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+AUTH_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-auth.json"
+if ! declare -F prepare_wave_results >/dev/null; then
+  fail "prepare_wave_results helper must model the all-settled auth barrier"
+fi
+assert_eq \
+  '[]' \
+  "$(prepare_wave_results "${AUTH_WAVE_FIXTURE}")" \
+  "an auth result must discard every result in its mixed wave"
+
+ORDERED_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-ordered.json"
+assert_eq \
+  '[1401,1402,1403]' \
+  "$(prepare_wave_results "${ORDERED_WAVE_FIXTURE}" | jq -c '[.[].pr_number]')" \
+  "persist order must follow the original wave mergedAt order, not completion order"
+assert_eq \
+  'insufficient' \
+  "$(prepare_wave_results "${ORDERED_WAVE_FIXTURE}" | jq -r '.[] | select(.pr_number == 1401) | .outcome')" \
+  "insufficient results must cross the barrier for row and metadata persistence"
+if ! declare -F wave_pr_numbers_for_label_transition >/dev/null; then
+  fail "wave_pr_numbers_for_label_transition helper must keep insufficient PRs pending"
+fi
+assert_eq \
+  $'1402\n1403' \
+  "$(wave_pr_numbers_for_label_transition "${ORDERED_WAVE_FIXTURE}")" \
+  "only processed wave results may transition to collected"
+
+CRASH_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-crash.json"
+assert_eq \
+  '{"pr_number":1502,"outcome":"failed","duration_seconds":null,"changed_files":[]}' \
+  "$(prepare_wave_results "${CRASH_WAVE_FIXTURE}" | jq -c '.[] | select(.pr_number == 1502) | {pr_number,outcome,duration_seconds,changed_files}')" \
+  "a payload-less settled crash must normalize against its authoritative slot without an estimated duration"
+
+INVALID_PR_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-invalid-pr.json"
+if prepare_wave_results "${INVALID_PR_WAVE_FIXTURE}" >/dev/null 2>&1; then
+  fail "a result whose PR number does not match its authoritative slot must abort before persistence"
+fi
+
+DUPLICATE_SLOT_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-duplicate-slot.json"
+if prepare_wave_results "${DUPLICATE_SLOT_WAVE_FIXTURE}" >/dev/null 2>&1; then
+  fail "duplicate results for one authoritative slot must abort before persistence"
+fi
+
+RESUME_REPORT_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-resume-report.md"
+if ! declare -F pending_pr_resume_action >/dev/null; then
+  fail "pending_pr_resume_action helper must model label-only reconciliation"
+fi
+assert_eq \
+  "reconcile-label" \
+  "$(pending_pr_resume_action "${RESUME_REPORT_FIXTURE}" 1701)" \
+  "a pending PR with a durable success row must reconcile only its label"
+assert_eq \
+  "analyze" \
+  "$(pending_pr_resume_action "${RESUME_REPORT_FIXTURE}" 1702)" \
+  "an insufficient row must remain eligible for fresh analysis"
+assert_eq \
+  "analyze" \
+  "$(pending_pr_resume_action "${RESUME_REPORT_FIXTURE}" 1703)" \
+  "a failed row must remain eligible for fresh analysis"
+
+if ! declare -F persist_checkpoint_action >/dev/null; then
+  fail "persist_checkpoint_action helper must abort after a durable-write failure"
+fi
+assert_eq "continue" "$(persist_checkpoint_action 0 0 0)" \
+  "a fully successful checkpoint may continue to label transition"
+assert_eq "abort" "$(persist_checkpoint_action 1 0 0)" \
+  "a changeset/report write failure must abort the batch"
+assert_eq "abort" "$(persist_checkpoint_action 0 1 0)" \
+  "a commit failure must abort the batch"
+assert_eq "abort" "$(persist_checkpoint_action 0 0 1)" \
+  "a push failure after retry must abort the batch"
+
 BATCH_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-batch.json"
 CHANGESET="${TMP_DIR}/batch-2026-03-24.json"
 REPORT="${TMP_DIR}/batch-2026-03-24.md"

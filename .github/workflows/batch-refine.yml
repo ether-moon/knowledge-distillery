@@ -26,6 +26,7 @@ jobs:
       id-token: write
     env:
       DEADLINE_SECONDS: "2700"   # 45 min — keep a provisional 15 min handoff margin
+      WAVE_SIZE: "3"              # bounded read-only analysis fan-out
       MAX_RETRY_COUNT: "5"
       RETRY_COUNT: ${{ inputs.retry_count || '0' }}
     steps:
@@ -112,7 +113,8 @@ jobs:
 
             Time budget and self-retrigger:
             - BATCH_START_TS=$BATCH_START_TS, DEADLINE_SECONDS=$DEADLINE_SECONDS.
-            - Before starting each PR, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`.
+            - Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order.
+            - Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`.
             - When the budget is reached, follow the skill's "Post-budget completion gate":
               re-query `knowledge:pending` after all in-flight work settles. Zero pending
               follows full completion (Step 7, then Step 8) without handoff or retrigger.

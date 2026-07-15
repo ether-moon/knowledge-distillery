@@ -31,34 +31,38 @@ assert_contains() {
 
 # -- Time budget gate -----------------------------------------------------
 
-# Plenty of budget left.
-should_start_pr 100 0 2100 \
-  || fail "should_start_pr: fresh run with 35min budget should permit start"
-
-# Halfway through the budget.
-should_start_pr 1050 0 2100 \
-  || fail "should_start_pr: half-elapsed run should still permit start"
-
-# Boundary: elapsed equals deadline → must refuse (otherwise we may overrun the token).
-if should_start_pr 2100 0 2100; then
-  fail "should_start_pr: elapsed == deadline must refuse start"
+if ! declare -F should_start_wave >/dev/null; then
+  fail "should_start_wave helper must define the wave-boundary cancellation point"
 fi
 
-# Boundary: elapsed = deadline - 1 → permit (LLM has at least 1s of headroom on paper;
-# the deadline includes its own margin).
-should_start_pr 2099 0 2100 \
-  || fail "should_start_pr: elapsed = deadline - 1 should permit start"
+# Plenty of budget left.
+should_start_wave 100 0 2700 \
+  || fail "should_start_wave: fresh run with 45min budget should permit start"
+
+# Halfway through the budget.
+should_start_wave 1350 0 2700 \
+  || fail "should_start_wave: half-elapsed run should still permit start"
+
+# Boundary: elapsed equals deadline → must refuse (otherwise we may overrun the token).
+if should_start_wave 2700 0 2700; then
+  fail "should_start_wave: elapsed == deadline must refuse start"
+fi
+
+# Boundary: elapsed = deadline - 1 → permit the whole wave. The deadline's
+# provisional 15-minute margin must absorb that wave's tail and handoff.
+should_start_wave 2699 0 2700 \
+  || fail "should_start_wave: elapsed = deadline - 1 should permit start"
 
 # Past the deadline.
-if should_start_pr 5000 0 2100; then
-  fail "should_start_pr: past-deadline run must refuse start"
+if should_start_wave 5000 0 2700; then
+  fail "should_start_wave: past-deadline run must refuse start"
 fi
 
 # Non-zero start timestamp (real workflow case).
-should_start_pr 1700000100 1700000000 2100 \
-  || fail "should_start_pr: real-world start ts should permit start"
-if should_start_pr 1700002101 1700000000 2100; then
-  fail "should_start_pr: real-world past-deadline must refuse start"
+should_start_wave 1700000100 1700000000 2700 \
+  || fail "should_start_wave: real-world start ts should permit start"
+if should_start_wave 1700002701 1700000000 2700; then
+  fail "should_start_wave: real-world past-deadline must refuse start"
 fi
 
 # -- Retrigger eligibility ------------------------------------------------

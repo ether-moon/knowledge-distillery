@@ -1,6 +1,79 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Emits the results that may cross the all-settled auth barrier. An auth-dead
+# result invalidates the entire wave, including otherwise successful peers.
+prepare_wave_results() {
+  local wave_fixture="$1"
+
+  jq -c '
+    .wave_prs as $wave_prs
+    | .results as $results
+    | if any($results[]; .outcome == "github_auth") then
+      []
+    elif ($results | group_by(.slot) | any(.[]; length > 1)) then
+      error("duplicate result slot")
+    elif any(
+      $results[];
+      . as $result
+      | ([
+          $wave_prs[]
+          | select(.slot == $result.slot and .number == $result.pr_number)
+        ] | length) != 1
+    ) then
+      error("result does not match its authoritative slot and PR")
+    else
+      [
+          $wave_prs
+          | sort_by(.merged_at)[]
+          | . as $pr
+          | ($results | map(select(.slot == $pr.slot))) as $matched
+          | if ($matched | length) == 0 then
+              {
+                slot: $pr.slot,
+                pr_number: $pr.number,
+                outcome: "failed",
+                duration_seconds: null,
+                changed_files: [],
+                error: "subagent crashed without returning a payload"
+              }
+            else
+              $matched[0]
+            end
+        ]
+    end
+  ' "${wave_fixture}"
+}
+
+wave_pr_numbers_for_label_transition() {
+  local wave_fixture="$1"
+
+  prepare_wave_results "${wave_fixture}" | jq -r '.[] | select(.outcome == "processed") | .pr_number'
+}
+
+pending_pr_resume_action() {
+  local report_file="$1"
+  local pr_number="$2"
+
+  if grep -Fq "| #${pr_number} | ✅ 처리 완료 (" "${report_file}"; then
+    printf 'reconcile-label\n'
+    return
+  fi
+  printf 'analyze\n'
+}
+
+persist_checkpoint_action() {
+  local write_status="$1"
+  local commit_status="$2"
+  local push_status="$3"
+
+  if [ "${write_status}" -ne 0 ] || [ "${commit_status}" -ne 0 ] || [ "${push_status}" -ne 0 ]; then
+    printf 'abort\n'
+    return
+  fi
+  printf 'continue\n'
+}
+
 write_batch_changeset() {
   local batch_fixture="$1"
   local changeset_file="$2"

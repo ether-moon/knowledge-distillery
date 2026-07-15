@@ -1,0 +1,9 @@
+{
+  "wave_prs": [
+    {"slot": 0, "number": 1602, "merged_at": "2026-07-15T11:01:00Z"}
+  ],
+  "results": [
+    {"slot": 0, "pr_number": 1602, "outcome": "processed", "duration_seconds": 11},
+    {"slot": 0, "pr_number": 1602, "outcome": "failed", "duration_seconds": 12}
+  ]
+}

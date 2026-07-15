@@ -4,10 +4,10 @@ set -euo pipefail
 # Pure-bash helpers exercising the time-budget / handoff invariants
 # documented in the batch-refine skill. Used by tests/handoff-structure.sh.
 
-# Usage: should_start_pr <now_ts> <start_ts> <deadline_seconds>
-# Returns 0 (truthy) when there is enough budget left to start a new PR,
+# Usage: should_start_wave <now_ts> <start_ts> <deadline_seconds>
+# Returns 0 (truthy) when there is enough budget left to start a new wave,
 # 1 (falsy) when the deadline has been reached or exceeded.
-should_start_pr() {
+should_start_wave() {
   local now="$1"
   local start="$2"
   local deadline="$3"

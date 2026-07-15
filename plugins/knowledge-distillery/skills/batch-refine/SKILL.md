@@ -21,30 +21,31 @@ The GitHub token used by this workflow expires roughly one hour after the workfl
 | Variable | Meaning |
 |----------|---------|
 | `BATCH_START_TS` | Unix timestamp when this run started (proxy for token issuance time). |
-| `DEADLINE_SECONDS` | Maximum elapsed seconds before refusing to start a new PR (e.g. `2700` = 45 min). |
+| `DEADLINE_SECONDS` | Maximum elapsed seconds before refusing to start a new wave (e.g. `2700` = 45 min). |
+| `WAVE_SIZE` | Maximum fresh read-only subagents per wave. Defaults to `3` when absent. |
 | `RETRY_COUNT` | How many self-retriggers preceded this run. Cron starts at `0`. |
 | `MAX_RETRY_COUNT` | Hard ceiling on self-retriggers per batch (e.g. `5`). |
 
-The deadline is 45 minutes, leaving 15 minutes before the token's approximate 60-minute lifetime. **The 15-minute margin is provisional until the first wall-clock measurements**: in the current serial loop it assumes enough time for the final PR tail plus a 1–2 minute handoff; after bounded waves are introduced it must cover the final wave tail plus that handoff. This is an operating assumption, not a guarantee, and must be revisited from the timing logs. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but PR-atomic commits preserve everything completed so far, and the next cron run resumes naturally.
+The deadline is 45 minutes, leaving 15 minutes before the token's approximate 60-minute lifetime. **The 15-minute margin is provisional until the first wall-clock measurements from bounded waves**: it assumes enough time for the final wave tail plus a 1–2 minute handoff. This is an operating assumption, not a guarantee, and must be revisited from the wave timing logs. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but checkpoints from prior waves preserve everything already pushed, and the next cron run resumes naturally.
 
 ### Workflow concurrency and trigger coalescing
 
 The workflow-level `knowledge-batch-refine` concurrency group ensures the **active run is never cancelled and only the latest pending trigger is retained**. The single pending slot intentionally coalesces stale drain requests instead of building a FIFO queue of self-retriggers, cron runs, and manual dispatches. If a cron or manual dispatch replaces a pending self-retrigger, treat it as a fresh chain with `retry_count=0`; **labels and commits are the durable state, not the retry counter**, so the replacement run resumes the same remaining work safely.
 
-### Time budget check (before each PR)
+### Time budget check (before each wave)
 
-Run this check at the **top of every PR iteration**, before invoking `collect-evidence`:
+Run this check at the **top of every wave iteration**, before issuing any Agent call:
 
 ```bash
 elapsed=$(( $(date +%s) - BATCH_START_TS ))
 remaining=$(( DEADLINE_SECONDS - elapsed ))
 if [ "$remaining" -le 0 ]; then
-  # Skip this PR. Enter graceful handoff with the remaining PRs as the leftover set.
+  # Skip this wave. Enter the post-budget gate with this and later waves left over.
   goto_graceful_handoff=1
 fi
 ```
 
-If `goto_graceful_handoff=1`, stop the loop and continue to the **Post-budget completion gate** below. Only that gate's **Pending remains** branch enters the Graceful Handoff Procedure. Do **not** start a new PR after the deadline — even a "small" PR can blow through the remaining margin once an LLM call stalls.
+If `goto_graceful_handoff=1`, stop the loop and continue to the **Post-budget completion gate** below. Only that gate's **Pending remains** branch enters the Graceful Handoff Procedure. Do **not** start a new wave after the deadline. Once a wave starts, let every Agent settle and finish that wave's auth barrier and sequential checkpoints even if the deadline passes. The provisional margin must absorb that bounded tail.
 
 ### Post-budget completion gate (before Step 7 and Step 8)
 
@@ -53,9 +54,9 @@ After the deadline stops new dispatches and all in-flight work settles, re-query
 - **Zero pending:** clear `goto_graceful_handoff`, reclassify the run as full completion, run Step 7 exactly once, then Step 8 exactly once, and exit through the normal full-completion path. Do not append a handoff row or self-retrigger.
 - **Pending remains:** keep `goto_graceful_handoff=1`, skip both Step 7a and Step 7b, run Step 8 exactly once, then enter the numbered Graceful Handoff steps.
 
-### PR-atomic commit pattern
+### Sequential per-PR checkpoint pattern
 
-Every PR that completes (or is determined `insufficient`) must immediately commit its changeset delta and update its label, **before** moving on to the next PR. This guarantees that any kind of crash — graceful handoff, 401, OOM, runner timeout — leaves a consistent state for the next run to pick up.
+After a wave passes the all-settled auth barrier, every `processed`, `insufficient`, or non-auth `failed` result must checkpoint sequentially before the orchestrator advances to the next result. Subagents never perform these mutations. A crash can lose the current in-flight wave's analysis, but checkpoints pushed by earlier waves remain durable.
 
 For each PR:
 
@@ -63,16 +64,18 @@ For each PR:
 2. Append a row to `.knowledge/reports/batch-YYYY-MM-DD.md` progress table (see "Report PR Progress Table" below).
 3. `git add .knowledge/ && git commit -m "kd: PR #<n> processed"`.
 4. `git push`.
-5. Update the PR's label: `knowledge:pending` → `knowledge:collected` (or leave pending if insufficient).
+5. Update the PR's label: `knowledge:pending` → `knowledge:collected` (or leave pending if insufficient or failed).
 6. If a Report PR already exists for this batch, refresh its body from the report file. Skip if it does not yet exist (it gets created at first commit).
 
 The order is intentional: **changeset/report committed and pushed before label flips**. If the label flips first and we crash, the next run sees `knowledge:collected` and skips the PR even though its entries are not in the changeset.
 
+If write, commit, or push cannot complete, stop the run; never carry dirty or unpushed state into the next PR's checkpoint. If commit and push succeeded but the processed PR's label flip failed, the durable success row drives Step 2's label-only reconciliation on the next run.
+
 ### Graceful Handoff Procedure
 
-Reached only from the Post-budget completion gate's **Pending remains** branch, after Step 8 has run exactly once. The numbered steps are performed once, after the last in-flight PR finishes (or never starts).
+Reached only from the Post-budget completion gate's **Pending remains** branch, after Step 8 has run exactly once. The numbered steps are performed once, after the last started wave has fully settled and checkpointed (or no wave starts).
 
-1. **Confirm progress is committed.** If any in-flight changeset/report changes are uncommitted, commit + push now while the token is still valid.
+1. **Confirm progress is committed.** No Agent may still be in flight and no checkpoint may be dirty or unpushed. A persist failure takes the non-zero error path instead of being folded into handoff.
 2. **Append a handoff row to the Report PR progress table** using the exact Markdown table row format below (matching the table schema in the "Report PR Progress Table" section — never use bullets here):
    ```markdown
    | run #$GITHUB_RUN_ID | ⏱ 시간 예산 도달 — 처리 N개, 남은 M개, 재트리거함 (재시도 $RETRY_COUNT/$MAX_RETRY_COUNT) |
@@ -91,11 +94,12 @@ Reached only from the Post-budget completion gate's **Pending remains** branch, 
 
 ### Unexpected 401 (ungraceful path)
 
-If `collect-evidence` (or any GitHub MCP call) returns 401/403 mid-run, the token has died early. Do **not** attempt the handoff procedure — every step requires a valid token.
+If `collect-evidence`, label-only reconciliation, or any required GitHub operation returns 401/403 mid-run, the token has died early. Do **not** attempt the handoff procedure — every step requires a valid token.
 
-1. The PR currently being processed: do nothing. It stays `knowledge:pending`. Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only.
-2. Stop the loop.
-3. Exit (any non-zero is fine; the workflow run will be marked failed but PR-atomic commits up to this point are already in place).
+1. **Auth returned during read-only analysis:** first wait for every Agent in the current wave to settle. If any result is `github_auth`, discard all current-wave results before Step 3c. Every PR in that wave stays `knowledge:pending`. Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only. The same log-only rule applies to non-auth peers discarded with that wave, and `persist_duration_seconds=0`.
+2. **Auth during label-only reconciliation before any wave starts:** there is no in-flight wave to settle or discard. Leave the already-pushed success checkpoint and pending label as-is, then exit non-zero directly without analysis, handoff, or retrigger.
+3. **Auth after Step 3c has begun:** do not pretend the whole wave can be discarded. Abort immediately without handoff. A local commit whose push failed is not durable and its label stays pending. A pushed processed checkpoint whose label flip failed is durable and is repaired by Step 2's label-only reconciliation on the next run. Earlier pushed/labeled checkpoints remain complete; later results stay pending.
+4. In every auth case, skip Step 7, Step 8, and the Graceful Handoff Procedure, then exit non-zero. Never roll back a prior durable checkpoint and never self-retrigger with a dead token.
 
 The next cron (or manual dispatch) sees the leftover `knowledge:pending` PRs and resumes from there. No retrigger from inside this run.
 
@@ -159,56 +163,77 @@ git checkout -b knowledge/batch-YYYY-MM-DD main
 
 If the branch already exists (re-run or self-retrigger scenario), checkout the existing branch — do not reset it. The accumulated commits from previous runs are the source of truth for which PRs have already been processed in this batch.
 
-When resuming an existing branch, also locate the existing Report PR (if any) and re-read the progress table to confirm which PRs are already marked complete. The PR's `knowledge:collected` label is the authoritative signal; treat the progress table as a human-readable mirror.
+When resuming an existing branch, also locate the existing Report PR (if any) and re-read its accumulated progress table before building waves. Labels remain the normal discovery signal, while a pushed success row is the recovery signal for the narrow commit/push-success + label-failure gap.
 
-### Step 3: Per-PR Atomic Loop
+When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation: retry `knowledge:pending` → `knowledge:collected`, and exclude that PR from analysis waves after the flip succeeds. Do not rerun its analysis or append another changeset/report checkpoint. Insufficient and failed rows are not reconciliation successes; those PRs stay pending and remain eligible for analysis. If label-only reconciliation returns auth failure, enter Unexpected 401; for another label error, leave the PR pending and exit non-zero rather than duplicating its checkpoint.
+
+### Step 3: Bounded Analysis Waves + Per-PR Atomic Checkpoints
 
 Skip this step entirely for a deferred-only report batch (`pending == 0 AND deferred > 0` from Step 1). In that case, create `.knowledge/changesets/batch-YYYY-MM-DD.json` with `entries: []` and `.knowledge/reports/batch-YYYY-MM-DD.md` with the Deferred Queue section. For a deferred-only report batch, write the empty changeset and report file, then commit and push them before Step 4 creates the Report PR. The push creates the remote branch that Step 4's PR creation depends on.
 
-Process pending PRs **one at a time** in `mergedAt` ascending order. For each PR run the full per-PR pipeline and immediately persist progress before moving on. This guarantees that any kind of mid-run termination (graceful handoff, 401, runner timeout) leaves a consistent state.
+Set `K=${WAVE_SIZE:-3}` and require a positive integer before dispatching anything. An invalid value aborts non-zero before mutation. Sort pending PRs by `mergedAt` ascending and split them into contiguous waves of at most K PRs. The tail wave may contain fewer than K. Analysis inside a wave is concurrent and read-only; the orchestrator remains the sole writer, committer, pusher, Report PR updater, and label flipper.
+
+Waves MUST be formed from pending PRs in `mergedAt` ascending order; only the orchestrator may persist results sequentially in that same order. No subagent may modify `.knowledge/`, git state, the Report PR, or source-PR labels.
 
 The orchestrator initializes `RUN_WALL_CLOCK_START_TS` immediately before this workflow run's first subagent dispatch. Do not initialize it during discovery or include time spent waiting between self-retriggered workflow runs.
 
 ```text
-for pr in pending_prs (sorted by mergedAt asc):
+for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
   # 3a. Time budget gate
   elapsed=$(( $(date +%s) - BATCH_START_TS ))
   if [ "$elapsed" -ge "$DEADLINE_SECONDS" ]; then
     break   # → Post-budget completion gate
   fi
 
-  # 3b. Run pipeline for this single PR — MUST run in a fresh subagent
-  # spawned via the Agent tool. Each PR gets its own context window so that
+  # 3b. Run read-only analysis for this wave. Every PR MUST run in a fresh subagent
+  # spawned via its own Agent tool call. Each PR gets its own context window so that
   # accumulating PRs do not pollute the orchestrator's main context. Inside
   # that subagent, the three skills are invoked sequentially:
-  spawn-agent (single Agent tool call, fresh context):
-    set PR_START_TS immediately before the first skill invocation
-    invoke /knowledge-distillery:collect-evidence with pr.number
-      → Evidence Bundle
-      - If sufficiency.verdict == "insufficient" AND
-        sufficiency.missing contains "github_auth":
-          → return the github_auth outcome immediately
-          orchestrator: → enter "Unexpected 401" path (do NOT retrigger; token is dead)
-      - If sufficiency.verdict == "insufficient" for any other reason:
-          → return insufficient outcome; skip extract-candidates/quality-gate,
-            persist the row in 3c, and leave the label pending in 3d
-    invoke /knowledge-distillery:extract-candidates with the Evidence Bundle
-      → Candidate array (may be empty)
-    invoke /knowledge-distillery:quality-gate with the Candidate array
-      → Verdict array
-    set duration_seconds immediately after the terminal outcome is known
-  return the additive per-PR result payload to the orchestrator
+  spawn wave (K separate Agent tool calls in one message, each fresh context):
+    Issue every Agent call in the same orchestrator message before waiting for any result.
+    for each (slot, pr) in wave_prs:
+      set PR_START_TS immediately before the first skill invocation
+      invoke /knowledge-distillery:collect-evidence with pr.number
+        → Evidence Bundle
+        - If sufficiency.verdict == "insufficient" AND
+          sufficiency.missing contains "github_auth":
+            → return the github_auth outcome immediately
+            after the wave settles, orchestrator: → enter "Unexpected 401" path (do NOT retrigger; token is dead)
+        - If sufficiency.verdict == "insufficient" for any other reason:
+            → return insufficient outcome; skip extract-candidates/quality-gate,
+              persist the row in 3c, and leave the label pending in 3d
+      invoke /knowledge-distillery:extract-candidates with the Evidence Bundle
+        → Candidate array (may be empty)
+      invoke /knowledge-distillery:quality-gate with the Candidate array
+        → Verdict array
+      set duration_seconds immediately after the terminal outcome is known
+      return the additive per-PR result payload; do not write shared state
 
-  # 3c. Persist this PR's outcome (atomic checkpoint)
-  - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
-  - Append a progress table row with duration + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
-  - Append the result's compact KD_BATCH_PR_META line immediately after its per-PR detail
-  - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
-  - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
+  # Barrier: every call settles before any durable mutation.
+  Wait until every Agent call in the wave has settled.
+  Before any Step 3c write, scan the complete settled result set for `outcome == "github_auth"`.
+  If any auth result exists, discard every unpersisted result in the wave, including
+  processed, insufficient, or failed peers; log durations and persist_duration_seconds=0,
+  leave the whole wave pending, skip Step 3c/3d, Step 7/8, and handoff, then exit non-zero.
 
-  # 3d. Flip the label (only after the commit landed)
-  - Use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected` on PR #<n>
-    (if insufficient: leave label as `knowledge:pending`)
+  The original invocation slot and PR number are authoritative; reject duplicate slots, foreign PR numbers, or mismatched results before persistence. On validation failure, discard the whole unpersisted wave and exit non-zero.
+  A missing non-auth payload becomes that slot's `failed` result with `duration unknown` and `changed_files=[]`.
+
+  # 3c/3d. Sole-writer checkpoint drain
+  Only after the auth scan passes, process the original `wave_prs` in `mergedAt` ascending order.
+  for each (pr, result) in original wave_prs order:
+    # 3c. Persist this PR's outcome (atomic checkpoint)
+    - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
+    - Append a progress table row with duration + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
+    - Append the result's compact KD_BATCH_PR_META line immediately after its per-PR detail
+    - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
+    - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
+
+    If a Step 3c write or commit fails, or if `git push` still fails after one retry, abort the batch immediately with a non-zero exit. Never continue to the next PR with dirty files or an unpushed local commit. Do not flip this or any later PR's label.
+
+    # 3d. Flip the label (only after the commit landed)
+    - For `processed`, use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected`
+    - For `insufficient` or `failed`, leave label as `knowledge:pending`
 ```
 
 #### Per-PR result and timing contract
@@ -225,7 +250,7 @@ The per-PR subagent MUST measure its own `duration_seconds`. Start immediately b
 }
 ```
 
-Format a known duration as `XmYs` in the progress status cell. Insufficient and non-auth failure rows MUST also include the duration. If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`. A `github_auth` payload follows the Unexpected 401 path: log its duration, but do not persist the auth-dead PR's row or timing.
+Format a known duration as `XmYs` in the progress status cell. Insufficient and non-auth failure rows MUST also include the duration. If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`. A `github_auth` payload follows the Unexpected 401 path: log every returned duration in that wave, but persist no row, timing, metadata, candidate, or count from any current-wave result.
 
 For every non-auth result persisted by Step 3c (`processed`, `insufficient`, or `failed`), serialize the result payload's PR identity and changed-file list as compact valid JSON on exactly one hidden report line immediately after that PR's detail:
 
@@ -237,15 +262,15 @@ Normalize a missing `changed_files` field to `[]` before serializing the compact
 
 #### Orchestrator timing and Actions logs
 
-Run wall-clock timing belongs to the orchestrator. It spans the current workflow run's first subagent dispatch through completion of the last PR's Step 3c commit and push. It excludes discovery before that dispatch, subsequent label changes, self-retrigger wait time, and work in other workflow runs. The orchestrator MUST NOT derive this value from `Σ(per-PR duration_seconds)`.
+Run wall-clock timing belongs to the orchestrator. It spans the current workflow run's first subagent dispatch through completion of the last PR's Step 3c commit and push. Because checkpoints drain as `3c → 3d → 3c`, it naturally includes intermediate label transitions; only the final PR's post-push label transition is outside the interval. It excludes discovery before dispatch, self-retrigger wait time, and work in other workflow runs. The orchestrator MUST NOT derive this value from `Σ(per-PR duration_seconds)`.
 
 Record the value in the Summary as `| 총 소요시간(wall-clock) | XmYs (run #N) |`. If this workflow run spawned no per-PR subagent, record `| 총 소요시간(wall-clock) | N/A (run #N) |` instead.
 
-Log each dispatch unit's `dispatch → all settled` duration and its `sequential persist` duration separately. The current serial loop has one PR per dispatch unit; this logging contract does not introduce parallel processing. At handoff and completion, also log run elapsed time from `BATCH_START_TS` so the workflow's token-expiry margin can be evaluated.
+Log every wave as `wave_duration_seconds=<dispatch-to-all-settled> persist_duration_seconds=<first-Step-3c-write-to-last-commit-push> run_elapsed_seconds=<BATCH_START_TS-to-now>`. The persist interval follows the actual checkpoint drain, so intermediate Step 3d label transitions are naturally included; only the final PR's post-push label transition falls after its terminal boundary. For an auth-dead wave, log `persist_duration_seconds=0` because no Step 3c write may begin. At handoff and completion, also log `run_elapsed_seconds` from `BATCH_START_TS` so the provisional token-expiry margin can be evaluated.
 
-**Why serial, not parallel?** Earlier versions of this skill spawned all PRs in parallel for throughput. Parallelism is incompatible with the "graceful handoff before token expiry" contract: if multiple subagents are mid-flight when the deadline is reached, the orchestrator cannot cleanly truncate them. Serial processing keeps the cancellation point well-defined (between PRs) and makes the progress table monotonically meaningful. Throughput is recovered across multiple workflow runs (cron + self-retriggers) rather than within one.
+**Why bounded waves?** Unbounded or matrix fan-out still violates the single-writer checkpoint contract and makes token-expiry truncation unbounded. K=3 parallelizes only read-only analysis inside one orchestrator run. The all-settled auth barrier prevents partial-wave persistence, and mergedAt-ordered sole-writer checkpoints preserve deterministic durable state. The tradeoff is explicit: a runner timeout or hung Agent can lose up to one wave of analysis instead of one PR; labels remain pending so the next run re-analyzes at most K PRs.
 
-**Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), record the failure in the progress table for that PR (`❌ failed: <error> (<duration or duration unknown>, run #<id>)`), do not flip its label, and continue with the next PR. PR-level failures MUST NOT block the rest of the batch.
+**Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), normalize or retain its `failed` result, then after the barrier record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` in that PR's mergedAt-ordered checkpoint. Do not flip its label; continue draining the remaining settled results and later waves. PR-level failures MUST NOT block the rest of the batch.
 
 ### Step 4: Maintain Report PR (per-commit — cheap)
 
@@ -261,7 +286,7 @@ Else:
   Use GitHub MCP to update the existing PR's body from the latest report file.
 ```
 
-**Do NOT run reviewer reconciliation, Deferred Queue collection, or triage metric collection on every per-PR refresh.** Each is O(all labeled PRs); running them per PR multiplies that by the batch size and by every self-retrigger — the exact scan cost this pipeline is meant to reduce. They run **once, at batch completion** (Step 7b). Keep the per-PR loop cheap so throughput scales with queue size.
+**Do NOT run reviewer reconciliation, Deferred Queue collection, or triage metric collection on every per-PR refresh.** Each is O(all labeled PRs); running them per PR multiplies that by the batch size and by every self-retrigger — the exact scan cost this pipeline is meant to reduce. They run **once, at batch completion** (Step 7b). Keep each sequential checkpoint cheap so throughput scales with queue size.
 
 **MUST NOT auto-merge the report PR.** Human review is the intervention point.
 
@@ -323,7 +348,7 @@ Notes:
 
 ### Step 7: Domain Change Summary + Batch-Completion Reconciliation (runs ONLY on full completion — skip entirely on graceful handoff)
 
-Run this only after the per-PR loop exhausts the discovered work list, for a deferred-only report batch, or after the zero-pending reclassification in the Post-budget completion gate. On a graceful-handoff exit (`goto_graceful_handoff=1`), skip both Step 7a and Step 7b entirely and proceed directly to Step 8.
+Run this only after the wave loop exhausts the discovered work list, for a deferred-only report batch, or after the zero-pending reclassification in the Post-budget completion gate. On a graceful-handoff exit (`goto_graceful_handoff=1`), skip both Step 7a and Step 7b entirely and proceed directly to Step 8.
 
 #### Step 7a: Domain Change Summary (runs ONLY on full completion — skip on graceful handoff)
 
@@ -541,11 +566,13 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | No pending or deferred PRs | Exit 0. No branch, no PR. |
 | No pending PRs but deferred PRs exist | Create a report-only batch with empty changeset and Deferred Queue section. |
 | Time budget reached | MUST enter the **Post-budget completion gate** first. Zero pending → full completion (Step 7 then Step 8); pending remains → Step 8 then **Graceful Handoff Procedure**. Exit 0. |
-| GitHub MCP 401/403 mid-run | Stop loop. Do **not** retrigger (token already dead). Exit non-zero. Next cron resumes. |
-| Per-PR pipeline fails (non-auth) | Record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` row, leave PR labeled `knowledge:pending`, continue with next PR. |
+| GitHub auth failure during read-only wave analysis | Wait for all Agents to settle, discard every current-wave result before Step 3c, log `persist_duration_seconds=0`, do **not** handoff/retrigger, and exit non-zero. Prior-wave checkpoints remain durable. |
+| GitHub auth failure after Step 3c begins | Abort without handoff/retrigger. Preserve earlier durable checkpoints; leave unpushed/later work pending. A pushed success with label failure uses label-only reconciliation next run. |
+| Per-PR pipeline fails (non-auth) | After the wave passes the auth barrier, record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` in mergedAt order, leave the PR pending, and continue the checkpoint drain. |
 | Insufficient evidence on a PR | Record row, leave label `knowledge:pending`. Picked up by next batch. |
-| Changeset write fails | Log error. Skip the PR. The label stays `knowledge:pending`. |
-| `git push` fails (non-auth) | Retry once. If still fails, log and continue — next run reconciles. |
+| Changeset/report write or `git commit` fails | Abort immediately with non-zero. Do not continue with dirty state and do not flip the label. |
+| `git push` fails (non-auth) | Retry once. If it still fails, abort immediately with non-zero; never let an unpushed commit flow into the next checkpoint. |
+| Processed checkpoint pushed but label flip fails | Leave the PR pending and exit non-zero. On the next run, use the durable `✅ 처리 완료` row for label-only reconciliation; do not rerun analysis or append a duplicate checkpoint. |
 | GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. Continue (PR will be created on next commit). |
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
 | Branch already exists | Checkout existing branch (supports re-runs and self-retriggers). |
@@ -561,8 +588,12 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 - MUST NOT modify existing vault entries (append-only principle)
 - MUST NOT insert entries into vault.db directly — write changeset file only
 - MUST NOT skip the report PR even when all candidates are rejected
-- PRs MUST be processed serially in `mergedAt` ascending order so the time-budget cancellation point is well-defined
+- Analysis waves MUST contain at most `${WAVE_SIZE:-3}` PRs and MUST be dispatched only at wave-boundary time-budget cancellation points
+- Every PR analysis MUST run in its own fresh, read-only subagent; all Agent calls for one wave MUST be issued in one orchestrator message
+- The orchestrator MUST wait for the whole wave to settle and pass the whole-wave auth barrier before any Step 3c write
+- Waves MUST preserve `mergedAt` input order, and the orchestrator MUST be the sole writer that checkpoints results sequentially in that order
 - Per-PR commits MUST be atomic: changeset/report committed and pushed **before** the label flips
+- A write/commit/push failure MUST abort before another PR checkpoint; a pushed success row with a failed label flip MUST use label-only reconciliation on resume
 - Graceful handoff MUST exit 0 — it is a successful workflow run, not a failure
 - 401/403 from GitHub MCP MUST NOT trigger the handoff procedure (the token is already dead)
 - MUST handle partial failures gracefully
