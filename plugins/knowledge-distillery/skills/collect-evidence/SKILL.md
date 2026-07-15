@@ -57,24 +57,36 @@ Run these commands from the target repository, replacing `<n>` with `pr_number`.
 
 ```bash
 gh pr view <n> --json number,title,body,author,baseRefName,mergeCommit,changedFiles,files,commits,comments --jq '{number,title,body,author:(.author.login // ""),merge_sha:(.mergeCommit.oid // ""),base_branch:.baseRefName,changed_file_count:.changedFiles,changed_files:[.files[].path],commits:[.commits[]|{sha:.oid[0:7],message:(.messageHeadline + (if .messageBody == "" then "" else "\n\n" + .messageBody end))}],issue_comments:[.comments[]|{author:(.author.login // ""),body}]}'
-gh api "repos/{owner}/{repo}/pulls/<n>/comments?per_page=100" --paginate --slurp --jq '[.[][] | {author:(.user.login // ""),body,path,line:(.line // .original_line)}]'
+gh api "repos/{owner}/{repo}/pulls/<n>/comments?per_page=100" --paginate --slurp | jq -c '[.[][] | {author:(.user.login // ""),body,path,line:(.line // .original_line)}]'
 ```
 
 The first projection deliberately keeps files as paths, commits as `{sha,message}`, and issue comments as `{author,body}`. The second projection produces normalized inline review comments. This avoids retaining large unused response fields in the subagent's Bash output. Raw bodies and commit messages MUST remain byte-for-byte unsummarized in the normalized snapshot.
 
 `gh pr view` has bounded files and commits collections, so complete them before parsing the Manifest:
 
-- When `.files | length < .changedFiles`, replace `changed_files` with the flattened result of:
+- When `(.changed_files | length) < .changed_file_count` in the projected snapshot, replace `changed_files` with the flattened result of:
   ```bash
-  gh api "repos/{owner}/{repo}/pulls/<n>/files?per_page=100" --paginate --slurp --jq '[.[][] | .filename]'
+  gh api "repos/{owner}/{repo}/pulls/<n>/files?per_page=100" --paginate --slurp | jq -c '[.[][] | .filename]'
   ```
-- When the normalized commits array has exactly 100 entries, replace it with the flattened result of:
+- When the normalized commits array has exactly 100 entries, do not use the REST commits endpoint: it caps the accessible list at 250 commits. Derive `owner/repo`, split the returned value at `/`, and replace the array with the complete GraphQL cursor result:
   ```bash
-  gh api "repos/{owner}/{repo}/pulls/<n>/commits?per_page=100" --paginate --slurp --jq '[.[][] | {sha:.sha[0:7],message:.commit.message}]'
+  gh repo view --json nameWithOwner --jq .nameWithOwner
+  gh api graphql --paginate --slurp \
+    -F owner="<owner>" -F repo="<repo>" -F number=<n> \
+    -f query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          commits(first: 100, after: $endCursor) {
+            nodes { commit { oid message } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }' | jq -c '[.[] | .data.repository.pullRequest.commits.nodes[] | {sha:.commit.oid[0:7],message:.commit.message}]'
   ```
 - `gh pr view --json comments` preloads all issue comments, so it needs no separate issue-comment overflow request.
 
-Every paginated REST command uses `?per_page=100`, `--paginate`, and `--slurp`. A paginated command emits one array per page; `--slurp` plus `[.[][] | ...]` is required to produce one flat JSON array.
+Every paginated REST command uses `?per_page=100`, `--paginate`, and `--slurp`. A paginated REST command emits one array per page; pipe that slurped output to external `jq -c` with `[.[][] | ...]` to produce one flat JSON array. gh rejects combining `--slurp` with its own `--jq` flag. The GraphQL query declares `$endCursor`, requests `pageInfo { hasNextPage endCursor }`, and pipes every slurped page to the same external jq process. Run every gh-to-jq pipeline with `set -o pipefail` so a failed gh call cannot be hidden by a successful jq process. The repository-derivation call and every GraphQL page are subject to the same auth classification and atomic MCP fallback as the two primary gh calls.
 
 #### 1b. Auth classification and whole-collection MCP fallback
 
@@ -85,6 +97,8 @@ After every primary or overflow gh call, classify the captured result in this or
 3. For any other non-zero result, use the MCP fallback. Discard every partial gh result and restart the whole GitHub collection through the read-only GitHub MCP path. This includes gh being unavailable, gh being unconfigured, and exit 4 with `populate the GH_TOKEN...`.
 
 The MCP fallback restarts all required GitHub reads: issue-level comments, PR title/body/author/base branch/merge SHA, the complete changed-file list, all commits, and all inline review comments. Normalize those responses to the same fields and shapes as the gh projection. Never combine partial gh results with GitHub MCP results. If any required MCP fallback call returns 401/403, apply the existing auth-failure contract immediately.
+
+A non-auth gh rate-limit failure discards all gh output and restarts the whole collection through MCP. An MCP rate-limit failure is reported to the orchestrator for retry in the next batch. Blanket HTTP 403 takes the auth-dead path first for either transport under D3.
 
 The first live batch is also an authentication check for this fast path: verify that `GH_TOKEN` or `GITHUB_TOKEN` reaches the fresh subagent context. If not, explicitly propagate the token environment from the workflow before relying on gh.
 
@@ -104,13 +118,13 @@ Use the normalized `issue_comments` array to locate the Manifest:
    - `pr.changed_files` must be an array
    - All `identifiers` sub-keys (`linear`, `slack`, `memento`, `greptile`, `notion`) must be present (even if empty arrays)
 
-If strict parsing succeeds, proceed to Step 2.
+If strict parsing succeeds, proceed to Step 2. If strict parsing or any validation check fails, continue to 1d and attempt reconstruction from the normalized snapshot.
 
-#### 1d. LLM fallback parsing
+#### 1d. LLM repair and fallback parsing
 
-If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, or if the JSON between delimiters is malformed:
+If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, the delimited JSON is malformed, or any strict validation check fails:
 
-1. Search all issue comments for one that resembles an Evidence Bundle Manifest. Look for comments containing keywords like "Evidence Bundle Manifest", "evidence", identifier references (Linear IDs, Slack URLs, commit SHAs), or structured lists of evidence sources.
+1. Treat the failed strict comment as the candidate when one exists. Otherwise, search all issue comments for one that resembles an Evidence Bundle Manifest. Look for comments containing keywords like "Evidence Bundle Manifest", "evidence", identifier references (Linear IDs, Slack URLs, commit SHAs), or structured lists of evidence sources.
 2. If a candidate comment is found, extract structured data from it by reading its content and mapping it to the Manifest schema:
    ```json
    {
@@ -136,10 +150,11 @@ If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, or if the
    - Extract any commit SHAs referenced as memento sources → populate `identifiers.memento`
    - Extract any Greptile review references → populate `identifiers.greptile`
    - Extract any Notion URLs (pattern: `https://(www.)?notion.(so|site)/*`) → populate `identifiers.notion`
-   - Fill missing PR fields only from the already completed normalized snapshot; do not make another GitHub call.
+   - Repair missing or invalid PR fields only from the already completed normalized snapshot; do not make another GitHub call.
+   - Preserve valid identifier values recovered from the candidate and materialize every missing identifier key as an empty array.
 3. Validate the reconstructed Manifest using the same rules as 1c step 5. Empty identifier arrays are valid.
 
-If fallback parsing produces a valid Manifest, proceed to Step 2.
+If fallback parsing produces a valid Manifest, proceed to Step 2. If the reconstructed Manifest still fails validation, return `insufficient` with `missing: ["manifest"]` and the validation reason. Do not proceed to later evidence stages.
 
 #### 1e. No Manifest found
 
@@ -280,12 +295,12 @@ If `insufficient`:
 ```json
 {
   "verdict": "insufficient",
-  "missing": ["<specific items, e.g., 'linear:PAY-123', 'pr_diff', 'manifest'>"],
+  "missing": ["<specific required items, e.g., 'changed_files', 'commits', 'manifest'>"],
   "reason": "<Human-readable explanation of what is missing and why it matters>"
 }
 ```
 
-Even when `insufficient` due to **missing optional sources** (e.g., Linear unavailable, Notion down), return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., keeping the PR in `knowledge:pending` for a later retry).
+Return every optional source that was retrieved and mark unavailable optional entries as documented in Steps 3–7. Missing optional sources never changes a bundle with the required baseline from `sufficient` to `insufficient`.
 
 **Auth failure is a special case** that does **not** follow this rule — see GitHub MCP Auth Failure (401/403) below. Partial data on auth failure must be discarded.
 
@@ -400,8 +415,8 @@ The final Evidence Bundle must follow this structure:
 
 | Failure Mode | Behavior |
 |-------------|----------|
-| No Manifest comment on PR | Return `insufficient` with reason. Do not proceed to collection steps. |
-| Manifest JSON malformed | Return `insufficient` with reason. Do not proceed. |
+| No Manifest-like comment on PR | Return `insufficient` with reason after the normalized snapshot search. Do not proceed to later evidence stages. |
+| Manifest JSON malformed or strict validation fails | Attempt 1d reconstruction from the normalized snapshot; only return `insufficient` if the reconstructed Manifest is still invalid. |
 | Linear MCP unavailable | Set `retrieved: false` for all Linear entries. Continue — optional source. |
 | Linear issue deleted/moved/not found | Set `retrieved: false` for that entry. Continue — optional source. |
 | Slack content unretrievable | Set `retrieved: false` for that entry. Continue — optional source. |
@@ -411,7 +426,8 @@ The final Evidence Bundle must follow this structure:
 | gh unavailable, unconfigured, or non-auth failure | Discard partial gh output and restart the entire GitHub collection through read-only GitHub MCP. |
 | gh or MCP returns blanket HTTP 401/403 / bad credentials | Discard partial data and return `missing: ["github_auth"]`; auth classification takes priority over fallback and rate-limit handling. |
 | Changed file list incomplete | Use the paginated files endpoint; if that non-auth read fails, restart the whole collection through MCP. Do not accept a truncated list. |
-| GitHub API rate limit without HTTP 403 | Report failure to orchestrator. Orchestrator retries in next batch. Under D3, blanket HTTP 403 remains auth-dead. |
+| gh rate limit without HTTP 403 | Discard all gh output and restart the complete GitHub collection through MCP. |
+| GitHub MCP rate limit without HTTP 403 | Report failure to orchestrator. Orchestrator retries in next batch. |
 
 ## Constraints
 

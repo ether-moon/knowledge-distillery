@@ -172,11 +172,15 @@
         },
         {
           "doc": "collect_evidence_skill",
-          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/comments?per_page=100\" --paginate --slurp --jq '[.[][] | {author:(.user.login // \"\"),body,path,line:(.line // .original_line)}]'"
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/comments?per_page=100\" --paginate --slurp | jq -c '[.[][] | {author:(.user.login // \"\"),body,path,line:(.line // .original_line)}]'"
         },
         {
           "doc": "collect_evidence_skill",
           "contains": "Raw bodies and commit messages MUST remain byte-for-byte unsummarized in the normalized snapshot."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Run every gh-to-jq pipeline with `set -o pipefail`"
         }
       ]
     },
@@ -185,15 +189,47 @@
       "checks": [
         {
           "doc": "collect_evidence_skill",
-          "contains": "`.files | length < .changedFiles`"
+          "contains": "`(.changed_files | length) < .changed_file_count`"
         },
         {
           "doc": "collect_evidence_skill",
-          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/files?per_page=100\" --paginate --slurp --jq '[.[][] | .filename]'"
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/files?per_page=100\" --paginate --slurp | jq -c '[.[][] | .filename]'"
         },
         {
           "doc": "collect_evidence_skill",
-          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/commits?per_page=100\" --paginate --slurp --jq '[.[][] | {sha:.sha[0:7],message:.commit.message}]'"
+          "contains": "gh repo view --json nameWithOwner --jq .nameWithOwner"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api graphql --paginate --slurp"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "$endCursor: String"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "commits(first: 100, after: $endCursor)"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "pageInfo { hasNextPage endCursor }"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "{sha:.commit.oid[0:7],message:.commit.message}"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "}' | jq -c '[.[] | .data.repository.pullRequest.commits.nodes[] | {sha:.commit.oid[0:7],message:.commit.message}]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "--paginate --slurp --jq"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "pulls/<n>/commits?per_page=100"
         },
         {
           "doc": "collect_evidence_skill",
@@ -223,6 +259,35 @@
         {
           "doc": "collect_evidence_skill",
           "contains": "Never combine partial gh results with GitHub MCP results."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "A non-auth gh rate-limit failure discards all gh output and restarts the whole collection through MCP."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "An MCP rate-limit failure is reported to the orchestrator for retry in the next batch."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-invalid-manifest-attempts-reconstruction",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "If strict parsing or any validation check fails, continue to 1d and attempt reconstruction from the normalized snapshot."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "If the reconstructed Manifest still fails validation, return `insufficient` with `missing: [\"manifest\"]` and the validation reason."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Attempt 1d reconstruction from the normalized snapshot; only return `insufficient` if the reconstructed Manifest is still invalid."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "Manifest JSON malformed | Return `insufficient` with reason. Do not proceed."
         }
       ]
     },
@@ -479,15 +544,19 @@
       "checks": [
         {
           "doc": "collect_evidence_skill",
-          "contains": "Even when `insufficient` due to **missing optional sources**"
-        },
-        {
-          "doc": "collect_evidence_skill",
           "contains": "**Auth failure is a special case** that does **not** follow this rule"
         },
         {
           "doc": "collect_evidence_skill",
           "contains": "Partial data on auth failure must be discarded."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Missing optional sources never changes a bundle with the required baseline from `sufficient` to `insufficient`."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "Even when `insufficient` due to **missing optional sources**"
         }
       ]
     },
