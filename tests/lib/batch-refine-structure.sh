@@ -69,7 +69,7 @@ render_batch_report() {
   local run_wall_clock_seconds
 
   batch_date="$(jq -r '.batch_date' "${batch_fixture}")"
-  source_pr_count="$(jq '[.prs[]] | length' "${batch_fixture}")"
+  source_pr_count="$(jq '[.prs[] | select(.outcome != "github_auth")] | length' "${batch_fixture}")"
   candidate_count="$(jq '[.prs[] | .candidate_results[]?] | length' "${batch_fixture}")"
   accepted_count="$(jq '[.entries[] | select(.status == "accepted")] | length' "${changeset_file}")"
   accepted_facts="$(jq '[.entries[] | select(.status == "accepted" and .data.type == "fact")] | length' "${changeset_file}")"
@@ -185,6 +185,7 @@ render_batch_report() {
     printf '### Source PR Details\n'
     jq -r '
       .prs[]
+      | select(.outcome != "github_auth")
       | if .outcome == "processed" then
           "- #\(.number) \"\(.title)\": processed, \([.candidate_results[]? | select(.verdict.verdict == "pass")] | length) accepted, \([.candidate_results[]? | select(.verdict.verdict == "fail")] | length) rejected."
         elif .outcome == "insufficient" then

@@ -103,8 +103,15 @@
       "number": 1236,
       "title": "Attempted refinement with flaky Linear context",
       "outcome": "failed",
-      "duration_seconds": 41,
       "error": "extract-candidates subagent crashed"
+    },
+    {
+      "number": 1299,
+      "title": "Authentication expired during collection",
+      "outcome": "github_auth",
+      "duration_seconds": 987654,
+      "changed_files": [],
+      "verdicts": []
     }
   ]
 }

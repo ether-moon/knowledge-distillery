@@ -29,6 +29,15 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+  if [[ "${haystack}" == *"${needle}"* ]]; then
+    fail "${message}: unexpected '${needle}'"
+  fi
+}
+
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -58,8 +67,10 @@ fi
 assert_contains "${report_output}" "| 항목 | 상태 |" "progress table schema should remain unchanged"
 assert_contains "${report_output}" "| #1234 | ✅ 처리 완료 (1 accepted, 4m12s, run #100) |" "processed row should render the subagent duration"
 assert_contains "${report_output}" "| #1235 | ⏸ 대기 중 (insufficient: manifest, 1m08s, run #100) |" "insufficient row should render the subagent duration"
-assert_contains "${report_output}" "| #1236 | ❌ failed: extract-candidates subagent crashed (0m41s, run #100) |" "failed row should render the subagent duration"
-assert_contains "${report_output}" "| Source PRs processed | 3 |" "report summary should include all discovered PRs"
+assert_contains "${report_output}" "| #1236 | ❌ failed: extract-candidates subagent crashed (duration unknown, run #100) |" "payload-less failed row should render duration unknown"
+assert_contains "${report_output}" "| Source PRs processed | 3 |" "report summary should count only persisted non-auth PR outcomes"
+assert_not_contains "${report_output}" "#1299" "auth-dead PR number should not be persisted in the report"
+assert_not_contains "${report_output}" "16460m54s" "auth-dead sentinel duration should remain Actions-log-only"
 assert_contains "${report_output}" "| Candidates extracted | 2 |" "report summary should count extracted candidates"
 assert_contains "${report_output}" "| Accepted (fact / anti-pattern) | 1 (1 / 0) |" "report summary should break down accepted entry types"
 assert_contains "${report_output}" "| Rejected | 1 |" "report summary should count rejected candidates"
@@ -83,5 +94,16 @@ render_batch_report "${ZERO_FIXTURE}" "${ZERO_CHANGESET}" "${ZERO_REPORT}"
 zero_report_output="$(cat "${ZERO_REPORT}")"
 assert_contains "${zero_report_output}" "| Accepted (fact / anti-pattern) | 0 (0 / 0) |" "zero-accepted batches should still render accepted metrics"
 assert_contains "${zero_report_output}" "| Rejected | 1 |" "zero-accepted batches should still report rejections"
+
+ZERO_SPAWN_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-batch-zero-spawn.json"
+ZERO_SPAWN_CHANGESET="${TMP_DIR}/batch-2026-04-07.json"
+ZERO_SPAWN_REPORT="${TMP_DIR}/batch-2026-04-07.md"
+
+write_batch_changeset "${ZERO_SPAWN_FIXTURE}" "${ZERO_SPAWN_CHANGESET}"
+render_batch_report "${ZERO_SPAWN_FIXTURE}" "${ZERO_SPAWN_CHANGESET}" "${ZERO_SPAWN_REPORT}"
+
+zero_spawn_report_output="$(cat "${ZERO_SPAWN_REPORT}")"
+assert_contains "${zero_spawn_report_output}" "| Source PRs processed | 0 |" "zero-spawn runs should report zero persisted source PRs"
+assert_contains "${zero_spawn_report_output}" "| 총 소요시간(wall-clock) | N/A (run #102) |" "zero-spawn runs should render exact N/A wall-clock timing"
 
 echo "batch-refine structure tests passed"
