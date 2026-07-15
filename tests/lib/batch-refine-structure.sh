@@ -41,6 +41,17 @@ processed_pr_numbers_for_label_transition() {
   jq -r '.prs[] | select(.outcome == "processed") | .number' "${batch_fixture}"
 }
 
+format_duration_seconds() {
+  local duration_seconds="${1:-}"
+
+  if [ -z "${duration_seconds}" ] || [ "${duration_seconds}" = "null" ]; then
+    printf 'duration unknown'
+    return
+  fi
+
+  printf '%dm%02ds' "$((duration_seconds / 60))" "$((duration_seconds % 60))"
+}
+
 render_batch_report() {
   local batch_fixture="$1"
   local changeset_file="$2"
@@ -54,6 +65,8 @@ render_batch_report() {
   local accepted_antipatterns
   local rejected_count
   local insufficient_count
+  local run_id
+  local run_wall_clock_seconds
 
   batch_date="$(jq -r '.batch_date' "${batch_fixture}")"
   source_pr_count="$(jq '[.prs[]] | length' "${batch_fixture}")"
@@ -63,9 +76,47 @@ render_batch_report() {
   accepted_antipatterns="$(jq '[.entries[] | select(.status == "accepted" and .data.type == "anti-pattern")] | length' "${changeset_file}")"
   rejected_count="$(jq '[.prs[] | .candidate_results[]? | select(.verdict.verdict == "fail")] | length' "${batch_fixture}")"
   insufficient_count="$(jq '[.prs[] | select(.outcome == "insufficient")] | length' "${batch_fixture}")"
+  run_id="$(jq -r '.run_id' "${batch_fixture}")"
+  run_wall_clock_seconds="$(jq -r '.run_wall_clock_seconds // empty' "${batch_fixture}")"
 
   {
     printf '## Knowledge Distillery Batch Report — %s\n\n' "${batch_date}"
+    printf '### 진행 상황\n\n'
+    printf '| 항목 | 상태 |\n'
+    printf '|------|------|\n'
+    while IFS= read -r pr; do
+      local pr_number
+      local outcome
+      local duration
+      pr_number="$(jq -r '.number' <<<"${pr}")"
+      outcome="$(jq -r '.outcome' <<<"${pr}")"
+      duration="$(format_duration_seconds "$(jq -r '.duration_seconds // empty' <<<"${pr}")")"
+
+      case "${outcome}" in
+        processed)
+          local pr_accepted_count
+          pr_accepted_count="$(jq '[.candidate_results[]? | select(.verdict.verdict == "pass")] | length' <<<"${pr}")"
+          printf '| #%s | ✅ 처리 완료 (%s accepted, %s, run #%s) |\n' \
+            "${pr_number}" "${pr_accepted_count}" "${duration}" "${run_id}"
+          ;;
+        insufficient)
+          local missing
+          missing="$(jq -r '.missing | join(", ")' <<<"${pr}")"
+          printf '| #%s | ⏸ 대기 중 (insufficient: %s, %s, run #%s) |\n' \
+            "${pr_number}" "${missing}" "${duration}" "${run_id}"
+          ;;
+        failed)
+          local error
+          error="$(jq -r '.error' <<<"${pr}")"
+          printf '| #%s | ❌ failed: %s (%s, run #%s) |\n' \
+            "${pr_number}" "${error}" "${duration}" "${run_id}"
+          ;;
+        github_auth)
+          ;;
+      esac
+    done < <(jq -c '.prs[]' "${batch_fixture}")
+    printf '\n'
+
     printf '### Summary\n'
     printf '| Metric | Value |\n'
     printf '|--------|-------|\n'
@@ -73,7 +124,13 @@ render_batch_report() {
     printf '| Candidates extracted | %s |\n' "${candidate_count}"
     printf '| Accepted (fact / anti-pattern) | %s (%s / %s) |\n' "${accepted_count}" "${accepted_facts}" "${accepted_antipatterns}"
     printf '| Rejected | %s |\n' "${rejected_count}"
-    printf '| Insufficient evidence (deferred) | %s |\n\n' "${insufficient_count}"
+    printf '| Insufficient evidence (deferred) | %s |\n' "${insufficient_count}"
+    if [ -n "${run_wall_clock_seconds}" ]; then
+      printf '| 총 소요시간(wall-clock) | %s (run #%s) |\n\n' \
+        "$(format_duration_seconds "${run_wall_clock_seconds}")" "${run_id}"
+    else
+      printf '| 총 소요시간(wall-clock) | N/A (run #%s) |\n\n' "${run_id}"
+    fi
 
     printf '### Accepted Entries\n\n'
     printf '| ID | Type | Title | Domains | Source PR |\n'

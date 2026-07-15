@@ -389,6 +389,59 @@
           "contains": "Partial data on auth failure must be discarded."
         }
       ]
+    },
+    {
+      "id": "per-pr-and-run-timing-contracts-are-explicit",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The per-PR subagent MUST measure its own `duration_seconds`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"outcome\": \"processed|insufficient|failed|github_auth\""
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"duration_seconds\": 252"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| #1234 | ✅ 처리 완료 (3 accepted, 4m12s, run #100) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Insufficient and non-auth failure rows MUST also include the duration"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST NOT derive this value from `Σ(per-PR duration_seconds)`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| 총 소요시간(wall-clock) | XmYs (run #N) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| 총 소요시간(wall-clock) | N/A (run #N) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Log each dispatch unit's `dispatch → all settled` duration and its `sequential persist` duration separately"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "At handoff and completion, also log run elapsed time from `BATCH_START_TS`"
+        }
+      ]
     }
   ]
 }

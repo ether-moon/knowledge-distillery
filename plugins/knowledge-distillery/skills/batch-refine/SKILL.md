@@ -83,7 +83,7 @@ Triggered when the time-budget check fails. Performed once, after the last in-fl
 
 If `collect-evidence` (or any GitHub MCP call) returns 401/403 mid-run, the token has died early. Do **not** attempt the handoff procedure — every step requires a valid token.
 
-1. The PR currently being processed: do nothing. It stays `knowledge:pending`.
+1. The PR currently being processed: do nothing. It stays `knowledge:pending`. Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only.
 2. Stop the loop.
 3. Exit (any non-zero is fine; the workflow run will be marked failed but PR-atomic commits up to this point are already in place).
 
@@ -100,10 +100,11 @@ Format:
 
 | 항목 | 상태 |
 |------|------|
-| #1234 | ✅ 처리 완료 (3 accepted, run #100) |
-| #1235 | ⏸ 대기 중 (insufficient: manifest, run #100) |
+| #1234 | ✅ 처리 완료 (3 accepted, 4m12s, run #100) |
+| #1235 | ⏸ 대기 중 (insufficient: manifest, 1m08s, run #100) |
 | run #100 | ⏱ 시간 예산 도달 — 처리 1개, 남은 1개, 재트리거함 → run #101 |
-| #1236 | ✅ 처리 완료 (2 accepted, run #101) |
+| #1236 | ✅ 처리 완료 (2 accepted, 2m03s, run #101) |
+| #1237 | ❌ failed: quality-gate error (0m41s, run #101) |
 ```
 
 When a retrigger run starts, it picks up the existing branch + Report PR, reads the table to count work already done, and continues processing remaining `knowledge:pending` PRs.
@@ -156,6 +157,8 @@ Skip this step entirely for a deferred-only report batch (`pending == 0 AND defe
 
 Process pending PRs **one at a time** in `mergedAt` ascending order. For each PR run the full per-PR pipeline and immediately persist progress before moving on. This guarantees that any kind of mid-run termination (graceful handoff, 401, runner timeout) leaves a consistent state.
 
+The orchestrator initializes `RUN_WALL_CLOCK_START_TS` immediately before this workflow run's first subagent dispatch. Do not initialize it during discovery or include time spent waiting between self-retriggered workflow runs.
+
 ```text
 for pr in pending_prs (sorted by mergedAt asc):
   # 3a. Time budget gate
@@ -169,22 +172,26 @@ for pr in pending_prs (sorted by mergedAt asc):
   # accumulating PRs do not pollute the orchestrator's main context. Inside
   # that subagent, the three skills are invoked sequentially:
   spawn-agent (single Agent tool call, fresh context):
+    set PR_START_TS immediately before the first skill invocation
     invoke /knowledge-distillery:collect-evidence with pr.number
       → Evidence Bundle
       - If sufficiency.verdict == "insufficient" AND
         sufficiency.missing contains "github_auth":
-          → enter "Unexpected 401" path (do NOT retrigger; token is dead)
+          → return the github_auth outcome immediately
+          orchestrator: → enter "Unexpected 401" path (do NOT retrigger; token is dead)
       - If sufficiency.verdict == "insufficient" for any other reason:
-          → record insufficient, skip 3c/3d, continue with next PR
+          → return insufficient outcome; skip extract-candidates/quality-gate,
+            persist the row in 3c, and leave the label pending in 3d
     invoke /knowledge-distillery:extract-candidates with the Evidence Bundle
       → Candidate array (may be empty)
     invoke /knowledge-distillery:quality-gate with the Candidate array
       → Verdict array
-  return Verdict array (and any insufficient/auth signal) to the orchestrator
+    set duration_seconds immediately after the terminal outcome is known
+  return the additive per-PR result payload to the orchestrator
 
   # 3c. Persist this PR's outcome (atomic checkpoint)
   - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
-  - Append a progress table row + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
+  - Append a progress table row with duration + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
   - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
   - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
 
@@ -193,9 +200,33 @@ for pr in pending_prs (sorted by mergedAt asc):
     (if insufficient: leave label as `knowledge:pending`)
 ```
 
+#### Per-PR result and timing contract
+
+The per-PR subagent MUST measure its own `duration_seconds`. Start immediately before `collect-evidence`; stop immediately after the terminal `processed`, `insufficient`, `failed`, or `github_auth` outcome is known. Catch a non-auth pipeline error and return `failed` when the subagent is still able to return a payload. Every terminal payload uses this additive contract (`changed_files` and `verdicts` may be empty when they do not apply):
+
+```json
+{
+  "pr_number": 1234,
+  "outcome": "processed|insufficient|failed|github_auth",
+  "duration_seconds": 252,
+  "changed_files": ["path/to/file"],
+  "verdicts": []
+}
+```
+
+Format a known duration as `XmYs` in the progress status cell. Insufficient and non-auth failure rows MUST also include the duration. If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`. A `github_auth` payload follows the Unexpected 401 path: log its duration, but do not persist the auth-dead PR's row or timing.
+
+#### Orchestrator timing and Actions logs
+
+Run wall-clock timing belongs to the orchestrator. It spans the current workflow run's first subagent dispatch through completion of the last PR's Step 3c commit and push. It excludes discovery before that dispatch, subsequent label changes, self-retrigger wait time, and work in other workflow runs. The orchestrator MUST NOT derive this value from `Σ(per-PR duration_seconds)`.
+
+Record the value in the Summary as `| 총 소요시간(wall-clock) | XmYs (run #N) |`. If this workflow run spawned no per-PR subagent, record `| 총 소요시간(wall-clock) | N/A (run #N) |` instead.
+
+Log each dispatch unit's `dispatch → all settled` duration and its `sequential persist` duration separately. The current serial loop has one PR per dispatch unit; this logging contract does not introduce parallel processing. At handoff and completion, also log run elapsed time from `BATCH_START_TS` so the workflow's token-expiry margin can be evaluated.
+
 **Why serial, not parallel?** Earlier versions of this skill spawned all PRs in parallel for throughput. Parallelism is incompatible with the "graceful handoff before token expiry" contract: if multiple subagents are mid-flight when the deadline is reached, the orchestrator cannot cleanly truncate them. Serial processing keeps the cancellation point well-defined (between PRs) and makes the progress table monotonically meaningful. Throughput is recovered across multiple workflow runs (cron + self-retriggers) rather than within one.
 
-**Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), record the failure in the progress table for that PR (`❌ failed: <error>`), do not flip its label, and continue with the next PR. PR-level failures MUST NOT block the rest of the batch.
+**Partial failure handling:** If a single PR's pipeline raises (extract-candidates crash, quality-gate failure, etc.) and the cause is **not** GitHub auth (401/403), record the failure in the progress table for that PR (`❌ failed: <error> (<duration or duration unknown>, run #<id>)`), do not flip its label, and continue with the next PR. PR-level failures MUST NOT block the rest of the batch.
 
 ### Step 4: Maintain Report PR (per-commit — cheap)
 
@@ -220,7 +251,7 @@ Else:
 For PRs where collect-evidence returned `insufficient`:
 
 1. Keep the PR labeled `knowledge:pending` (no label flip in Step 3d).
-2. The progress table row is `⏸ 대기 중 (insufficient: <missing>, run #<id>)`.
+2. The progress table row is `⏸ 대기 중 (insufficient: <missing>, <duration>, run #<id>)`.
 3. The next batch run picks them up automatically — no special handling required.
 
 ### Step 6: Changeset — Accepted Candidates
@@ -364,8 +395,9 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 
 | 항목 | 상태 |
 |------|------|
-| #{pr_number} | ✅ 처리 완료 ({N} accepted, run #{run_id}) |
-| #{pr_number} | ⏸ 대기 중 (insufficient: {missing}, run #{run_id}) |
+| #{pr_number} | ✅ 처리 완료 ({N} accepted, {duration}, run #{run_id}) |
+| #{pr_number} | ⏸ 대기 중 (insufficient: {missing}, {duration}, run #{run_id}) |
+| #{pr_number} | ❌ failed: {error} ({duration or duration unknown}, run #{run_id}) |
 | run #{run_id} | ⏱ 시간 예산 도달 — 처리 N개, 남은 M개, 재트리거함 (재시도 R/MAX) |
 
 ### Summary
@@ -376,6 +408,7 @@ The body MUST start with the **Progress Table** (so reviewers can see partial-ba
 | Accepted (fact / anti-pattern) | K (F / A) |
 | Rejected | J |
 | Insufficient evidence (deferred) | D |
+| 총 소요시간(wall-clock) | XmYs (run #N) |
 
 ### 운영 Metric (Triage)
 
@@ -486,7 +519,7 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | No pending PRs but deferred PRs exist | Create a report-only batch with empty changeset and Deferred Queue section. |
 | Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |
 | GitHub MCP 401/403 mid-run | Stop loop. Do **not** retrigger (token already dead). Exit non-zero. Next cron resumes. |
-| Per-PR pipeline fails (non-auth) | Record `❌ failed: <error>` row, leave PR labeled `knowledge:pending`, continue with next PR. |
+| Per-PR pipeline fails (non-auth) | Record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` row, leave PR labeled `knowledge:pending`, continue with next PR. |
 | Insufficient evidence on a PR | Record row, leave label `knowledge:pending`. Picked up by next batch. |
 | Changeset write fails | Log error. Skip the PR. The label stays `knowledge:pending`. |
 | `git push` fails (non-auth) | Retry once. If still fails, log and continue — next run reconciles. |
