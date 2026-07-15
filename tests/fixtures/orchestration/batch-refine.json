@@ -156,6 +156,107 @@
       ]
     },
     {
+      "id": "collect-evidence-gh-fast-path-is-batched-and-normalized",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh pr view <n> --json number,title,body,author,baseRefName,mergeCommit,changedFiles,files,commits,comments --jq"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "merge_sha:(.mergeCommit.oid // \"\"),base_branch:.baseRefName,changed_file_count:.changedFiles,changed_files:[.files[].path]"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "sha:.oid[0:7],message:(.messageHeadline + (if .messageBody == \"\" then \"\" else \"\\n\\n\" + .messageBody end))"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/comments?per_page=100\" --paginate --slurp --jq '[.[][] | {author:(.user.login // \"\"),body,path,line:(.line // .original_line)}]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Raw bodies and commit messages MUST remain byte-for-byte unsummarized in the normalized snapshot."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-gh-overflow-paths-are-complete",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`.files | length < .changedFiles`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/files?per_page=100\" --paginate --slurp --jq '[.[][] | .filename]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/commits?per_page=100\" --paginate --slurp --jq '[.[][] | {sha:.sha[0:7],message:.commit.message}]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`gh pr view --json comments` preloads all issue comments, so it needs no separate issue-comment overflow request."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-gh-failure-is-auth-aware-and-atomic",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Capture every gh call's exit code and stderr separately."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`HTTP 401`, `HTTP 403`, or `Bad credentials`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Discard every partial gh result and restart the whole GitHub collection through the read-only GitHub MCP path."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "exit 4 with `populate the GH_TOKEN...`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Never combine partial gh results with GitHub MCP results."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-validates-required-pr-context",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`pr.base_branch` must be a non-empty string"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`pr.changed_files` must be an array"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "The Evidence Bundle MUST use the complete normalized `changed_files` list"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-greptile-reuses-normalized-comments",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "This rule is transport-neutral: MUST NOT issue any additional gh CLI or GitHub MCP calls."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Preserve the Manifest identifier's `review_id` unchanged in each `{ \"review_id\": review_id, \"comments\": [...] }` result."
+        }
+      ]
+    },
+    {
       "id": "time-budget-check-precedes-each-pr",
       "checks": [
         {

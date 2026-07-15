@@ -14,14 +14,16 @@ user-invocable: false
 
 ## Prerequisites
 
-- GitHub MCP server configured with `pull_requests,issues,labels` toolsets
+- `gh` CLI authenticated for read-only GitHub access (preferred fast path)
+- GitHub MCP server configured with `pull_requests,issues,labels` toolsets (whole-collection fallback)
 - `git` with access to `refs/notes/commits`
 - Linear MCP server (optional — graceful degradation if unavailable)
 - Notion MCP server (optional — graceful degradation if unavailable)
 
 ## Allowed Tools
 
-- GitHub MCP (read-only by behavioral contract) — PR data and review comments
+- `gh pr view`, `gh api` — read-only PR data and comments
+- GitHub MCP (read-only by behavioral contract) — whole-collection fallback for PR data and comments
 - Linear MCP — issue details and comments (read-only)
 - Notion MCP — page content retrieval (read-only)
 - `git log`, `git show`, `git notes show` — commit and memento data
@@ -34,7 +36,7 @@ user-invocable: false
 | Field | Source | Format |
 |-------|--------|--------|
 | PR number | Passed by orchestrator | Integer |
-| Repository | Derived via GitHub MCP if not provided | `owner/repo` |
+| Repository | Derived from the current repository by `gh` placeholders, or via GitHub MCP fallback | `owner/repo` |
 | Manifest JSON | Parsed from PR comment — strict delimiter parsing preferred, LLM fallback for non-standard formats | JSON per [evidence-manifest.spec.md](../mark-evidence/reference/evidence-manifest.spec.md) |
 
 ## Output
@@ -45,15 +47,50 @@ An **Evidence Bundle** — a structured JSON object held in memory. NOT written 
 
 Follow these steps in exact order.
 
-### Step 1: Parse the Evidence Bundle Manifest
+### Step 1: Collect a Normalized GitHub Snapshot and Parse the Manifest
 
-Fetch all PR comments and locate the Manifest:
+The GitHub read phase is atomic: finish it through one transport, then parse and assemble evidence from that normalized snapshot. The normal path uses two gh calls instead of separate round-trips for PR metadata, files, commits, issue comments, and review comments.
 
+#### 1a. gh CLI fast path (preferred)
+
+Run these commands from the target repository, replacing `<n>` with `pr_number`. Capture every gh call's exit code and stderr separately.
+
+```bash
+gh pr view <n> --json number,title,body,author,baseRefName,mergeCommit,changedFiles,files,commits,comments --jq '{number,title,body,author:(.author.login // ""),merge_sha:(.mergeCommit.oid // ""),base_branch:.baseRefName,changed_file_count:.changedFiles,changed_files:[.files[].path],commits:[.commits[]|{sha:.oid[0:7],message:(.messageHeadline + (if .messageBody == "" then "" else "\n\n" + .messageBody end))}],issue_comments:[.comments[]|{author:(.author.login // ""),body}]}'
+gh api "repos/{owner}/{repo}/pulls/<n>/comments?per_page=100" --paginate --slurp --jq '[.[][] | {author:(.user.login // ""),body,path,line:(.line // .original_line)}]'
 ```
-Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
-```
 
-#### 1a. Strict parsing (preferred)
+The first projection deliberately keeps files as paths, commits as `{sha,message}`, and issue comments as `{author,body}`. The second projection produces normalized inline review comments. This avoids retaining large unused response fields in the subagent's Bash output. Raw bodies and commit messages MUST remain byte-for-byte unsummarized in the normalized snapshot.
+
+`gh pr view` has bounded files and commits collections, so complete them before parsing the Manifest:
+
+- When `.files | length < .changedFiles`, replace `changed_files` with the flattened result of:
+  ```bash
+  gh api "repos/{owner}/{repo}/pulls/<n>/files?per_page=100" --paginate --slurp --jq '[.[][] | .filename]'
+  ```
+- When the normalized commits array has exactly 100 entries, replace it with the flattened result of:
+  ```bash
+  gh api "repos/{owner}/{repo}/pulls/<n>/commits?per_page=100" --paginate --slurp --jq '[.[][] | {sha:.sha[0:7],message:.commit.message}]'
+  ```
+- `gh pr view --json comments` preloads all issue comments, so it needs no separate issue-comment overflow request.
+
+Every paginated REST command uses `?per_page=100`, `--paginate`, and `--slurp`. A paginated command emits one array per page; `--slurp` plus `[.[][] | ...]` is required to produce one flat JSON array.
+
+#### 1b. Auth classification and whole-collection MCP fallback
+
+After every primary or overflow gh call, classify the captured result in this order:
+
+1. If the command is non-zero and stderr contains `HTTP 401`, `HTTP 403`, or `Bad credentials`, discard all partial evidence, do not fall back, and return the `github_auth` result defined in **GitHub MCP Auth Failure (401/403)** below. Under the current PoC contract a blanket HTTP 403 is auth-dead even when it could also indicate rate limiting.
+2. If the command succeeds, continue with the same gh snapshot.
+3. For any other non-zero result, use the MCP fallback. Discard every partial gh result and restart the whole GitHub collection through the read-only GitHub MCP path. This includes gh being unavailable, gh being unconfigured, and exit 4 with `populate the GH_TOKEN...`.
+
+The MCP fallback restarts all required GitHub reads: issue-level comments, PR title/body/author/base branch/merge SHA, the complete changed-file list, all commits, and all inline review comments. Normalize those responses to the same fields and shapes as the gh projection. Never combine partial gh results with GitHub MCP results. If any required MCP fallback call returns 401/403, apply the existing auth-failure contract immediately.
+
+The first live batch is also an authentication check for this fast path: verify that `GH_TOKEN` or `GITHUB_TOKEN` reaches the fresh subagent context. If not, explicitly propagate the token environment from the workflow before relying on gh.
+
+#### 1c. Strict Manifest parsing (preferred)
+
+Use the normalized `issue_comments` array to locate the Manifest:
 
 1. Find the comment whose body contains `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->`
 2. Extract the text between `<!-- EVIDENCE_BUNDLE_MANIFEST_START -->` and `<!-- EVIDENCE_BUNDLE_MANIFEST_END -->`
@@ -63,24 +100,26 @@ Use GitHub MCP to list all issue-level comments on PR #{pr_number}.
    - `version` must be `"1"`
    - `pr.number` must be a positive integer
    - `pr.merge_sha` must match `/^[0-9a-f]{7,40}$/`
+   - `pr.base_branch` must be a non-empty string
+   - `pr.changed_files` must be an array
    - All `identifiers` sub-keys (`linear`, `slack`, `memento`, `greptile`, `notion`) must be present (even if empty arrays)
 
 If strict parsing succeeds, proceed to Step 2.
 
-#### 1b. LLM fallback parsing
+#### 1d. LLM fallback parsing
 
 If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, or if the JSON between delimiters is malformed:
 
-1. Search all PR comments for one that resembles an Evidence Bundle Manifest. Look for comments containing keywords like "Evidence Bundle Manifest", "evidence", identifier references (Linear IDs, Slack URLs, commit SHAs), or structured lists of evidence sources.
+1. Search all issue comments for one that resembles an Evidence Bundle Manifest. Look for comments containing keywords like "Evidence Bundle Manifest", "evidence", identifier references (Linear IDs, Slack URLs, commit SHAs), or structured lists of evidence sources.
 2. If a candidate comment is found, extract structured data from it by reading its content and mapping it to the Manifest schema:
    ```json
    {
      "version": "1",
      "pr": {
        "number": "<from orchestrator input>",
-       "merge_sha": "<from PR merge commit — query GitHub MCP if not in comment>",
-       "base_branch": "<from PR base branch — query GitHub MCP if not in comment>",
-       "changed_files": ["<from PR changed files — query GitHub MCP if not in comment>"]
+       "merge_sha": "<from normalized merge_sha when absent from comment>",
+       "base_branch": "<from normalized base_branch when absent from comment>",
+       "changed_files": ["<from complete normalized changed_files when absent from comment>"]
      },
      "identifiers": {
        "linear": [],
@@ -97,12 +136,12 @@ If no comment contains the `EVIDENCE_BUNDLE_MANIFEST_START` delimiter, or if the
    - Extract any commit SHAs referenced as memento sources → populate `identifiers.memento`
    - Extract any Greptile review references → populate `identifiers.greptile`
    - Extract any Notion URLs (pattern: `https://(www.)?notion.(so|site)/*`) → populate `identifiers.notion`
-   - For `pr` fields not present in the comment, query GitHub MCP directly to fill them in.
-3. Validate the reconstructed Manifest using the same rules as 1a step 5. Empty identifier arrays are valid.
+   - Fill missing PR fields only from the already completed normalized snapshot; do not make another GitHub call.
+3. Validate the reconstructed Manifest using the same rules as 1c step 5. Empty identifier arrays are valid.
 
 If fallback parsing produces a valid Manifest, proceed to Step 2.
 
-#### 1c. No Manifest found
+#### 1e. No Manifest found
 
 If **no comment resembling a Manifest exists at all** (not even in non-standard format), return an Evidence Bundle with:
 ```json
@@ -116,46 +155,22 @@ If **no comment resembling a Manifest exists at all** (not even in non-standard 
 ```
 Stop processing — do not proceed to subsequent steps.
 
-### Step 2: Collect PR Evidence (Required)
+### Step 2: Assemble PR Evidence from the Normalized Snapshot (Required)
 
-Carry forward from the parsed Manifest into the Evidence Bundle's root-level fields:
-- `pr_number` from `pr.number`
-- `merge_sha` from `pr.merge_sha`
-- `base_branch` from `pr.base_branch`
-- `changed_files` from `pr.changed_files`
+Build the required PR evidence without another GitHub request:
 
-Then collect PR content:
+- `pr_number`: validated Manifest `pr.number`
+- `merge_sha`: normalized `merge_sha`, falling back to the validated Manifest value only when the transport omitted it
+- `base_branch`: normalized `base_branch`, falling back to the validated Manifest value only when the transport omitted it
+- `changed_files`: complete normalized `changed_files`
+- `evidence.pr.title` and `evidence.pr.body`: normalized title and body
+- `evidence.pr.commits`: normalized `{sha,message}` array
+- `evidence.pr.review_comments`: normalized inline `{author,body,path,line}` array
+- `evidence.pr.issue_comments`: normalized `{author,body}` array, excluding the Manifest comment itself
 
-1. **Title and body:**
-   ```
-   Use GitHub MCP to fetch PR #{pr_number} title and body.
-   ```
+The Evidence Bundle MUST use the complete normalized `changed_files` list. Verify its length against `changed_file_count` when that count is available; a shorter list is an incomplete required baseline and must take the overflow path or whole-collection fallback rather than silently using partial data. The Manifest list is validation/fallback context, not permission to truncate an available authoritative list.
 
-2. **Changed file list:**
-   The full PR diff is on-demand evidence — `extract-candidates` fetches specific file diffs selectively. At this stage, collect only the list of changed files:
-   ```
-   Use GitHub MCP to fetch the list of changed files in PR #{pr_number}. Extract relative file paths.
-   ```
-   Store as `changed_files` in the Evidence Bundle. If the Manifest already contains `pr.changed_files`, verify and use that; otherwise populate from this query.
-
-   > **Note for downstream:** `extract-candidates` can selectively fetch specific file diffs as needed using GitHub MCP or `git diff`.
-
-3. **Commits:**
-   ```
-   Use GitHub MCP to list all commits in PR #{pr_number}. Extract each commit's SHA (short, 7 chars) and full message.
-   ```
-
-4. **Review comments (inline on diff):**
-   ```
-   Use GitHub MCP to list all review comments (inline on diff) for PR #{pr_number}. Extract: author (login), body, path, line (or original_line).
-   ```
-
-5. **Issue-level comments:**
-   ```
-   Use GitHub MCP to list all issue-level comments on PR #{pr_number}. Include all comments EXCEPT the Manifest comment itself.
-   ```
-
-Note: The full PR diff is not pre-collected. The changed file list is sufficient for this step.
+The full PR diff remains on-demand evidence. `extract-candidates` can selectively fetch specific file diffs using GitHub MCP or `git diff`; this step collects only complete paths.
 
 ### Step 3: Collect Linear Evidence (Optional)
 
@@ -214,13 +229,14 @@ Missing memento notes do NOT trigger `insufficient`.
 
 For each entry in `identifiers.greptile`:
 
-1. Derive Greptile comments **in-memory** from the comments already collected in Step 2 — do NOT issue new GitHub MCP calls. Filter both sources for entries whose author login contains "greptile" (case-insensitive):
-   - the review comments from Step 2 item 4 (`evidence.pr.review_comments`), and
-   - the issue-level comments from Step 2 item 5 (`evidence.pr.issue_comments`).
+1. Derive Greptile comments **in-memory** from the normalized comments already assembled in Step 2. Filter both sources for entries whose author login contains "greptile" (case-insensitive):
+   - `evidence.pr.review_comments`, and
+   - `evidence.pr.issue_comments`.
 
-   Step 2 already retrieves both with the `author` field, so re-issuing the GitHub MCP "list review comments" / "list issue comments" calls here would be a redundant round-trip against the same paginated endpoints — it MUST NOT be repeated.
+   This rule is transport-neutral: MUST NOT issue any additional gh CLI or GitHub MCP calls. Both transports have already normalized the same comment collections, so another read would be a redundant round-trip.
 
-2. Collect: `{ "path": "...", "line": N, "body": "..." }` for each matching comment. Issue-level comments carry no `path`/`line` — include them with those fields omitted or `null`.
+2. Collect `{ "path": "...", "line": N, "body": "..." }` for each matching comment. Issue-level comments carry no `path`/`line` — include them with those fields omitted or `null`.
+3. Preserve the Manifest identifier's `review_id` unchanged in each `{ "review_id": review_id, "comments": [...] }` result.
 
 Missing Greptile data does NOT trigger `insufficient`.
 
@@ -272,6 +288,10 @@ If `insufficient`:
 Even when `insufficient` due to **missing optional sources** (e.g., Linear unavailable, Notion down), return the Evidence Bundle with whatever evidence was collected. The orchestrator decides how to handle insufficient bundles (e.g., keeping the PR in `knowledge:pending` for a later retry).
 
 **Auth failure is a special case** that does **not** follow this rule — see GitHub MCP Auth Failure (401/403) below. Partial data on auth failure must be discarded.
+
+#### gh CLI Authentication Failure Detection
+
+The gh fast path uses the command's exit status and captured stderr together. A non-zero call whose stderr contains `HTTP 401`, `HTTP 403`, or `Bad credentials` is auth-dead: stop immediately, discard every gh result collected for the PR, and return the same `missing: ["github_auth"]` sentinel below. Do not fall back to MCP for this case. A non-auth gh failure instead restarts the complete read through MCP as specified in Step 1b.
 
 #### GitHub MCP Auth Failure (401/403)
 
@@ -388,8 +408,10 @@ The final Evidence Bundle must follow this structure:
 | `git notes show` fails | Skip that memento entry. Continue — optional source. |
 | Notion MCP unavailable | Set `retrieved: false` for all Notion entries. Continue — optional source. |
 | Notion page not found / access denied | Set `retrieved: false` for that entry. Continue — optional source. |
-| Changed file list unavailable | Use `pr.changed_files` from Manifest as fallback. |
-| GitHub API rate limit | Report failure to orchestrator. Orchestrator retries in next batch. |
+| gh unavailable, unconfigured, or non-auth failure | Discard partial gh output and restart the entire GitHub collection through read-only GitHub MCP. |
+| gh or MCP returns blanket HTTP 401/403 / bad credentials | Discard partial data and return `missing: ["github_auth"]`; auth classification takes priority over fallback and rate-limit handling. |
+| Changed file list incomplete | Use the paginated files endpoint; if that non-auth read fails, restart the whole collection through MCP. Do not accept a truncated list. |
+| GitHub API rate limit without HTTP 403 | Report failure to orchestrator. Orchestrator retries in next batch. Under D3, blanket HTTP 403 remains auth-dead. |
 
 ## Constraints
 
