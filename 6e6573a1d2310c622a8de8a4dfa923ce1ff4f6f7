@@ -1,0 +1,32 @@
+## Decisions Made
+- K=3 bounded wave: PR 분석만 fresh read-only subagent로 병렬화하고 changeset, report, commit, push, label 전이는 오케스트레이터가 mergedAt 순으로 단독 수행한다.
+- Auth barrier: wave의 모든 Agent가 settle한 뒤 하나라도 github_auth이면 정상 peer를 포함한 wave 전체 결과를 폐기하고 어떤 durable mutation도 하지 않는다.
+- Persist 복구: write, commit, push 실패는 즉시 non-zero 종료하고, push 성공 뒤 label만 실패한 성공 row는 다음 run에서 label-only로 복구한다.
+- Telemetry 경계: persist duration은 첫 Step 3c write부터 마지막 commit/push까지의 연속 구간이며 중간 label 전이는 포함하고 마지막 post-push label만 제외한다.
+
+## Problems Encountered
+- 혼합 auth wave: 기존 flat 결과 모델은 auth 결과 한 건만 제외해 정상 peer가 잘못 persist될 수 있었고, wave 단위 barrier helper와 fixture로 해결했다.
+- 재시작 중복 위험: push된 성공 checkpoint와 pending label이 공존하면 재분석으로 changeset이 중복될 수 있어 durable 성공 row 기반 label-only reconciliation을 추가했다.
+- Telemetry 설명 모순: checkpoint가 Step 3c와 Step 3d를 교차 수행하므로 label 전이를 모두 제외한다는 설명이 거짓이었고 실제 연속 구간에 맞게 수정했다.
+
+## Constraints Identified
+- Subagent read-only: concurrent Agent는 shared files, git, Report PR, source labels를 수정할 수 없으며 sole writer 계약이 정합성의 핵심이다.
+- Wave cancellation: 시간 예산 취소 지점은 wave 사이뿐이며 시작된 wave는 deadline을 지나도 settle, auth 검사, sequential checkpoint를 끝낸다.
+- Setup parity: live workflow와 setup embedded workflow는 byte-identical이어야 하며 WAVE_SIZE는 skill, 두 workflow 표면, tests 밖으로 확산하지 않는다.
+- 운영 마진: 2700초 deadline의 15분 마진은 첫 실제 wave telemetry 전까지 잠정이다.
+
+## Open Questions
+- 첫 실전 batch에서 K=3 Agent 호출이 실제로 한 메시지에서 병렬 실행되고 최악 wave tail과 handoff가 15분 마진 안에 드는지 확인해야 한다.
+- 첫 실전 batch에서 subagent gh 인증 상속과 auth-dead mixed-wave telemetry가 문서 계약과 일치하는지 확인해야 한다.
+
+## Context
+Task 5는 기존 serial-by-design 결정을 supersede한 bounded-wave 결정을 실행 코드 계약과 회귀 테스트로 구현했다. batch-refine skill, live/setup workflow, handoff helper, shell/jq 구조 모델을 함께 갱신했으며 Task 2 auth 문자열과 Task 3 post-budget 및 KD metadata 계약은 유지했다. 전체 test suite와 focused, Bash, JSON, YAML, parity, scope, diff 검증을 통과했다.
+
+## Recorded Decisions
+- bounded-wave-parallelism (32bf1f8): K=3 read-only 분석 병렬화와 mergedAt 순 sole-writer persistence를 채택했다.
+
+## Vault Entries Referenced
+- combine-commit-note-single-shell-call [followed]: 커밋과 note attachment를 한 shell 호출로 묶었다.
+- memento-commit-no-glob-staging [followed]: glob staging 없이 명시적 파일 목록만 stage했다.
+- push-notes-ref-after-commit [followed]: downstream evidence pipeline을 위해 notes ref를 별도로 push한다.
+- vault-changeset-not-direct-db [followed]: batch-refine은 vault.db를 수정하지 않고 changeset만 쓰는 기존 경계를 유지했다.
