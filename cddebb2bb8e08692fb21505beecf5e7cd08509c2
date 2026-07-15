@@ -1,0 +1,30 @@
+## Decisions Made
+- Compare file completeness against normalized snapshot fields: `changed_files` length is checked against `changed_file_count`, avoiding references to fields removed by the projection.
+- Use the GraphQL pull-request commit connection for overflow: Cursor pagination remains complete beyond the REST endpoint's 250-commit cap.
+- Repair malformed or invalid manifests from the normalized snapshot before returning insufficient: Optional evidence stages run only after the repaired manifest passes the same strict validation.
+- Split rate-limit handling by transport: Non-auth gh failures restart the atomic MCP collection, while MCP rate limits return control to the orchestrator.
+- Keep optional-source absence compatible with sufficiency: A complete required baseline remains sufficient regardless of unavailable optional sources.
+- Pipe slurped gh output to external jq under `pipefail`: gh 2.92 rejects combining `--slurp` with its built-in `--jq` formatter.
+
+## Problems Encountered
+- Independent review found five correctness gaps in the initial Task 2 contract: Focused fixture guards were added before repairing each behavior.
+- A live read-only GraphQL probe failed with `the --slurp option is not supported with --jq or --template`: Reproducing the same incompatibility on the command shape identified gh option validation as the root cause.
+- The corrected external-jq GraphQL and REST pipelines were probed against PR 51: They returned normalized counts successfully with `pipefail` enabled.
+
+## Constraints Identified
+- The REST pull-request commits endpoint exposes at most 250 commits: Complete overflow collection requires the GraphQL cursor and `pageInfo` contract.
+- gh `--slurp` cannot be paired with gh `--jq`: Flattening must happen in a separate jq process, and `pipefail` is required to preserve gh auth/failure status.
+- All repository-derivation and GraphQL calls belong to the same atomic transport attempt: Any failure follows the same auth classification or whole-MCP fallback.
+- Blanket HTTP 403 remains auth-dead under D3 even when it may represent rate limiting.
+
+## Open Questions
+- Does the first live workflow batch propagate `GH_TOKEN` or `GITHUB_TOKEN` into each fresh subagent context? The documented operational experiment remains required.
+
+## Context
+This follow-up resolves the five Important findings from Task 2's independent review and an additional command-level incompatibility found during verification. It makes large-PR collection complete, aligns manifest repair and sufficiency semantics, and ensures every documented gh pipeline is executable with the installed CLI. Focused fixtures, the full shell suite, diff checks, and live read-only command probes passed before commit.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
