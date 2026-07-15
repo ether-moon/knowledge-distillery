@@ -112,6 +112,59 @@ assert_eq "abort" "$(persist_checkpoint_action 0 1 0)" \
 assert_eq "abort" "$(persist_checkpoint_action 0 0 1)" \
   "a push failure after retry must abort the batch"
 
+LABELS_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-labels.json"
+if ! declare -F build_atomic_label_transition_plan >/dev/null; then
+  fail "build_atomic_label_transition_plan must model one fresh read and one full-set update"
+fi
+label_plan="$(build_atomic_label_transition_plan "${LABELS_FIXTURE}")"
+assert_eq \
+  '["get_labels"]' \
+  "$(jq -c '[.reads[].method]' <<<"${label_plan}")" \
+  "label transition must issue exactly one fresh get_labels read"
+assert_eq \
+  '["update"]' \
+  "$(jq -c '[.writes[].method]' <<<"${label_plan}")" \
+  "label transition must issue exactly one atomic update write"
+assert_eq \
+  '["bug","priority:high","knowledge:collected"]' \
+  "$(jq -c '.writes[0].labels' <<<"${label_plan}")" \
+  "label update must preserve unrelated labels, remove pending, and dedupe collected"
+LABELS_WITHOUT_COLLECTED_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-labels-no-collected.json"
+assert_eq \
+  '["bug","priority:high","knowledge:collected"]' \
+  "$(build_atomic_label_transition_plan "${LABELS_WITHOUT_COLLECTED_FIXTURE}" | jq -c '.writes[0].labels')" \
+  "label update must append collected when the fresh set does not contain it"
+assert_eq \
+  '0' \
+  "$(jq '[.reads[], .writes[] | select(.method == "remove_label" or .method == "add_label")] | length' <<<"${label_plan}")" \
+  "label transition must never split removal and addition into separate calls"
+
+if ! declare -F simulate_atomic_label_update >/dev/null; then
+  fail "simulate_atomic_label_update must preserve pending labels when the update fails"
+fi
+assert_eq \
+  '["bug","knowledge:pending","priority:high","knowledge:collected"]' \
+  "$(simulate_atomic_label_update "${LABELS_FIXTURE}" update-failed)" \
+  "a failed atomic update must leave the fresh label set unchanged for reconciliation"
+assert_eq \
+  '["bug","priority:high","knowledge:collected"]' \
+  "$(simulate_atomic_label_update "${LABELS_FIXTURE}" success)" \
+  "a successful atomic update must install the transformed full label set"
+
+if ! declare -F label_transition_action >/dev/null; then
+  fail "label_transition_action must route read/update auth and non-auth failures"
+fi
+assert_eq "auth-abort" "$(label_transition_action auth not-run)" \
+  "get_labels auth failure must enter the existing auth abort path"
+assert_eq "auth-abort" "$(label_transition_action ok auth)" \
+  "atomic update auth failure must enter the existing auth abort path"
+assert_eq "abort" "$(label_transition_action error not-run)" \
+  "non-auth get_labels failure must abort immediately"
+assert_eq "abort" "$(label_transition_action ok error)" \
+  "non-auth atomic update failure must abort immediately"
+assert_eq "complete" "$(label_transition_action ok ok)" \
+  "one successful read and update may complete the transition"
+
 BATCH_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-batch.json"
 CHANGESET="${TMP_DIR}/batch-2026-03-24.json"
 REPORT="${TMP_DIR}/batch-2026-03-24.md"

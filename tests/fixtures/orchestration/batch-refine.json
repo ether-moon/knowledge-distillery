@@ -132,6 +132,52 @@
       ]
     },
     {
+      "id": "label-transition-is-one-atomic-full-set-update",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Call `issue_read(method:get_labels)` immediately before every label transition to fetch the fresh full label set."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "From that fresh set, remove only `knowledge:pending`, preserve every unrelated label, append `knowledge:collected` when absent, and deduplicate `knowledge:collected`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Call exactly one `issue_write(method:update, labels: transformed full set)` to replace the labels atomically."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Step 2 label-only reconciliation and Step 3d MUST use this same atomic label-set transition."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST NOT call separate label remove/add operations."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected`"
+        }
+      ]
+    },
+    {
+      "id": "atomic-label-transition-failures-are-recoverable",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "An auth failure from either `issue_read(method:get_labels)` or `issue_write(method:update)` follows Unexpected 401."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "A non-auth read or update failure aborts the current run immediately."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Because the full-set update is atomic, a failed update leaves the original labels—including `knowledge:pending`—unchanged so the next run can reconcile it."
+        }
+      ]
+    },
+    {
       "id": "report-is-still-generated-with-zero-accepted-entries",
       "checks": [
         {

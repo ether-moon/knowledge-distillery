@@ -64,12 +64,22 @@ For each PR:
 2. Append a row to `.knowledge/reports/batch-YYYY-MM-DD.md` progress table (see "Report PR Progress Table" below).
 3. `git add .knowledge/ && git commit -m "kd: PR #<n> processed"`.
 4. `git push`.
-5. Update the PR's label: `knowledge:pending` → `knowledge:collected` (or leave pending if insufficient or failed).
+5. Update the PR's label: `knowledge:pending` → `knowledge:collected` with the Atomic label-set transition below (or leave pending if insufficient or failed).
 6. If a Report PR already exists for this batch, refresh its body from the report file. Skip if it does not yet exist (it gets created at first commit).
 
 The order is intentional: **changeset/report committed and pushed before label flips**. If the label flips first and we crash, the next run sees `knowledge:collected` and skips the PR even though its entries are not in the changeset.
 
-If write, commit, or push cannot complete, stop the run; never carry dirty or unpushed state into the next PR's checkpoint. If commit and push succeeded but the processed PR's label flip failed, the durable success row drives Step 2's label-only reconciliation on the next run.
+If write, commit, or push cannot complete, stop the run; never carry dirty or unpushed state into the next PR's checkpoint. If commit and push succeeded but the processed PR's atomic label update failed, the durable success row drives Step 2's label-only reconciliation on the next run.
+
+#### Atomic label-set transition
+
+Use this procedure for every processed PR label transition, including recovery of a pushed success checkpoint:
+
+1. Call `issue_read(method:get_labels)` immediately before every label transition to fetch the fresh full label set.
+2. Normalize the response to label names. From that fresh set, remove only `knowledge:pending`, preserve every unrelated label, append `knowledge:collected` when absent, and deduplicate `knowledge:collected`.
+3. Call exactly one `issue_write(method:update, labels: transformed full set)` to replace the labels atomically.
+
+Step 2 label-only reconciliation and Step 3d MUST use this same atomic label-set transition. MUST NOT call separate label remove/add operations. An auth failure from either `issue_read(method:get_labels)` or `issue_write(method:update)` follows Unexpected 401. A non-auth read or update failure aborts the current run immediately. Because the full-set update is atomic, a failed update leaves the original labels—including `knowledge:pending`—unchanged so the next run can reconcile it.
 
 ### Graceful Handoff Procedure
 
@@ -98,7 +108,7 @@ If `collect-evidence`, label-only reconciliation, or any required GitHub operati
 
 1. **Auth returned during read-only analysis:** first wait for every Agent in the current wave to settle. If any result is `github_auth`, discard all current-wave results before Step 3c. Every PR in that wave stays `knowledge:pending`. Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only. The same log-only rule applies to non-auth peers discarded with that wave, and `persist_duration_seconds=0`.
 2. **Auth during label-only reconciliation before any wave starts:** there is no in-flight wave to settle or discard. Leave the already-pushed success checkpoint and pending label as-is, then exit non-zero directly without analysis, handoff, or retrigger.
-3. **Auth after Step 3c has begun:** do not pretend the whole wave can be discarded. Abort immediately without handoff. A local commit whose push failed is not durable and its label stays pending. A pushed processed checkpoint whose label flip failed is durable and is repaired by Step 2's label-only reconciliation on the next run. Earlier pushed/labeled checkpoints remain complete; later results stay pending.
+3. **Auth after Step 3c has begun:** do not pretend the whole wave can be discarded. Abort immediately without handoff. A local commit whose push failed is not durable and its label stays pending. A pushed processed checkpoint whose atomic label transition failed is durable and is repaired by Step 2's label-only reconciliation on the next run. Earlier pushed/labeled checkpoints remain complete; later results stay pending.
 4. In every auth case, skip Step 7, Step 8, and the Graceful Handoff Procedure, then exit non-zero. Never roll back a prior durable checkpoint and never self-retrigger with a dead token.
 
 The next cron (or manual dispatch) sees the leftover `knowledge:pending` PRs and resumes from there. No retrigger from inside this run.
@@ -165,7 +175,7 @@ If the branch already exists (re-run or self-retrigger scenario), checkout the e
 
 When resuming an existing branch, also locate the existing Report PR (if any) and re-read its accumulated progress table before building waves. Labels remain the normal discovery signal, while a pushed success row is the recovery signal for the narrow commit/push-success + label-failure gap.
 
-When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation: retry `knowledge:pending` → `knowledge:collected`, and exclude that PR from analysis waves after the flip succeeds. Do not rerun its analysis or append another changeset/report checkpoint. Insufficient and failed rows are not reconciliation successes; those PRs stay pending and remain eligible for analysis. If label-only reconciliation returns auth failure, enter Unexpected 401; for another label error, leave the PR pending and exit non-zero rather than duplicating its checkpoint.
+When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation with the Atomic label-set transition, and exclude that PR from analysis waves only after its single full-set update succeeds. Do not rerun its analysis or append another changeset/report checkpoint. Insufficient and failed rows are not reconciliation successes; those PRs stay pending and remain eligible for analysis. If its fresh-label read or update returns auth failure, enter Unexpected 401; for another read/update error, leave the original labels unchanged and exit non-zero rather than duplicating its checkpoint.
 
 ### Step 3: Bounded Analysis Waves + Per-PR Atomic Checkpoints
 
@@ -231,8 +241,10 @@ for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
 
     If a Step 3c write or commit fails, or if `git push` still fails after one retry, abort the batch immediately with a non-zero exit. Never continue to the next PR with dirty files or an unpushed local commit. Do not flip this or any later PR's label.
 
-    # 3d. Flip the label (only after the commit landed)
-    - For `processed`, use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected`
+    # 3d. Replace the label set atomically (only after the commit landed)
+    - For `processed`, run the Atomic label-set transition: one fresh
+      `issue_read(method:get_labels)`, transform the full set, then exactly one
+      `issue_write(method:update, labels: transformed full set)`
     - For `insufficient` or `failed`, leave label as `knowledge:pending`
 ```
 
@@ -567,12 +579,14 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 | No pending PRs but deferred PRs exist | Create a report-only batch with empty changeset and Deferred Queue section. |
 | Time budget reached | MUST enter the **Post-budget completion gate** first. Zero pending → full completion (Step 7 then Step 8); pending remains → Step 8 then **Graceful Handoff Procedure**. Exit 0. |
 | GitHub auth failure during read-only wave analysis | Wait for all Agents to settle, discard every current-wave result before Step 3c, log `persist_duration_seconds=0`, do **not** handoff/retrigger, and exit non-zero. Prior-wave checkpoints remain durable. |
-| GitHub auth failure after Step 3c begins | Abort without handoff/retrigger. Preserve earlier durable checkpoints; leave unpushed/later work pending. A pushed success with label failure uses label-only reconciliation next run. |
+| GitHub auth failure during label-only reconciliation | No wave exists to settle. Leave the pushed checkpoint and original labels unchanged, skip handoff/retrigger, and exit non-zero directly. |
+| GitHub auth failure after Step 3c begins | Abort without handoff/retrigger. Preserve earlier durable checkpoints; leave unpushed/later work pending. A pushed success with an incomplete atomic label update uses label-only reconciliation next run. |
 | Per-PR pipeline fails (non-auth) | After the wave passes the auth barrier, record `❌ failed: <error> (<duration or duration unknown>, run #<id>)` in mergedAt order, leave the PR pending, and continue the checkpoint drain. |
 | Insufficient evidence on a PR | Record row, leave label `knowledge:pending`. Picked up by next batch. |
 | Changeset/report write or `git commit` fails | Abort immediately with non-zero. Do not continue with dirty state and do not flip the label. |
 | `git push` fails (non-auth) | Retry once. If it still fails, abort immediately with non-zero; never let an unpushed commit flow into the next checkpoint. |
-| Processed checkpoint pushed but label flip fails | Leave the PR pending and exit non-zero. On the next run, use the durable `✅ 처리 완료` row for label-only reconciliation; do not rerun analysis or append a duplicate checkpoint. |
+| Fresh-label read fails (non-auth) | Abort immediately without a label write. The original full label set remains unchanged. |
+| Atomic full-set label update fails (non-auth) | Abort immediately. The update cannot partially remove `knowledge:pending`; the original set remains available for next-run label-only reconciliation. |
 | GitHub MCP PR creation fails | Output report body to stdout so it's not lost. Log error. Continue (PR will be created on next commit). |
 | All candidates rejected | Still create report PR (transparency). Batch report file guarantees diff. |
 | Branch already exists | Checkout existing branch (supports re-runs and self-retriggers). |
@@ -593,7 +607,9 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
 - The orchestrator MUST wait for the whole wave to settle and pass the whole-wave auth barrier before any Step 3c write
 - Waves MUST preserve `mergedAt` input order, and the orchestrator MUST be the sole writer that checkpoints results sequentially in that order
 - Per-PR commits MUST be atomic: changeset/report committed and pushed **before** the label flips
-- A write/commit/push failure MUST abort before another PR checkpoint; a pushed success row with a failed label flip MUST use label-only reconciliation on resume
+- A write/commit/push failure MUST abort before another PR checkpoint; a pushed success row with a failed atomic label transition MUST use label-only reconciliation on resume
+- Every processed label transition MUST use one fresh `issue_read(method:get_labels)` followed by exactly one full-set `issue_write(method:update)`
+- Label transformation MUST remove only `knowledge:pending`, preserve unrelated labels, and add/deduplicate `knowledge:collected`; separate remove/add calls are forbidden
 - Graceful handoff MUST exit 0 — it is a successful workflow run, not a failure
 - 401/403 from GitHub MCP MUST NOT trigger the handoff procedure (the token is already dead)
 - MUST handle partial failures gracefully

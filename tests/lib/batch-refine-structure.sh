@@ -74,6 +74,64 @@ persist_checkpoint_action() {
   printf 'continue\n'
 }
 
+build_atomic_label_transition_plan() {
+  local labels_fixture="$1"
+
+  jq -c '
+    def transformed_labels:
+      reduce .[] as $label (
+        [];
+        if $label == "knowledge:pending" then
+          .
+        elif $label == "knowledge:collected" then
+          if index("knowledge:collected") == null then . + [$label] else . end
+        else
+          . + [$label]
+        end
+      )
+      | if index("knowledge:collected") == null then
+          . + ["knowledge:collected"]
+        else
+          .
+        end;
+    {
+      reads: [{method: "get_labels"}],
+      writes: [{method: "update", labels: transformed_labels}]
+    }
+  ' "${labels_fixture}"
+}
+
+simulate_atomic_label_update() {
+  local labels_fixture="$1"
+  local outcome="$2"
+
+  case "${outcome}" in
+    success)
+      build_atomic_label_transition_plan "${labels_fixture}" | jq -c '.writes[0].labels'
+      ;;
+    update-failed)
+      jq -c '.' "${labels_fixture}"
+      ;;
+    *)
+      echo "simulate_atomic_label_update: unknown outcome '${outcome}'" >&2
+      return 2
+      ;;
+  esac
+}
+
+label_transition_action() {
+  local read_outcome="$1"
+  local update_outcome="$2"
+
+  if [ "${read_outcome}" = "auth" ] || [ "${update_outcome}" = "auth" ]; then
+    printf 'auth-abort\n'
+  elif [ "${read_outcome}" != "ok" ] || [ "${update_outcome}" != "ok" ]; then
+    printf 'abort\n'
+  else
+    printf 'complete\n'
+  fi
+}
+
 write_batch_changeset() {
   local batch_fixture="$1"
   local changeset_file="$2"
