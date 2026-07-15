@@ -75,6 +75,46 @@
       ]
     },
     {
+      "id": "stage-b-effort-tiers-are-scoped-and-mirrored",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "ordered_contains": [
+            "user-invocable: false",
+            "effort: low",
+            "---",
+            "# collect-evidence — Stage B-1 Evidence Collection"
+          ]
+        },
+        {
+          "doc": "quality_gate_skill",
+          "ordered_contains": [
+            "user-invocable: false",
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "effort: high",
+            "---",
+            "# quality-gate — Stage B-3 Quality Verification"
+          ]
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "ordered_contains": [
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "claude_args: \"--model claude-sonnet-5 --effort medium"
+          ]
+        },
+        {
+          "doc": "setup_skill",
+          "ordered_contains": [
+            "#### `.github/workflows/batch-refine.yml`",
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "claude_args: \"--model claude-sonnet-5 --effort medium",
+            "```"
+          ]
+        }
+      ]
+    },
+    {
       "id": "partial-failures-do-not-stop-the-batch",
       "checks": [
         {

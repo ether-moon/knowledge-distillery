@@ -3,8 +3,8 @@ name: quality-gate
 description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, R7 directly-derivable heuristic)."
 user-invocable: false
 # This is the precision gate: false positives (wrong knowledge in the vault) are the
-# costly, hard-to-detect failure. While the rest of Stage B runs at the cheaper session
-# tier (Sonnet + medium effort), the gate raises effort for the duration of this skill.
+# costly, hard-to-detect failure, so it raises effort for the duration of this skill.
+# Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.
 effort: high
 ---
 
