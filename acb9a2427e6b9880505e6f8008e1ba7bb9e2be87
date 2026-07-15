@@ -1,0 +1,30 @@
+## Decisions Made
+- Run batch-refine daily at 09:23 UTC with a 45-minute dispatch deadline and retain the 60-minute job timeout.
+- Use a workflow-root `knowledge-batch-refine` concurrency group that preserves the active run and coalesces pending triggers to the latest one.
+- Treat the 15-minute margin as provisional until wall-clock telemetry validates the final PR/wave tail plus handoff assumption.
+- Keep the setup-embedded batch workflow byte-identical to the live workflow via an anchored shell-only parity test.
+- Route budget exhaustion through the Post-budget completion gate; only its Pending remains branch enters Graceful Handoff.
+
+## Problems Encountered
+- The setup template materially lagged the live workflow and omitted retry input, timeout, permissions, environment, timestamp, token, handoff prompt, and model/effort settings.
+- The live/setup action prompt still bypassed the Post-budget completion gate introduced earlier in the plan; a second RED/GREEN cycle corrected both copies.
+
+## Constraints Identified
+- Task 4 must remain serial and must not introduce `WAVE_SIZE`; bounded waves belong to Task 5.
+- Active PR-atomic work must never be cancelled; labels and commits, not `retry_count`, are durable resume state.
+- Workflow and setup template parity includes comments, whitespace, prompts, and permissions, not merely selected values.
+
+## Open Questions
+- Does the first live wall-clock run confirm that 15 minutes covers the final processing tail and the 1–2 minute handoff?
+- Does latest-pending coalescing produce the expected operational cadence under overlapping cron, manual, and self-retrigger events?
+
+## Context
+- Implemented corrected-plan Task 4 from base `a6cc0ef`.
+- Strict TDD established failures for the old weekly cron and stale post-budget prompt before implementation.
+- Focused orchestration/parity tests and the full `tests/all.sh` suite passed; jq, bash syntax, yq YAML parsing, and `git diff --check` also passed.
+
+## Recorded Decisions
+- No new decision record created; this commit implements already-approved D2 and D4 plan decisions.
+
+## Vault Entries Referenced
+- No specific vault entry IDs were fetched for this mechanical workflow/template synchronization; project shell/jq testing and deployment constraints were followed.
