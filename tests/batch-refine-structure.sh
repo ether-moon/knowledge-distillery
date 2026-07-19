@@ -67,11 +67,43 @@ assert_eq \
   "$(wave_pr_numbers_for_label_transition "${ORDERED_WAVE_FIXTURE}")" \
   "only processed wave results may transition to collected"
 
+PAYLOAD_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-payloads.json"
+prepared_payload_wave="$(prepare_wave_results "${PAYLOAD_WAVE_FIXTURE}")"
+assert_eq \
+  '[0,1,2]' \
+  "$(jq -c '[.[].slot]' <<<"${prepared_payload_wave}")" \
+  "prepared results must retain the authoritative slots in mergedAt order"
+assert_eq \
+  'true' \
+  "$(jq -r 'all(.[]; has("slot") and has("pr_number") and has("outcome") and has("duration_seconds") and has("changed_files") and has("candidate_results") and has("missing") and has("reason") and has("error"))' <<<"${prepared_payload_wave}")" \
+  "every persisted outcome must carry the complete common union contract"
+assert_eq \
+  '{"slot":0,"pr_number":1801,"outcome":"processed","duration_seconds":48,"changed_files":["app/services/billing/payment_router.rb"],"missing":[],"reason":null,"error":null}' \
+  "$(jq -c '.[] | select(.outcome == "processed") | {slot,pr_number,outcome,duration_seconds,changed_files,missing,reason,error}' <<<"${prepared_payload_wave}")" \
+  "processed results must retain authoritative identity and explicit non-applicable fields"
+assert_eq \
+  '{"slot":1,"pr_number":1802,"outcome":"insufficient","duration_seconds":16,"changed_files":["docs/adr/payment.md"],"candidate_results":[],"missing":["manifest"],"reason":"Evidence manifest is missing","error":null}' \
+  "$(jq -c '.[] | select(.outcome == "insufficient")' <<<"${prepared_payload_wave}")" \
+  "insufficient results must carry missing and reason without candidate or error data"
+assert_eq \
+  '{"slot":2,"pr_number":1803,"outcome":"failed","duration_seconds":27,"changed_files":[],"candidate_results":[],"missing":[],"reason":null,"error":"quality-gate subagent failed"}' \
+  "$(jq -c '.[] | select(.outcome == "failed")' <<<"${prepared_payload_wave}")" \
+  "failed results must carry error without candidate, missing, or reason data"
+assert_eq \
+  'true' \
+  "$(jq -r 'all(.[] | .candidate_results[]?; .candidate.id == .verdict.candidate_id)' <<<"${prepared_payload_wave}")" \
+  "every processed candidate must be paired with its verdict by candidate id"
+
+assert_eq \
+  '{"slot":1,"pr_number":1302,"outcome":"github_auth","duration_seconds":12,"changed_files":[],"candidate_results":[],"missing":["github_auth"],"reason":"Required GitHub baseline is unavailable","error":null}' \
+  "$(jq -c '.results[] | select(.outcome == "github_auth")' "${AUTH_WAVE_FIXTURE}")" \
+  "github_auth must carry its sentinel without partial candidate or changed-file data"
+
 CRASH_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-crash.json"
 assert_eq \
-  '{"pr_number":1502,"outcome":"failed","duration_seconds":null,"changed_files":[]}' \
-  "$(prepare_wave_results "${CRASH_WAVE_FIXTURE}" | jq -c '.[] | select(.pr_number == 1502) | {pr_number,outcome,duration_seconds,changed_files}')" \
-  "a payload-less settled crash must normalize against its authoritative slot without an estimated duration"
+  '{"slot":1,"pr_number":1502,"outcome":"failed","duration_seconds":null,"changed_files":[],"candidate_results":[],"missing":[],"reason":null,"error":"subagent crashed without returning a payload"}' \
+  "$(prepare_wave_results "${CRASH_WAVE_FIXTURE}" | jq -c '.[] | select(.pr_number == 1502)')" \
+  "a payload-less settled crash must normalize the complete union against its authoritative slot"
 
 INVALID_PR_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-invalid-pr.json"
 if prepare_wave_results "${INVALID_PR_WAVE_FIXTURE}" >/dev/null 2>&1; then
@@ -81,6 +113,43 @@ fi
 DUPLICATE_SLOT_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-duplicate-slot.json"
 if prepare_wave_results "${DUPLICATE_SLOT_WAVE_FIXTURE}" >/dev/null 2>&1; then
   fail "duplicate results for one authoritative slot must abort before persistence"
+fi
+
+MALFORMED_OUTCOME_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-malformed-outcome.json"
+if prepare_wave_results "${MALFORMED_OUTCOME_WAVE_FIXTURE}" >/dev/null 2>&1; then
+  fail "a malformed non-auth outcome must abort the whole unpersisted wave before persistence"
+fi
+
+MISSING_CHANGED_FILES_WAVE_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-wave-missing-changed-files.json"
+assert_eq \
+  '[]' \
+  "$(prepare_wave_results "${MISSING_CHANGED_FILES_WAVE_FIXTURE}" | jq -c '.[0].changed_files')" \
+  "a returned payload may defensively normalize only a missing changed_files field"
+
+if ! declare -F write_wave_changeset >/dev/null; then
+  fail "write_wave_changeset must prepare and validate settled payloads before changeset generation"
+fi
+WAVE_CHANGESET="${TMP_DIR}/batch-2026-07-15.json"
+write_wave_changeset "${PAYLOAD_WAVE_FIXTURE}" "${WAVE_CHANGESET}"
+assert_eq \
+  "1" \
+  "$(jq '.entries | length' "${WAVE_CHANGESET}")" \
+  "the sole writer must create one changeset entry from the accepted wave candidate"
+assert_eq \
+  "route-payments-through-services" \
+  "$(jq -r '.entries[0].data.id' "${WAVE_CHANGESET}")" \
+  "wave changeset generation must preserve the accepted candidate id"
+assert_eq \
+  $'## Background\nProvider calls were moved out of controllers.\n\n## Details\nUse one service boundary for retries and idempotency.' \
+  "$(jq -r '.entries[0].data.body' "${WAVE_CHANGESET}")" \
+  "wave changeset generation must preserve the accepted candidate full body"
+
+MALFORMED_CHANGESET="${TMP_DIR}/malformed-wave.json"
+if write_wave_changeset "${MALFORMED_OUTCOME_WAVE_FIXTURE}" "${MALFORMED_CHANGESET}" >/dev/null 2>&1; then
+  fail "a malformed non-auth outcome must not reach changeset generation"
+fi
+if [ -e "${MALFORMED_CHANGESET}" ]; then
+  fail "a rejected malformed wave must leave no partial changeset file"
 fi
 
 RESUME_REPORT_FIXTURE="${ROOT}/tests/fixtures/structure/batch-refine/input-resume-report.md"

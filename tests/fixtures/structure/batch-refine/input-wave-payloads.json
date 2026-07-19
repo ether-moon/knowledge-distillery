@@ -1,0 +1,65 @@
+{
+  "batch_date": "2026-07-15",
+  "wave_prs": [
+    {"slot": 0, "number": 1801, "merged_at": "2026-07-15T12:00:00Z"},
+    {"slot": 1, "number": 1802, "merged_at": "2026-07-15T12:01:00Z"},
+    {"slot": 2, "number": 1803, "merged_at": "2026-07-15T12:02:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 2,
+      "pr_number": 1803,
+      "outcome": "failed",
+      "duration_seconds": 27,
+      "changed_files": [],
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": "quality-gate subagent failed"
+    },
+    {
+      "slot": 0,
+      "pr_number": 1801,
+      "outcome": "processed",
+      "duration_seconds": 48,
+      "changed_files": ["app/services/billing/payment_router.rb"],
+      "candidate_results": [
+        {
+          "candidate": {
+            "id": "route-payments-through-services",
+            "type": "fact",
+            "title": "Route Payments Through Services",
+            "claim": "MUST route payment-provider calls through service objects.",
+            "body": "## Background\nProvider calls were moved out of controllers.\n\n## Details\nUse one service boundary for retries and idempotency.\n",
+            "alternative": null,
+            "considerations": "Revisit if payments move to an event gateway.",
+            "applies_to": {"domains": ["payment"]},
+            "evidence": [{"type": "pr", "ref": "#1801"}],
+            "_source_pr": 1801
+          },
+          "verdict": {
+            "candidate_id": "route-payments-through-services",
+            "verdict": "pass",
+            "rejection_codes": [],
+            "curation_queue_entry": null,
+            "notes": "Evidence and scope are complete."
+          }
+        }
+      ],
+      "missing": [],
+      "reason": null,
+      "error": null
+    },
+    {
+      "slot": 1,
+      "pr_number": 1802,
+      "outcome": "insufficient",
+      "duration_seconds": 16,
+      "changed_files": ["docs/adr/payment.md"],
+      "candidate_results": [],
+      "missing": ["manifest"],
+      "reason": "Evidence manifest is missing",
+      "error": null
+    }
+  ]
+}

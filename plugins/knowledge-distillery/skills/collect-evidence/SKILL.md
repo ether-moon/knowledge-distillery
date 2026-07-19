@@ -23,7 +23,7 @@ effort: low
 
 ## Allowed Tools
 
-- `gh pr view`, `gh api` — read-only PR data and comments
+- `gh pr view`, `gh api`, `gh repo view` — read-only PR, repository, and comment data
 - GitHub MCP (read-only by behavioral contract) — whole-collection fallback for PR data and comments
 - Linear MCP — issue details and comments (read-only)
 - Notion MCP — page content retrieval (read-only)

@@ -7,8 +7,103 @@ prepare_wave_results() {
   local wave_fixture="$1"
 
   jq -c '
+    def nonempty_string:
+      type == "string" and length > 0;
+    def nonnegative_integer:
+      type == "number" and . >= 0 and floor == .;
+    def string_array:
+      type == "array" and all(.[]; type == "string");
+    def persistable_candidate:
+      type == "object"
+      and (.id | nonempty_string)
+      and (.type == "fact" or .type == "anti-pattern")
+      and (.title | nonempty_string)
+      and (.claim | nonempty_string)
+      and (.body | nonempty_string)
+      and (
+        .applies_to
+        | type == "object"
+        and (.domains | string_array)
+      )
+      and (
+        .evidence
+        | type == "array"
+        and length > 0
+        and all(
+          .[];
+          type == "object"
+          and (.type | nonempty_string)
+          and (.ref | nonempty_string)
+        )
+      )
+      and has("alternative")
+      and (.considerations | nonempty_string);
+    def complete_verdict:
+      type == "object"
+      and (.candidate_id | nonempty_string)
+      and (.verdict == "pass" or .verdict == "fail")
+      and (.rejection_codes | string_array)
+      and has("curation_queue_entry")
+      and (
+        .curation_queue_entry == null
+        or (
+          .curation_queue_entry
+          | type == "object"
+          and (.type | nonempty_string)
+          and (.related_id | nonempty_string)
+          and (.reason | nonempty_string)
+        )
+      )
+      and (.notes | nonempty_string);
+    def valid_candidate_result:
+      type == "object"
+      and (.candidate | persistable_candidate)
+      and (.verdict | complete_verdict)
+      and .candidate.id == .verdict.candidate_id;
+    def common_result:
+      type == "object"
+      and (.slot | nonnegative_integer)
+      and (.pr_number | nonnegative_integer and . > 0)
+      and (.outcome | type == "string")
+      and (.duration_seconds | nonnegative_integer)
+      and (.changed_files | string_array)
+      and (.candidate_results | type == "array")
+      and (.missing | string_array)
+      and (.reason == null or (.reason | nonempty_string))
+      and (.error == null or (.error | nonempty_string));
+    def valid_non_auth_result:
+      common_result
+      and (
+        if .outcome == "processed" then
+          all(.candidate_results[]; valid_candidate_result)
+          and (.missing | length == 0)
+          and .reason == null
+          and .error == null
+        elif .outcome == "insufficient" then
+          (.candidate_results | length == 0)
+          and (.missing | length > 0)
+          and (.reason | nonempty_string)
+          and .error == null
+        elif .outcome == "failed" then
+          (.candidate_results | length == 0)
+          and (.missing | length == 0)
+          and .reason == null
+          and (.error | nonempty_string)
+        else
+          false
+        end
+      );
     .wave_prs as $wave_prs
-    | .results as $results
+    | (
+        .results
+        | map(
+            if .outcome != "github_auth" and (has("changed_files") | not) then
+              . + {changed_files: []}
+            else
+              .
+            end
+          )
+      ) as $results
     | if any($results[]; .outcome == "github_auth") then
       []
     elif ($results | group_by(.slot) | any(.[]; length > 1)) then
@@ -22,6 +117,8 @@ prepare_wave_results() {
         ] | length) != 1
     ) then
       error("result does not match its authoritative slot and PR")
+    elif any($results[]; (.outcome != "github_auth" and (valid_non_auth_result | not))) then
+      error("malformed non-auth result payload")
     else
       [
           $wave_prs
@@ -35,6 +132,9 @@ prepare_wave_results() {
                 outcome: "failed",
                 duration_seconds: null,
                 changed_files: [],
+                candidate_results: [],
+                missing: [],
+                reason: null,
                 error: "subagent crashed without returning a payload"
               }
             else
@@ -43,6 +143,50 @@ prepare_wave_results() {
         ]
     end
   ' "${wave_fixture}"
+}
+
+write_wave_changeset() {
+  local wave_fixture="$1"
+  local changeset_file="$2"
+  local prepared_results
+  local batch_date
+  local changeset_json
+
+  prepared_results="$(prepare_wave_results "${wave_fixture}")" || return
+  batch_date="$(jq -er '.batch_date | select(type == "string" and length > 0)' "${wave_fixture}")" || return
+  changeset_json="$(
+    jq -n \
+      --arg batch_date "${batch_date}" \
+      --argjson prs "${prepared_results}" \
+      '{
+        version: 1,
+        batch_date: $batch_date,
+        entries: [
+          $prs[]
+          | .candidate_results[]?
+          | select(.verdict.verdict == "pass")
+          | {
+              status: "accepted",
+              data: (
+                .candidate
+                + if .verdict.curation_queue_entry == null
+                  then {}
+                  else {
+                    curation: [
+                      {
+                        related_id: .verdict.curation_queue_entry.related_id,
+                        reason: .verdict.curation_queue_entry.reason
+                      }
+                    ]
+                  }
+                  end
+              )
+            }
+        ]
+      }'
+  )" || return
+
+  printf '%s\n' "${changeset_json}" > "${changeset_file}"
 }
 
 wave_pr_numbers_for_label_transition() {

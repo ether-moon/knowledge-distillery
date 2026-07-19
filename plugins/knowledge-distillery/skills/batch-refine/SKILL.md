@@ -26,7 +26,7 @@ The GitHub token used by this workflow expires roughly one hour after the workfl
 | `RETRY_COUNT` | How many self-retriggers preceded this run. Cron starts at `0`. |
 | `MAX_RETRY_COUNT` | Hard ceiling on self-retriggers per batch (e.g. `5`). |
 
-The deadline is 45 minutes, leaving 15 minutes before the token's approximate 60-minute lifetime. **The 15-minute margin is provisional until the first wall-clock measurements from bounded waves**: it assumes enough time for the final wave tail plus a 1–2 minute handoff. This is an operating assumption, not a guarantee, and must be revisited from the wave timing logs. The only "ungraceful" path is unexpected 401 from network/MCP issues — in that case the run dies, but checkpoints from prior waves preserve everything already pushed, and the next cron run resumes naturally.
+The deadline is 45 minutes, leaving 15 minutes before the token's approximate 60-minute lifetime. **The 15-minute margin is provisional until the first wall-clock measurements from bounded waves**: it assumes enough time for the final wave tail plus a 1–2 minute handoff. This is an operating assumption, not a guarantee, and must be revisited from the wave timing logs. Ungraceful aborts include auth failure and any required persistence, push, label-read, or label-update failure; prior pushed checkpoints remain recoverable, but these paths exit non-zero without handoff.
 
 ### Workflow concurrency and trigger coalescing
 
@@ -173,7 +173,7 @@ git checkout -b knowledge/batch-YYYY-MM-DD main
 
 If the branch already exists (re-run or self-retrigger scenario), checkout the existing branch — do not reset it. The accumulated commits from previous runs are the source of truth for which PRs have already been processed in this batch.
 
-When resuming an existing branch, also locate the existing Report PR (if any) and re-read its accumulated progress table before building waves. Labels remain the normal discovery signal, while a pushed success row is the recovery signal for the narrow commit/push-success + label-failure gap.
+When resuming an existing branch, also locate the existing Report PR (if any) before building waves. After checking out the pushed branch, read its local `.knowledge/reports/batch-YYYY-MM-DD.md`; that checked-out file is the authoritative reconciliation input. The Report PR body is only a mirror and may be stale if label transition or the subsequent body refresh fails. Labels remain the normal discovery signal, while a pushed success row in the authoritative report file is the recovery signal for the narrow commit/push-success + label-failure gap.
 
 When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation with the Atomic label-set transition, and exclude that PR from analysis waves only after its single full-set update succeeds. Do not rerun its analysis or append another changeset/report checkpoint. Insufficient and failed rows are not reconciliation successes; those PRs stay pending and remain eligible for analysis. If its fresh-label read or update returns auth failure, enter Unexpected 401; for another read/update error, leave the original labels unchanged and exit non-zero rather than duplicating its checkpoint.
 
@@ -227,7 +227,9 @@ for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
   leave the whole wave pending, skip Step 3c/3d, Step 7/8, and handoff, then exit non-zero.
 
   The original invocation slot and PR number are authoritative; reject duplicate slots, foreign PR numbers, or mismatched results before persistence. On validation failure, discard the whole unpersisted wave and exit non-zero.
-  A missing non-auth payload becomes that slot's `failed` result with `duration unknown` and `changed_files=[]`.
+  Before strict non-auth payload validation, defensively normalize only a missing `changed_files` field to `[]`; all other common and outcome-specific fields remain required.
+  After authoritative slot/PR validation, validate every non-auth outcome payload before persistence. If any non-auth payload is malformed, discard the whole unpersisted wave and exit non-zero before any Step 3c write; do not persist otherwise valid peers.
+  A missing non-auth payload becomes that authoritative slot's complete `failed` result: `duration_seconds=null`, `changed_files=[]`, `candidate_results=[]`, `missing=[]`, `reason=null`, and `error="subagent crashed without returning a payload"`.
 
   # 3c/3d. Sole-writer checkpoint drain
   Only after the auth scan passes, process the original `wave_prs` in `mergedAt` ascending order.
@@ -250,17 +252,50 @@ for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
 
 #### Per-PR result and timing contract
 
-The per-PR subagent MUST measure its own `duration_seconds`. Start immediately before `collect-evidence`; stop immediately after the terminal `processed`, `insufficient`, `failed`, or `github_auth` outcome is known. Catch a non-auth pipeline error and return `failed` when the subagent is still able to return a payload. Every terminal payload uses this additive contract (`changed_files` and `verdicts` may be empty when they do not apply):
+The per-PR subagent MUST measure its own `duration_seconds`. Start immediately before `collect-evidence`; stop immediately after the terminal `processed`, `insufficient`, `failed`, or `github_auth` outcome is known. Catch a non-auth pipeline error and return `failed` when the subagent is still able to return a payload. Every returned terminal payload MUST use this tagged-union contract. The common fields are the authoritative invocation `slot`, `pr_number`, `outcome`, a non-negative integer `duration_seconds`, a string-array `changed_files`, and the outcome fields `candidate_results`, `missing`, `reason`, and `error`. The sole writer tolerates a legacy or malformed producer that omits only `changed_files` by defensively supplying `[]`; this does not weaken the producer contract or any other validation:
 
 ```json
 {
+  "slot": 0,
   "pr_number": 1234,
   "outcome": "processed|insufficient|failed|github_auth",
   "duration_seconds": 252,
   "changed_files": ["path/to/file"],
-  "verdicts": []
+  "candidate_results": [
+    {
+      "candidate": {
+        "id": "payment-service-boundary",
+        "type": "fact",
+        "title": "Route payments through a service boundary",
+        "claim": "MUST route provider calls through payment services.",
+        "body": "## Background\n...\n\n## Details\n...",
+        "applies_to": {"domains": ["payment"]},
+        "evidence": [{"type": "pr", "ref": "#1234"}],
+        "alternative": null,
+        "conflict_check": null,
+        "considerations": "Revisit if the provider boundary moves."
+      },
+      "verdict": {
+        "candidate_id": "payment-service-boundary",
+        "verdict": "pass",
+        "rejection_codes": [],
+        "curation_queue_entry": null,
+        "notes": "Evidence and scope are complete."
+      }
+    }
+  ],
+  "missing": [],
+  "reason": null,
+  "error": null
 }
 ```
+
+- For `processed`, `candidate_results` MUST contain each full Candidate object paired with its full quality-gate verdict, and every `candidate.id` MUST equal `verdict.candidate_id`. Set `missing=[]`, `reason=null`, and `error=null`; an empty `candidate_results` array is valid when extraction returns no candidates.
+- For `insufficient`, set `candidate_results=[]`, provide non-empty `missing` and `reason`, and set `error=null`.
+- For `failed`, set `candidate_results=[]`, `missing=[]`, `reason=null`, and provide non-empty `error`.
+- For `github_auth`, set `changed_files=[]`, `candidate_results=[]`, include `github_auth` in `missing`, set `error=null`, and return no partial candidate data.
+
+The orchestrator derives accepted changeset entries only from `candidate_results` whose `verdict.verdict == "pass"`; therefore the full Candidate object, not a verdict-only projection, is required. Before Step 3c it validates the complete common shape, the outcome-specific null/empty/non-empty rules, the Candidate fields required for persistence, the complete verdict shape, and every Candidate/verdict ID pair. This barrier does not repeat the quality-gate's semantic judgment; it verifies that the sole writer received enough intact data to apply that judgment. A returned `failed` payload still requires a measured duration; only an authoritative slot with no returned payload receives the synthesized null duration described above.
 
 Format a known duration as `XmYs` in the progress status cell. Insufficient and non-auth failure rows MUST also include the duration. If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`. A `github_auth` payload follows the Unexpected 401 path: log every returned duration in that wave, but persist no row, timing, metadata, candidate, or count from any current-wave result.
 

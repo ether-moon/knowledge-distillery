@@ -277,6 +277,10 @@
       "checks": [
         {
           "doc": "collect_evidence_skill",
+          "contains": "- `gh pr view`, `gh api`, `gh repo view` — read-only PR, repository, and comment data"
+        },
+        {
+          "doc": "collect_evidence_skill",
           "contains": "`(.changed_files | length) < .changed_file_count`"
         },
         {
@@ -655,7 +659,15 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "A missing non-auth payload becomes that slot's `failed` result with `duration unknown` and `changed_files=[]`."
+          "contains": "A missing non-auth payload becomes that authoritative slot's complete `failed` result: `duration_seconds=null`, `changed_files=[]`, `candidate_results=[]`, `missing=[]`, `reason=null`, and `error=\"subagent crashed without returning a payload\"`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "After authoritative slot/PR validation, validate every non-auth outcome payload before persistence. If any non-auth payload is malformed, discard the whole unpersisted wave and exit non-zero before any Step 3c write; do not persist otherwise valid peers."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Before strict non-auth payload validation, defensively normalize only a missing `changed_files` field to `[]`; all other common and outcome-specific fields remain required."
         }
       ]
     },
@@ -665,6 +677,14 @@
         {
           "doc": "batch_refine_skill",
           "contains": "If the branch already exists (re-run or self-retrigger scenario), checkout the existing branch — do not reset it."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "After checking out the pushed branch, read its local `.knowledge/reports/batch-YYYY-MM-DD.md`; that checked-out file is the authoritative reconciliation input."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The Report PR body is only a mirror and may be stale if label transition or the subsequent body refresh fails."
         },
         {
           "doc": "batch_refine_skill",
@@ -920,6 +940,43 @@
       ]
     },
     {
+      "id": "per-pr-result-union-is-sole-writer-complete",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"slot\": 0"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"candidate_results\": ["
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `processed`, `candidate_results` MUST contain each full Candidate object paired with its full quality-gate verdict, and every `candidate.id` MUST equal `verdict.candidate_id`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `insufficient`, set `candidate_results=[]`, provide non-empty `missing` and `reason`, and set `error=null`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `failed`, set `candidate_results=[]`, `missing=[]`, `reason=null`, and provide non-empty `error`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `github_auth`, set `changed_files=[]`, `candidate_results=[]`, include `github_auth` in `missing`, set `error=null`, and return no partial candidate data."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The orchestrator derives accepted changeset entries only from `candidate_results` whose `verdict.verdict == \"pass\"`; therefore the full Candidate object, not a verdict-only projection, is required."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "\"verdicts\": []"
+        }
+      ]
+    },
+    {
       "id": "per-pr-and-run-timing-contracts-are-explicit",
       "checks": [
         {
@@ -929,6 +986,10 @@
         {
           "doc": "batch_refine_skill",
           "contains": "\"outcome\": \"processed|insufficient|failed|github_auth\""
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"slot\": 0"
         },
         {
           "doc": "batch_refine_skill",
@@ -981,6 +1042,14 @@
         {
           "doc": "batch_refine_skill",
           "absent": "`persist_duration_seconds` excludes label changes"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Ungraceful aborts include auth failure and any required persistence, push, label-read, or label-update failure; prior pushed checkpoints remain recoverable, but these paths exit non-zero without handoff."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "The only \"ungraceful\" path is unexpected 401"
         }
       ]
     }
