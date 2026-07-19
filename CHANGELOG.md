@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0] - 2026-07-19
+
+### Added
+
+- **batch-refine**: Add bounded K=3 read-only analysis waves with `mergedAt`-ordered sole-writer checkpoints and complete result contracts.
+
+### Improved
+
+- **pipeline**: Batch and fully paginate GitHub evidence reads, add wall-clock telemetry, and harden deadline handoff, resume reconciliation, and atomic label transitions.
+- **quality-gate**: Make artifact derivability authoritative and apply explicit effort tiers across Stage B.
+
+### Fixed
+
+- **reports**: Preserve progress and machine-readable metadata atomically across regeneration, curation, and retries.
+
 ## [0.4.0] - 2026-07-06
 
 ### Improved
