@@ -63,7 +63,7 @@ jobs:
             and add 'knowledge:pending' label.
           # Stage A is high-frequency (every merged PR) and low-judgment (identifier
           # extraction + coarse L1/L2 triage) — Sonnet + medium effort is sufficient.
-          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
           show_full_output: true
 
       - name: Cleanup sensitive files

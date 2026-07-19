@@ -1,0 +1,30 @@
+{
+  "batch_date": "2026-07-15",
+  "wave_prs": [
+    {"slot": 0, "number": 1901, "merged_at": "2026-07-15T13:00:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 0,
+      "pr_number": 1901,
+      "outcome": "processed",
+      "duration_seconds": 20,
+      "changed_files": ["app/jobs/payment_job.rb"],
+      "candidate_results": [
+        {
+          "candidate": {
+            "id": "payment-job-boundary",
+            "body": "Keep provider calls behind the payment job boundary."
+          },
+          "verdict": {
+            "candidate_id": "different-candidate-id",
+            "verdict": "pass"
+          }
+        }
+      ],
+      "missing": [],
+      "reason": null,
+      "error": null
+    }
+  ]
+}

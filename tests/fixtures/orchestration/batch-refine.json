@@ -3,9 +3,11 @@
   "documents": {
     "batch_refine_skill": "plugins/knowledge-distillery/skills/batch-refine/SKILL.md",
     "collect_evidence_skill": "plugins/knowledge-distillery/skills/collect-evidence/SKILL.md",
+    "curate_report_skill": "plugins/knowledge-distillery/skills/curate-report/SKILL.md",
     "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
     "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
-    "batch_refine_workflow": ".github/workflows/batch-refine.yml"
+    "batch_refine_workflow": ".github/workflows/batch-refine.yml",
+    "setup_skill": "plugins/knowledge-distillery/skills/setup/SKILL.md"
   },
   "scenarios": [
     {
@@ -73,6 +75,46 @@
       ]
     },
     {
+      "id": "stage-b-effort-tiers-are-scoped-and-mirrored",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "ordered_contains": [
+            "user-invocable: false",
+            "effort: low",
+            "---",
+            "# collect-evidence — Stage B-1 Evidence Collection"
+          ]
+        },
+        {
+          "doc": "quality_gate_skill",
+          "ordered_contains": [
+            "user-invocable: false",
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "effort: high",
+            "---",
+            "# quality-gate — Stage B-3 Quality Verification"
+          ]
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "ordered_contains": [
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "claude_args: \"--model claude-sonnet-5 --effort medium"
+          ]
+        },
+        {
+          "doc": "setup_skill",
+          "ordered_contains": [
+            "#### `.github/workflows/batch-refine.yml`",
+            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
+            "claude_args: \"--model claude-sonnet-5 --effort medium",
+            "```"
+          ]
+        }
+      ]
+    },
+    {
       "id": "partial-failures-do-not-stop-the-batch",
       "checks": [
         {
@@ -130,6 +172,52 @@
       ]
     },
     {
+      "id": "label-transition-is-one-atomic-full-set-update",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Call `issue_read(method:get_labels)` immediately before every label transition to fetch the fresh full label set."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "From that fresh set, remove only `knowledge:pending`, preserve every unrelated label, append `knowledge:collected` when absent, and deduplicate `knowledge:collected`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Call exactly one `issue_write(method:update, labels: transformed full set)` to replace the labels atomically."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Step 2 label-only reconciliation and Step 3d MUST use this same atomic label-set transition."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST NOT call separate label remove/add operations."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "use GitHub MCP to remove `knowledge:pending` and add `knowledge:collected`"
+        }
+      ]
+    },
+    {
+      "id": "atomic-label-transition-failures-are-recoverable",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "An auth failure from either `issue_read(method:get_labels)` or `issue_write(method:update)` follows Unexpected 401."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "A non-auth read or update failure aborts the current run immediately."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Because the full-set update is atomic, a failed update leaves the original labels—including `knowledge:pending`—unchanged so the next run can reconcile it."
+        }
+      ]
+    },
+    {
       "id": "report-is-still-generated-with-zero-accepted-entries",
       "checks": [
         {
@@ -156,11 +244,181 @@
       ]
     },
     {
-      "id": "time-budget-check-precedes-each-pr",
+      "id": "collect-evidence-gh-fast-path-is-batched-and-normalized",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh pr view <n> --json number,title,body,author,baseRefName,mergeCommit,changedFiles,files,commits,comments --jq"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "merge_sha:(.mergeCommit.oid // \"\"),base_branch:.baseRefName,changed_file_count:.changedFiles,changed_files:[.files[].path]"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "sha:.oid[0:7],message:(.messageHeadline + (if .messageBody == \"\" then \"\" else \"\\n\\n\" + .messageBody end))"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/comments?per_page=100\" --paginate --slurp | jq -c '[.[][] | {author:(.user.login // \"\"),body,path,line:(.line // .original_line)}]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Raw bodies and commit messages MUST remain byte-for-byte unsummarized in the normalized snapshot."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Run every gh-to-jq pipeline with `set -o pipefail`"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-gh-overflow-paths-are-complete",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "- `gh pr view`, `gh api`, `gh repo view` — read-only PR, repository, and comment data"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`(.changed_files | length) < .changed_file_count`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api \"repos/{owner}/{repo}/pulls/<n>/files?per_page=100\" --paginate --slurp | jq -c '[.[][] | .filename]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh repo view --json nameWithOwner --jq .nameWithOwner"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "gh api graphql --paginate --slurp"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "$endCursor: String"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "commits(first: 100, after: $endCursor)"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "pageInfo { hasNextPage endCursor }"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "{sha:.commit.oid[0:7],message:.commit.message}"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "}' | jq -c '[.[] | .data.repository.pullRequest.commits.nodes[] | {sha:.commit.oid[0:7],message:.commit.message}]'"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "--paginate --slurp --jq"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "pulls/<n>/commits?per_page=100"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`gh pr view --json comments` preloads all issue comments, so it needs no separate issue-comment overflow request."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-gh-failure-is-auth-aware-and-atomic",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Capture every gh call's exit code and stderr separately."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`HTTP 401`, `HTTP 403`, or `Bad credentials`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Discard every partial gh result and restart the whole GitHub collection through the read-only GitHub MCP path."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "exit 4 with `populate the GH_TOKEN...`"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Never combine partial gh results with GitHub MCP results."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "A non-auth gh rate-limit failure discards all gh output and restarts the whole collection through MCP."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "An MCP rate-limit failure is reported to the orchestrator for retry in the next batch."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-invalid-manifest-attempts-reconstruction",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "If strict parsing or any validation check fails, continue to 1d and attempt reconstruction from the normalized snapshot."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "If the reconstructed Manifest still fails validation, return `insufficient` with `missing: [\"manifest\"]` and the validation reason."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Attempt 1d reconstruction from the normalized snapshot; only return `insufficient` if the reconstructed Manifest is still invalid."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "Manifest JSON malformed | Return `insufficient` with reason. Do not proceed."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-validates-required-pr-context",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`pr.base_branch` must be a non-empty string"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "`pr.changed_files` must be an array"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "The Evidence Bundle MUST use the complete normalized `changed_files` list"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-greptile-reuses-normalized-comments",
+      "checks": [
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "This rule is transport-neutral: MUST NOT issue any additional gh CLI or GitHub MCP calls."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Preserve the Manifest identifier's `review_id` unchanged in each `{ \"review_id\": review_id, \"comments\": [...] }` result."
+        }
+      ]
+    },
+    {
+      "id": "time-budget-check-precedes-each-wave",
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "Run this check at the **top of every PR iteration**, before invoking `collect-evidence`:"
+          "contains": "Run this check at the **top of every wave iteration**, before issuing any Agent call:"
         },
         {
           "doc": "batch_refine_skill",
@@ -168,7 +426,27 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "Do **not** start a new PR after the deadline"
+          "contains": "Do **not** start a new wave after the deadline"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Once a wave starts, let every Agent settle and finish that wave's auth barrier and sequential checkpoints even if the deadline passes."
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
+        },
+        {
+          "doc": "setup_skill",
+          "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
+        },
+        {
+          "doc": "setup_skill",
+          "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         }
       ]
     },
@@ -270,15 +548,126 @@
       ]
     },
     {
-      "id": "serial-pr-loop-is-the-cancellation-point",
+      "id": "workflow-daily-deadline-and-root-concurrency",
+      "checks": [
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "- cron: '23 9 * * *'  # Every day 09:23 UTC"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "DEADLINE_SECONDS: \"2700\"   # 45 min"
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "ordered_contains": [
+            "workflow_dispatch:",
+            "concurrency:",
+            "group: knowledge-batch-refine",
+            "cancel-in-progress: false",
+            "jobs:"
+          ]
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "WAVE_SIZE: \"3\""
+        }
+      ]
+    },
+    {
+      "id": "setup-template-carries-live-bounded-wave-workflow-contract",
+      "checks": [
+        {
+          "doc": "setup_skill",
+          "ordered_contains": [
+            "#### `.github/workflows/batch-refine.yml`",
+            "workflow_dispatch:",
+            "inputs:",
+            "retry_count:",
+            "concurrency:",
+            "jobs:",
+            "timeout-minutes: 60",
+            "actions: write",
+            "DEADLINE_SECONDS: \"2700\"",
+            "WAVE_SIZE: \"3\"",
+            "echo \"BATCH_START_TS=$(date +%s)\" >> \"$GITHUB_ENV\"",
+            "github_token: ${{ secrets.GITHUB_TOKEN }}",
+            "follow the skill's \"Post-budget completion gate\"",
+            "Only the Pending remains branch enters the skill's \"Graceful Handoff Procedure\"",
+            "--model claude-sonnet-5 --effort medium"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "daily-cadence-provisional-margin-and-coalescing-are-explicit",
       "checks": [
         {
           "doc": "batch_refine_skill",
-          "contains": "PRs MUST be processed serially in `mergedAt` ascending order so the time-budget cancellation point is well-defined"
+          "contains": "Triggered on a daily schedule or manual dispatch."
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "Why serial, not parallel?"
+          "contains": "- Daily cron schedule via GitHub Actions"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The 15-minute margin is provisional until the first wall-clock measurements"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "active run is never cancelled and only the latest pending trigger is retained"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "labels and commits are the durable state, not the retry counter"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Set `K=${WAVE_SIZE:-3}` and require a positive integer before dispatching anything."
+        }
+      ]
+    },
+    {
+      "id": "bounded-wave-loop-is-the-cancellation-point",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Waves MUST be formed from pending PRs in `mergedAt` ascending order; only the orchestrator may persist results sequentially in that same order"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Why bounded waves?"
+        }
+      ]
+    },
+    {
+      "id": "wave-all-settle-auth-barrier-precedes-persist",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "ordered_contains": [
+            "Wait until every Agent call in the wave has settled.",
+            "Before any Step 3c write, scan the complete settled result set for `outcome == \"github_auth\"`.",
+            "If any auth result exists, discard every unpersisted result in the wave",
+            "Only after the auth scan passes, process the original `wave_prs` in `mergedAt` ascending order."
+          ]
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The original invocation slot and PR number are authoritative; reject duplicate slots, foreign PR numbers, or mismatched results before persistence."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "A missing non-auth payload becomes that authoritative slot's complete `failed` result: `duration_seconds=null`, `changed_files=[]`, `candidate_results=[]`, `missing=[]`, `reason=null`, and `error=\"subagent crashed without returning a payload\"`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "After authoritative slot/PR validation, validate every non-auth outcome payload before persistence. If any non-auth payload is malformed, discard the whole unpersisted wave and exit non-zero before any Step 3c write; do not persist otherwise valid peers."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Before strict non-auth payload validation, defensively normalize only a missing `changed_files` field to `[]`; all other common and outcome-specific fields remain required."
         }
       ]
     },
@@ -291,7 +680,44 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "The PR's `knowledge:collected` label is the authoritative signal"
+          "contains": "After checking out the pushed branch, read its local `.knowledge/reports/batch-YYYY-MM-DD.md`; that checked-out file is the authoritative reconciliation input."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The Report PR body is only a mirror and may be stale if label transition or the subsequent body refresh fails."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "When a pending PR already has a durable `✅ 처리 완료` progress row, perform label-only reconciliation"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do not rerun its analysis or append another changeset/report checkpoint."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Insufficient and failed rows are not reconciliation successes"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Auth during label-only reconciliation before any wave starts"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "there is no in-flight wave to settle or discard"
+        }
+      ]
+    },
+    {
+      "id": "persist-failure-aborts-before-next-pr",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "If a Step 3c write or commit fails, or if `git push` still fails after one retry, abort the batch immediately with a non-zero exit."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Never continue to the next PR with dirty files or an unpushed local commit."
         }
       ]
     },
@@ -308,7 +734,11 @@
         },
         {
           "doc": "batch_refine_skill",
-          "contains": "spawn-agent (single Agent tool call, fresh context):"
+          "contains": "spawn wave (K separate Agent tool calls in one message, each fresh context):"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Issue every Agent call in the same orchestrator message before waiting for any result."
         }
       ]
     },
@@ -334,7 +764,19 @@
       "checks": [
         {
           "doc": "batch_refine_workflow",
-          "contains": "follow the skill's \"Graceful Handoff Procedure\""
+          "contains": "follow the skill's \"Post-budget completion gate\""
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "contains": "Only the Pending remains branch enters the skill's \"Graceful Handoff Procedure\""
+        },
+        {
+          "doc": "batch_refine_workflow",
+          "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
+        },
+        {
+          "doc": "setup_skill",
+          "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {
           "doc": "batch_refine_workflow",
@@ -374,12 +816,111 @@
       ]
     },
     {
-      "id": "collect-evidence-prose-distinguishes-auth-from-optional-missing",
+      "id": "step-7-runs-only-on-full-completion",
       "checks": [
         {
-          "doc": "collect_evidence_skill",
-          "contains": "Even when `insufficient` due to **missing optional sources**"
+          "doc": "batch_refine_skill",
+          "contains": "### Step 7: Domain Change Summary + Batch-Completion Reconciliation (runs ONLY on full completion — skip entirely on graceful handoff)"
         },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "On a graceful-handoff exit (`goto_graceful_handoff=1`), skip both Step 7a and Step 7b entirely and proceed directly to Step 8."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "#### Step 7a: Domain Change Summary (runs ONLY on full completion — skip on graceful handoff)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "This Step 7 commit is the final commit of the run and happens only on full completion."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "**Linear ordering on budget hit:** Post-budget completion gate → zero pending: Step 7 exactly once → Step 8 exactly once → normal full-completion exit; pending remains: skip Step 7a and Step 7b → Step 8 exactly once → numbered Graceful Handoff steps → exit 0."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "Step 7a: Domain Change Summary (runs on completion AND handoff)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| Time budget reached | MUST enter the **Post-budget completion gate** first. Zero pending → full completion (Step 7 then Step 8); pending remains → Step 8 then **Graceful Handoff Procedure**. Exit 0. |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "| Time budget reached | Run **Graceful Handoff Procedure**. Exit 0. |"
+        }
+      ]
+    },
+    {
+      "id": "handoff-with-no-pending-becomes-full-completion",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "### Post-budget completion gate (before Step 7 and Step 8)"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "After the deadline stops new dispatches and all in-flight work settles, re-query the current `knowledge:pending` count before running Step 7, Step 8, or any numbered Graceful Handoff step."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "- **Zero pending:** clear `goto_graceful_handoff`, reclassify the run as full completion, run Step 7 exactly once, then Step 8 exactly once, and exit through the normal full-completion path. Do not append a handoff row or self-retrigger."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "- **Pending remains:** keep `goto_graceful_handoff=1`, skip both Step 7a and Step 7b, run Step 8 exactly once, then enter the numbered Graceful Handoff steps."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "Before entering the numbered handoff steps, re-query"
+        }
+      ]
+    },
+    {
+      "id": "changed-files-survive-retriggers-as-report-metadata",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "<!-- KD_BATCH_PR_META {\"pr_number\":1234,\"changed_files\":[\"path/to/file\"]} -->"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Normalize a missing `changed_files` field to `[]` before serializing the compact JSON."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Never write a `KD_BATCH_PR_META` marker for a `github_auth` result."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Parse every accumulated `KD_BATCH_PR_META` line from `.knowledge/reports/batch-YYYY-MM-DD.md` and deduplicate changed paths by `(pr_number, path)`."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Snapshot the complete `### 진행 상황` block and every one-line `KD_BATCH_PR_META` marker before regenerating the report."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Restore the progress block and metadata marker lines verbatim after regeneration"
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Build the regenerated content, restored progress block, and all metadata marker lines in a temporary file in the report's own directory."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "Only after that temporary file is complete, replace the report with one final atomic `mv`."
+        },
+        {
+          "doc": "curate_report_skill",
+          "contains": "On any failure before the final `mv`, remove every temporary file and leave the existing report untouched."
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence-prose-distinguishes-auth-from-optional-missing",
+      "checks": [
         {
           "doc": "collect_evidence_skill",
           "contains": "**Auth failure is a special case** that does **not** follow this rule"
@@ -387,6 +928,128 @@
         {
           "doc": "collect_evidence_skill",
           "contains": "Partial data on auth failure must be discarded."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "contains": "Missing optional sources never changes a bundle with the required baseline from `sufficient` to `insufficient`."
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "Even when `insufficient` due to **missing optional sources**"
+        }
+      ]
+    },
+    {
+      "id": "per-pr-result-union-is-sole-writer-complete",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"slot\": 0"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"candidate_results\": ["
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `processed`, `candidate_results` MUST contain each full Candidate object paired with its full quality-gate verdict, and every `candidate.id` MUST equal `verdict.candidate_id`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `insufficient`, set `candidate_results=[]`, provide non-empty `missing` and `reason`, and set `error=null`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `failed`, set `candidate_results=[]`, `missing=[]`, `reason=null`, and provide non-empty `error`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For `github_auth`, set `changed_files=[]`, `candidate_results=[]`, include `github_auth` in `missing`, set `error=null`, and return no partial candidate data."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The orchestrator derives accepted changeset entries only from `candidate_results` whose `verdict.verdict == \"pass\"`; therefore the full Candidate object, not a verdict-only projection, is required."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "\"verdicts\": []"
+        }
+      ]
+    },
+    {
+      "id": "per-pr-and-run-timing-contracts-are-explicit",
+      "checks": [
+        {
+          "doc": "batch_refine_skill",
+          "contains": "The per-PR subagent MUST measure its own `duration_seconds`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"outcome\": \"processed|insufficient|failed|github_auth\""
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"slot\": 0"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "\"duration_seconds\": 252"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "If the subagent crashes without returning a payload, the orchestrator MUST NOT estimate the duration; record `duration unknown`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| #1234 | ✅ 처리 완료 (3 accepted, 4m12s, run #100) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Insufficient and non-auth failure rows MUST also include the duration"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Do not persist an auth-dead PR's timing or outcome row; write its returned duration to the Actions log only."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "MUST NOT derive this value from `Σ(per-PR duration_seconds)`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| 총 소요시간(wall-clock) | XmYs (run #N) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "| 총 소요시간(wall-clock) | N/A (run #N) |"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Log every wave as `wave_duration_seconds=<dispatch-to-all-settled> persist_duration_seconds=<first-Step-3c-write-to-last-commit-push> run_elapsed_seconds=<BATCH_START_TS-to-now>`."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "For an auth-dead wave, log `persist_duration_seconds=0` because no Step 3c write may begin."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "At handoff and completion, also log `run_elapsed_seconds` from `BATCH_START_TS`"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "intermediate Step 3d label transitions are naturally included; only the final PR's post-push label transition falls after its terminal boundary"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "`persist_duration_seconds` excludes label changes"
+        },
+        {
+          "doc": "batch_refine_skill",
+          "contains": "Ungraceful aborts include auth failure and any required persistence, push, label-read, or label-update failure; prior pushed checkpoints remain recoverable, but these paths exit non-zero without handoff."
+        },
+        {
+          "doc": "batch_refine_skill",
+          "absent": "The only \"ungraceful\" path is unexpected 401"
         }
       ]
     }

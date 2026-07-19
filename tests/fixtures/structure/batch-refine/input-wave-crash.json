@@ -1,0 +1,19 @@
+{
+  "wave_prs": [
+    {"slot": 0, "number": 1501, "merged_at": "2026-07-15T10:00:00Z"},
+    {"slot": 1, "number": 1502, "merged_at": "2026-07-15T10:01:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 0,
+      "pr_number": 1501,
+      "outcome": "processed",
+      "duration_seconds": 19,
+      "changed_files": ["app/services/payment.rb"],
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": null
+    }
+  ]
+}

@@ -3,8 +3,8 @@ name: quality-gate
 description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, R7 directly-derivable heuristic)."
 user-invocable: false
 # This is the precision gate: false positives (wrong knowledge in the vault) are the
-# costly, hard-to-detect failure. While the rest of Stage B runs at the cheaper session
-# tier (Sonnet + medium effort), the gate raises effort for the duration of this skill.
+# costly, hard-to-detect failure, so it raises effort for the duration of this skill.
+# Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.
 effort: high
 ---
 
@@ -115,7 +115,7 @@ If the evidence is weak, ambiguous, or does not support the claim → `R1_EVIDEN
 
 Compare the candidate against existing vault entries in the same domains:
 
-1. Fetch existing entries for each domain in `applies_to.domains`:
+1. Reuse the existing-entry set already fetched by `extract-candidates` Step 2 for these domains — it is in-memory in this **same subagent context**, so do NOT re-issue `query-domain` per domain. **Fallback:** if that set is unavailable (e.g., extract-candidates hit the `query-domain` error path and proceeded with null `conflict_check`), fetch it now so the duplicate check is never silently skipped:
    ```bash
    <knowledge-gate> query-domain "<domain>"
    ```
@@ -155,7 +155,7 @@ Compare the candidate against existing vault entries in the same domains:
 
 #### R7: Directly Derivable Knowledge (Artifact-Verified)
 
-R7 is a **primary derivability verifier** with file-reading capability. It serves as the safety net for candidates that passed extract-candidates criterion 4d — verify claims against actual repo artifacts rather than relying on the candidate's self-description.
+R7 is the **sole authoritative derivability verifier** with file-reading capability. extract-candidates criterion 4d is only a cheap text-level pre-filter that reads no files; R7 owns the final derivability decision — it MUST verify each claim against actual repo artifacts rather than relying on the candidate's self-description or 4d's estimate (see decision `2026-07-06-r7-sole-derivability-authority`). Because 4d no longer reads files, R7 is the one place artifact-verified derivability happens — skipping its artifact reads would remove that guarantee from the pipeline entirely.
 
 **Short-circuit (R7 is the most expensive check — it reads repo artifacts):** run R7 only for candidates that still have **no rejection code** after R1 and R6. If a candidate already failed R1 or R6, skip R7 — it cannot change an already-failed verdict, and the artifact reads are pure waste.
 
@@ -311,7 +311,7 @@ For each candidate, produce a verdict:
 - MUST err toward rejection on borderline R1 evidence checks
 - MUST return empty array for empty input (not error)
 - MUST run Layer 2 only for candidates that pass Layer 1 (a Layer 1 failure is an immediate FAIL and skips Layer 2); within Layer 2, run R7 only when no rejection code exists yet
-- R7 has artifact inspection capability and serves as the safety net for extract-candidates criterion 4d — verify claims against actual files, not just candidate text
+- R7 is the sole authoritative artifact-verified derivability check (extract-candidates 4d is a cheap text pre-filter that reads no files) — R7 MUST verify claims against actual files, not just candidate text or 4d's estimate
 
 ## Validation Checklist
 
@@ -319,7 +319,7 @@ Before returning verdicts, verify:
 
 1. Does Layer 1 catch all structural/schema violations deterministically?
 2. Does Layer 2 evaluate evidence sufficiency (R1) for every candidate that passed Layer 1 (and skip Layer 2 for Layer-1 failures)?
-3. Does R6 check compare against existing vault entries via CLI?
+3. Does R6 compare against existing vault entries (reusing extract-candidates Step 2 results in-memory, or CLI fallback when unavailable)?
 4. Does the skill distinguish `duplicate` (FAIL) from `conflict` (PASS + curation queue)?
 5. Are ALL applicable rejection codes reported per candidate (not just first)?
 6. Does the skill return empty array for empty candidate input?

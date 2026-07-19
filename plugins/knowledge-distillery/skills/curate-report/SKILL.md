@@ -102,6 +102,12 @@ jq '(.entries[] | select(.data.id == "<entry-id>") | .data.claim) = "<new claim>
 
 After all actions are executed, regenerate `.knowledge/reports/batch-YYYY-MM-DD.md` to reflect the current changeset state.
 
+Before replacing any report content, preserve the orchestrator's cross-run state:
+
+1. Snapshot the complete `### 진행 상황` block and every one-line `KD_BATCH_PR_META` marker before regenerating the report.
+2. Keep the progress block's rows, spacing, and order unchanged. Do not rebuild it from labels or the changeset.
+3. Treat marker lines as opaque text. Do not parse, normalize, reorder, or reserialize their JSON during curation.
+
 Read entry data from the changeset file:
 ```bash
 jq '.entries[]' .knowledge/changesets/batch-YYYY-MM-DD.json
@@ -120,6 +126,10 @@ Write the updated report with the same structure as the original, but:
   ```
 
 Also update the PR body's "Summary" table metrics (accepted count, etc.) to reflect the new state. Use GitHub MCP to update the PR body.
+
+Restore the progress block and metadata marker lines verbatim after regeneration, before updating the PR body: place the progress block immediately before `### Summary`, and retain all marker lines in their original order. Curation may change candidate sections and metrics, but it MUST NOT erase or rewrite this append-only history.
+
+Build the regenerated content, restored progress block, and all metadata marker lines in a temporary file in the report's own directory. Only after that temporary file is complete, replace the report with one final atomic `mv`. On any failure before the final `mv`, remove every temporary file and leave the existing report untouched.
 
 ### Step 8: Commit and Push
 

@@ -4,10 +4,10 @@ set -euo pipefail
 # Pure-bash helpers exercising the time-budget / handoff invariants
 # documented in the batch-refine skill. Used by tests/handoff-structure.sh.
 
-# Usage: should_start_pr <now_ts> <start_ts> <deadline_seconds>
-# Returns 0 (truthy) when there is enough budget left to start a new PR,
+# Usage: should_start_wave <now_ts> <start_ts> <deadline_seconds>
+# Returns 0 (truthy) when there is enough budget left to start a new wave,
 # 1 (falsy) when the deadline has been reached or exceeded.
-should_start_pr() {
+should_start_wave() {
   local now="$1"
   local start="$2"
   local deadline="$3"
@@ -35,7 +35,7 @@ should_retrigger() {
 }
 
 # Usage: format_handoff_row <run_id> <retry_count> <max_retry_count> <processed> <remaining> <action>
-# action ∈ { retriggered, max-reached, no-pending }
+# action ∈ { retriggered, max-reached }
 # Returns a single Markdown table row for the Report PR progress table.
 # 401/403 (auth-dead) does NOT produce a row — the handoff procedure is skipped
 # entirely per the skill's "Unexpected 401" section. Use classify_handoff with
@@ -55,9 +55,6 @@ format_handoff_row() {
     max-reached)
       body="시간 예산 도달 — 처리 ${processed}개, 남은 ${remaining}개, ❗ 재시도 한도 도달, 다음 cron까지 대기"
       ;;
-    no-pending)
-      body="시간 예산 도달 — 처리 ${processed}개, 남은 0개"
-      ;;
     *)
       echo "format_handoff_row: unknown action '$action'" >&2
       return 2
@@ -69,9 +66,9 @@ format_handoff_row() {
 
 # Usage: classify_handoff <retry_count> <max_retry_count> <pending_pr_count> <auth_dead>
 # Echoes the action label that the orchestrator should pass to format_handoff_row,
-# or "skip-handoff" when auth_dead=1 (in which case the orchestrator must NOT enter
-# the handoff procedure and must NOT call format_handoff_row — every handoff step
-# requires a valid token).
+# or a control signal that must not be passed to format_handoff_row:
+# "skip-handoff" when auth_dead=1, and "full-completion" when no pending PRs
+# remain after the budget hit.
 classify_handoff() {
   local retry_count="$1"
   local max_retry_count="$2"
@@ -82,7 +79,7 @@ classify_handoff() {
     return 0
   fi
   if [ "$pending_count" -le 0 ]; then
-    echo "no-pending"
+    echo "full-completion"
     return 0
   fi
   if [ "$retry_count" -ge "$max_retry_count" ]; then

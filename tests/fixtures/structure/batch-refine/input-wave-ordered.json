@@ -1,0 +1,42 @@
+{
+  "wave_prs": [
+    {"slot": 0, "number": 1402, "merged_at": "2026-07-15T09:02:00Z"},
+    {"slot": 1, "number": 1401, "merged_at": "2026-07-15T09:01:00Z"},
+    {"slot": 2, "number": 1403, "merged_at": "2026-07-15T09:03:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 2,
+      "pr_number": 1403,
+      "outcome": "processed",
+      "duration_seconds": 20,
+      "changed_files": ["app/models/invoice.rb"],
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": null
+    },
+    {
+      "slot": 0,
+      "pr_number": 1402,
+      "outcome": "processed",
+      "duration_seconds": 31,
+      "changed_files": ["app/models/payment.rb"],
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": null
+    },
+    {
+      "slot": 1,
+      "pr_number": 1401,
+      "outcome": "insufficient",
+      "duration_seconds": 15,
+      "changed_files": [],
+      "candidate_results": [],
+      "missing": ["manifest"],
+      "reason": "Evidence manifest is missing",
+      "error": null
+    }
+  ]
+}

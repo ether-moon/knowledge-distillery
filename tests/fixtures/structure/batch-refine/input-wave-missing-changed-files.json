@@ -1,0 +1,18 @@
+{
+  "batch_date": "2026-07-15",
+  "wave_prs": [
+    {"slot": 0, "number": 1951, "merged_at": "2026-07-15T13:30:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 0,
+      "pr_number": 1951,
+      "outcome": "processed",
+      "duration_seconds": 14,
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": null
+    }
+  ]
+}

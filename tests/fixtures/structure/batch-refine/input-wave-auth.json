@@ -1,0 +1,42 @@
+{
+  "wave_prs": [
+    {"slot": 0, "number": 1301, "merged_at": "2026-07-15T09:00:00Z"},
+    {"slot": 1, "number": 1302, "merged_at": "2026-07-15T09:01:00Z"},
+    {"slot": 2, "number": 1303, "merged_at": "2026-07-15T09:02:00Z"}
+  ],
+  "results": [
+    {
+      "slot": 2,
+      "pr_number": 1303,
+      "outcome": "insufficient",
+      "duration_seconds": 33,
+      "changed_files": [],
+      "candidate_results": [],
+      "missing": ["manifest"],
+      "reason": "Evidence manifest is missing",
+      "error": null
+    },
+    {
+      "slot": 0,
+      "pr_number": 1301,
+      "outcome": "processed",
+      "duration_seconds": 41,
+      "changed_files": ["app/models/order.rb"],
+      "candidate_results": [],
+      "missing": [],
+      "reason": null,
+      "error": null
+    },
+    {
+      "slot": 1,
+      "pr_number": 1302,
+      "outcome": "github_auth",
+      "duration_seconds": 12,
+      "changed_files": [],
+      "candidate_results": [],
+      "missing": ["github_auth"],
+      "reason": "Required GitHub baseline is unavailable",
+      "error": null
+    }
+  ]
+}
