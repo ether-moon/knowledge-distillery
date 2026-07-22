@@ -1,0 +1,20 @@
+## Decisions Made
+- Accepted `plugin-dir-nested-root-required` as an anti-pattern entry: rejected the other 3 extracted candidates under rejection code R7_DIRECTLY_DERIVABLE because PR #53's own SKILL.md changes already document those design decisions near-verbatim, so they add no knowledge beyond the artifact.
+
+## Problems Encountered
+- None — evidence collection and extraction ran cleanly against PR #53's Evidence Bundle Manifest.
+
+## Constraints Identified
+- R7 (quality-gate, effort:high) is the sole authority for artifact-verified derivability; candidates whose claims are already spelled out in the same PR's changed docs must be rejected regardless of evidence quality.
+
+## Open Questions
+- None for this PR; the batch as a whole was down to a single pending PR, so no waves remain after this checkpoint.
+
+## Context
+Ran a single-PR wave of the batch-refine Stage B pipeline (collect-evidence → extract-candidates → quality-gate) against merged PR #53 ("Speed up and harden Stage B batch refinement"). Extracted 4 candidates; 1 passed quality-gate and was appended to `.knowledge/changesets/batch-2026-07-22.json`, 3 were rejected as directly derivable from the PR's own SKILL.md changes. Report checkpoint written to `.knowledge/reports/batch-2026-07-22.md` on branch `knowledge/batch-2026-07-22`.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
