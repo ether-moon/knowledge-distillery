@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "batch_date": "2026-07-22",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "plugin-dir-nested-root-required",
+        "type": "anti-pattern",
+        "title": "--plugin-dir must point at the nested plugin root, not the marketplace root",
+        "claim": "MUST NOT pass the marketplace root (checkout root) to Claude Code's --plugin-dir flag — it must point at the nested plugin root directory containing .claude-plugin/plugin.json (e.g. plugins/knowledge-distillery), because --plugin-dir expects a single plugin root and does not read marketplace.json.",
+        "body": "## Background\nCI workflows invoked the batch-refine skill via `--plugin-dir` pointed at the marketplace root (the repo checkout root, which contains `.claude-plugin/marketplace.json`). This caused the skill to go unregistered in CI, forcing the agent to fall back to manually reading SKILL.md (wasting time per run) before the root cause was traced to this path-layer mismatch.\n\n## Details\nThis repository is structured as a marketplace with the actual plugin nested under `plugins/knowledge-distillery/`. `--plugin-dir` reads only a single plugin root's `.claude-plugin/plugin.json` and never consumes `marketplace.json`, so any workflow or setup-embedded template that passes the marketplace root will silently fail to register the plugin's skills. All CI workflows (batch-refine, curate-report, mark-evidence) plus the setup skill's deployed-repo template must all pass the nested plugin path.\n\n## Rejected Alternatives\nNone — this is a path-layering bug fix, not a design tradeoff between valid approaches.\n\n## Stop Conditions\nRe-evaluate if the repository's marketplace/plugin nesting structure changes, or if Claude Code's --plugin-dir behavior is extended to accept marketplace roots directly.",
+        "alternative": "Pass the nested plugin directory path (the one containing plugin.json, e.g. plugins/knowledge-distillery) to --plugin-dir in every workflow and setup template that invokes it.",
+        "considerations": "Distinct from marketplace-structure-for-plugin-distribution (which governs the repo layout itself); this rule is about how --plugin-dir CLI flag consumers must reference that layout. Re-evaluate if Claude Code changes --plugin-dir semantics.",
+        "applies_to": {
+          "domains": ["plugin-infra"]
+        },
+        "evidence": [
+          {"type": "pr", "ref": "#53"},
+          {"type": "memento", "ref": "bea278a"}
+        ]
+      }
+    }
+  ]
+}
