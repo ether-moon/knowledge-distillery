@@ -1,0 +1,20 @@
+## Decisions Made
+- validate_pattern()에서 파일 수준 패턴 허용: 디렉토리(`/`) 또는 글로브(`*`)만 허용하던 제한을 완화하여 빈 문자열만 거부하도록 변경. `app/models/`처럼 광범위한 디렉토리 패턴은 선택적 노출의 의미를 상실하고, `Gemfile` 같은 루트 파일은 디렉토리로 변환 자체가 불가능하기 때문.
+
+## Problems Encountered
+- changeset에 파일 수준 패턴 11개가 포함되어 GitHub workflow에서 validate_pattern 검증 실패: validate_pattern의 제한을 완화하여 해결.
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+`_changeset-apply` 실행 시 `suggested_patterns`에 파일 수준 패턴(`Gemfile`, `app/models/article.rb` 등)이 포함되어 GitHub workflow가 실패하는 문제를 조사하고 수정했다. `validate_pattern()` 함수를 빈 문자열만 거부하도록 완화하고, 이 의사결정을 decision 파일로 기록했다.
+
+## Recorded Decisions
+- `allow-file-level-patterns` (7f2e13b): validate_pattern에서 파일 수준 패턴 허용
+
+## Vault Entries Referenced
+- None

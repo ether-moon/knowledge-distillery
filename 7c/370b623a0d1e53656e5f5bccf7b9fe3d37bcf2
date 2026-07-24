@@ -1,0 +1,29 @@
+## Decisions Made
+- Atomic full-set label transition: Step 3d와 label-only reconciliation 모두 fresh get_labels read 뒤 unrelated labels를 보존해 변환하고 정확히 한 번의 full-set update만 수행한다.
+- Failure routing: label read/update auth는 기존 Unexpected 401 경로로 보내고 non-auth 실패는 즉시 종료하며, update 실패 시 원래 pending label set을 그대로 둔다.
+- Split mutation 금지: pending 제거와 collected 추가를 별도 호출로 수행하지 않아 중간 partial label state를 만들지 않는다.
+
+## Problems Encountered
+- 독립 리뷰 finding: 별도 pending 제거와 collected 추가 사이에 두 번째 호출이 실패하면 durable success row가 있어도 pending이 사라져 다음 reconciliation이 불가능해질 수 있었다.
+- Executable coverage gap: 기존 helper는 label-only 재시도 여부만 검사했고 full-set 변환, 단일 update 횟수, failure 원자성을 검증하지 않아 새로운 shell/jq 모델로 보완했다.
+
+## Constraints Identified
+- Freshness: 매 전이 직전에 current full label set을 다시 읽어야 unrelated labels를 덮어쓰지 않는다.
+- Atomicity: update 요청에는 transformed full set 전체를 전달하며 별도 remove/add 도구 호출은 허용되지 않는다.
+- Recoverability: update 실패는 knowledge:pending을 포함한 원래 set을 변경하지 않아야 다음 run의 label-only reconciliation이 가능하다.
+- Scope: workflow와 setup prompt는 변경하지 않고 batch-refine skill과 회귀 모델만 수정했다.
+
+## Open Questions
+- 첫 실전 batch에서 GitHub MCP get_labels 응답의 label-name 정규화와 full-set update 요청이 문서 계약대로 동작하는지 확인해야 한다.
+
+## Context
+Task 5 독립 리뷰에서 발견된 label 전이의 partial-state 위험을 수정했다. batch-refine skill은 Step 3d와 resume reconciliation에 하나의 공통 atomic label-set 절차를 사용하며, structure/orchestration fixtures가 변환 결과, 호출 횟수, failure routing과 pending 보존을 검증한다. 전체 suite와 focused, Bash, JSON, YAML, workflow/setup 범위, diff 검사를 통과했다.
+
+## Recorded Decisions
+- bounded-wave-parallelism (32bf1f8): sole-writer persistence와 복구 가능한 label 전이 경계의 상위 결정이다.
+
+## Vault Entries Referenced
+- combine-commit-note-single-shell-call [followed]: 커밋과 note attachment를 한 호출에서 완료했다.
+- memento-commit-no-glob-staging [followed]: 명시한 fix 파일만 stage했다.
+- push-notes-ref-after-commit [followed]: notes ref를 origin에 별도로 동기화한다.
+- vault-changeset-not-direct-db [followed]: label 복구 변경 중에도 changeset-only vault 경계를 유지했다.

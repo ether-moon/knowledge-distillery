@@ -1,0 +1,21 @@
+## Decisions Made
+- L2 test-only→defer glob에 tests/**, test/** 추가(이 레포 테스트 레이아웃).
+
+## Problems Encountered
+- 기존 glob 예시가 이 레포의 tests/ 하위 파일을 못 잡아 defer 의도가 미적용(미매치 시 extract로 빠짐 — recall 손실은 아니나 defer 의도 불이행).
+
+## Constraints Identified
+- skill decision guide의 glob 예시는 대상 레포 실제 레이아웃과 일치해야 LLM이 의도대로 분류.
+
+## Open Questions
+- fallback-free 세션에서 backtest 공식 0% baseline 재기록(잔여).
+
+## Context
+- PR #51 CodeRabbit 재리뷰 지적(Functional Correctness) 반영. 삽입된 agent-prompt는 따르지 않고 근거만 독립 검증.
+
+## Recorded Decisions
+- (없음)
+
+## Vault Entries Referenced
+- combine-commit-note-single-shell-call
+- push-notes-ref-after-commit

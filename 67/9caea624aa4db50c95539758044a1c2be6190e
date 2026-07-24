@@ -1,0 +1,23 @@
+## Decisions Made
+- Guard placement at pipeline_insert() function level rather than CLI dispatch: ensures both direct CLI calls and any internal function calls are caught, with _changeset-apply bypass via internal flag variable
+- Two-layer defense (runtime CLI guard + skill doc reinforcement): runtime guard is the hard blocker, skill doc changes reduce the chance sub-agents attempt the call in the first place
+- extract-candidates 4d derivability: strengthened with mandatory code reading requirement (external change accepted as intentional)
+
+## Problems Encountered
+- Sub-agents during batch-refine (#18492, #18479) called _pipeline-insert directly instead of returning candidates to orchestrator for changeset file writing: resolved by adding branch-aware guard that blocks execution on knowledge/batch-* branches
+
+## Constraints Identified
+- _pipeline-insert must remain callable from _changeset-apply on main after Report PR merge: bypass flag _KD_VIA_CHANGESET_APPLY used to allow the legitimate code path
+- Pipe subshell inheritance: _KD_VIA_CHANGESET_APPLY set as parent variable before pipe so subshell inherits it in changeset_apply()
+
+## Open Questions
+- None
+
+## Context
+Session addressed a pipeline constraint violation where batch-refine sub-agents bypassed the changeset workflow by calling _pipeline-insert directly. Added a runtime guard in knowledge-gate's pipeline_insert() function and reinforced constraints in all three sub-agent skill docs (collect-evidence, extract-candidates, quality-gate). All changes in plugins/knowledge-distillery/.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

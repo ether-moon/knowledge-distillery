@@ -1,0 +1,27 @@
+## Decisions Made
+- collect-evidence 실행 중에만 `effort: low`를 적용한다: 수집은 기계적이고 지연 민감한 단계이며 기존 상세 분기 계약이 판단의 자유도를 제한한다.
+- batch-refine 오케스트레이터와 extract-candidates는 session medium을 유지하고 quality-gate는 high를 유지한다: 정밀 판단 단계의 품질 경계를 바꾸지 않는다.
+- canonical tier 문장을 live workflow와 setup mirror에 동일하게 둔다: 배포 템플릿의 설명 드리프트를 byte-parity 테스트로 방지한다.
+
+## Problems Encountered
+- 새 fixture는 구현 전 `effort: low` 누락에서 의도대로 RED가 되었다: 실제 frontmatter에 최소 필드를 추가해 GREEN으로 전환했다.
+- 시스템 Ruby 2.6은 `YAML.load_file(..., aliases:)` 옵션을 지원하지 않았다: fail-fast 검증을 `YAML.parse_file`로 다시 실행해 YAML 문법을 확인했다.
+
+## Constraints Identified
+- 런타임 변화는 collect-evidence frontmatter 한 줄뿐이어야 한다: 나머지 네 파일 변경은 설명과 회귀 계약으로 제한했다.
+- session `--effort medium`, quality-gate `effort: high`, 기존 wave/auth/invoke 계약은 유지해야 한다: 전체 shell/jq suite로 회귀를 확인했다.
+- paired A/B 실험은 외부 실행이므로 이 구현 턴 범위 밖이다: parity와 10% latency gate는 후속 실전 검증으로 남는다.
+
+## Open Questions
+- 첫 실전 paired A/B에서 네 Evidence Bundle 케이스가 exact parity를 보이고 비-auth median이 10% 이상 단축되는가?
+
+## Context
+Task 6는 기계적인 evidence collection의 reasoning effort를 low로 낮추되 정밀 quality gate와 session 기본값은 유지하는 독립 실험 커밋이다. collect/quality skill frontmatter, live/setup workflow 설명, orchestration fixture만 변경했다. RED/GREEN 후 전체 테스트와 정적 범위 검증을 통과했으며 외부 A/B 실행은 부모 작업에 남겼다.
+
+## Recorded Decisions
+- bounded-wave-parallelism (32bf1f8): 이 Task 전에 확정된 Stage B의 bounded analysis wave 및 sole-writer persistence 결정이다.
+
+## Vault Entries Referenced
+- combine-commit-note-single-shell-call [followed]: 커밋과 memento note attachment를 한 shell 호출에서 완료했다.
+- memento-commit-no-glob-staging [followed]: 지정된 다섯 tracked 파일만 명시적으로 stage했다.
+- push-notes-ref-after-commit [followed]: downstream evidence pipeline을 위해 notes ref를 별도로 origin에 동기화한다.

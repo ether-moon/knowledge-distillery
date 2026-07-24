@@ -1,0 +1,23 @@
+## Decisions Made
+- File-level patterns need exact-match support in resolve/query: The recursive CTE only generates directory prefixes, so file-level patterns like "Gemfile" were silently unresolvable despite being accepted by validate_pattern. Added a UNION clause for exact filepath matching.
+- Whitespace trimming in validate_pattern: Adopted CodeRabbit review suggestion to trim leading/trailing whitespace before the empty check, preventing whitespace-only patterns from being inserted.
+- Test updated to match new validation semantics: Replaced the "reject invalid patterns" test (which expected directory-only enforcement) with "reject empty patterns" test plus a file-level pattern resolution round-trip test.
+
+## Problems Encountered
+- CI test-harness failure: The test expected file-level patterns to be rejected (old validate_pattern behavior), but the PR intentionally relaxed this. The test needed updating, not the code.
+- File-level patterns were insertable but not resolvable: domain_resolve_path used only directory-prefix matching via recursive CTE. A pattern like "Gemfile" (no slashes) produced zero prefixes, so it never matched. Required adding exact filepath matching as a separate UNION branch.
+
+## Constraints Identified
+- Recursive CTE prefix approach only generates directory segments: Patterns without "/" produce no prefixes, requiring a separate exact-match path for file-level patterns.
+
+## Open Questions
+- None
+
+## Context
+Fixed PR #46 blockers: one CI failure (test-harness) and one CodeRabbit review comment. The CI failure was caused by a test still enforcing the old directory-only pattern validation that this PR intentionally removed. The deeper issue was that domain_resolve_path and query_by_path lacked exact filepath matching, making file-level patterns accepted but unresolvable. Added exact-match UNION clauses to both functions, trimmed whitespace in validate_pattern per review feedback, and updated the test to verify the new behavior. All tests pass locally.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

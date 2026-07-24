@@ -1,0 +1,21 @@
+## Decisions Made
+- Align test fixture to match SKILL.md change rather than reverting SKILL.md: The PR intentionally changed "table" to "list" in curate-report/SKILL.md, so the fixture is what needed updating.
+- Trim the fixture snippet to the stable prefix: Instead of copying the full new sentence (which includes additional extraction details), the fixture now checks only the portion that captures the whitelist-guards-batch-scope invariant.
+
+## Problems Encountered
+- CI test-harness failure on whitelist-guards-batch-scope: The contains check in curate-report.json still referenced the old "table" wording after SKILL.md was updated. Resolved by updating the fixture.
+
+## Constraints Identified
+- Test harness uses exact substring matching: Any wording change in a SKILL.md that is covered by a regression fixture must also update the fixture, or CI breaks.
+
+## Open Questions
+- None
+
+## Context
+PR #43 (readable-batch-report) had a CI failure in the test-harness workflow. The whitelist-guards-batch-scope scenario in tests/fixtures/orchestration/curate-report.json expected old "table" wording that the PR intentionally changed to "list". Updated the fixture to match. All tests now pass locally.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

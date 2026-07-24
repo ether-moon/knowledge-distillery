@@ -1,0 +1,26 @@
+## Decisions Made
+- CI 워크플로우의 --plugin-dir를 marketplace 루트(체크아웃 루트)가 아니라 nested plugin 루트(.../plugins/knowledge-distillery)로 지정. 근거: --plugin-dir는 단일 plugin 루트(plugin.json 존재)를 기대하고 marketplace.json은 소비하지 않음.
+- 레포 구조(marketplace 루트 + plugin nested)는 유지 — 수정은 참조 경로만 변경.
+- P2(backlog triage)/P5(hoian 티어링 이식)는 이 레포 코드 버그가 아니라 운영/타레포 작업이라 미적용으로 분류.
+
+## Problems Encountered
+- batch-refine의 /knowledge-distillery:batch-refine가 CI에서 등록되지 않아 agent가 SKILL.md 수동 read fallback(~5min 낭비) -> 원인은 --plugin-dir가 marketplace 루트를 가리킨 경로 계층 불일치. nested plugin 경로로 수정해 해결.
+- gh api 첫 호출이 zsh glob(?ref=main)으로 실패 -> 따옴표 재시도로 배포 레포 루트 레이아웃(.claude-plugin에 marketplace.json만 존재) 확인.
+
+## Constraints Identified
+- --plugin-dir는 marketplace.json을 읽지 않고 단일 plugin 루트(.claude-plugin/plugin.json)만 인식(공식 문서 확인).
+- 워크플로우 파일 변경은 default 브랜치에 머지돼야 schedule/dispatch 런에 반영됨.
+- 3개 워크플로우 + setup 스킬 템플릿(타깃 레포 설치본)을 함께 고쳐야 hoian 등에도 반영됨.
+
+## Open Questions
+- 실제 CI dispatch에서 스킬 등록/시간 절감 검증 필요(로컬 테스트 불가).
+- P2 backlog triage backfill용 bulk 도구를 이 레포에 만들지 여부(현재 per-PR mark-evidence만 존재).
+
+## Context
+"이어서 봐 줘" 요청으로 P2/P3/P5를 조사. P3(skill 미등록)의 근본원인이 --plugin-dir 경로 계층 불일치임을 배포 레포 레이아웃 + 공식 문서로 확정하고 3개 워크플로우 + setup 템플릿 총 6곳을 수정. tests/all.sh 통과. P2/P5는 in-repo 버그가 아님으로 분류.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- `marketplace-structure-for-plugin-distribution` [followed]: 레포는 marketplace 구조(plugin nested)를 유지해야 한다는 MUST — 이번 수정은 구조를 건드리지 않고 --plugin-dir 참조 경로만 nested plugin으로 맞춰 규칙과 정합함을 확인.

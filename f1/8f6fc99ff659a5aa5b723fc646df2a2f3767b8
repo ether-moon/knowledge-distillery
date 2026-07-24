@@ -1,0 +1,28 @@
+## Decisions Made
+- Step 8만 수정해서 reviewer 자동 지정 구현: mark-evidence/collect-evidence/changeset 스키마 변경 없이 backward compatible 유지.
+- 4개 status(accepted/modified/rejected + 모든 entry)의 source PR author를 모두 reviewer로 지정: rejected entry author도 자기 PR 평가 결과를 직접 받도록 피드백 루프 형성.
+- Bot 작성자 자동 제외: `is_bot==true` 필터링으로 dependabot/renovate/github-actions[bot] 등에 review 요청이 가는 노이즈 방지.
+- `gh` CLI(MCP 아님)로 author lookup: `jq` pipe-delimited 출력을 다음 step에서 파싱하므로 CLI 사용이 필수임을 SKILL.md에 명시.
+- Error Handling 표에 4개의 reviewer 관련 행 추가: per-PR 조회 실패, 빈 리스트, MCP 전체 reject, GitHub silent-drop 각각의 처리 정책을 명시화.
+
+## Problems Encountered
+- Code reviewer가 Step 8 procedure step 1에서 `data.evidence[]`가 모든 status에 적용되는지 모호하다고 지적: parenthetical 추가로 해결.
+- Code reviewer가 `gh pr view`와 GitHub MCP 사용 경계가 모호하다고 지적: Step 3에 "not GitHub MCP — the jq pipe format is what the next step parses" 단서 추가로 해결.
+- 처음 추가한 Error Handling 표에서 spec의 4번째 failure mode("silent-drop")가 누락됨: 4번째 행 추가로 해결.
+
+## Constraints Identified
+- batch-refine SKILL.md는 LLM 실행 procedure 문서: 자동화 테스트 단위가 아니므로 검증은 다음 batch 실행 시 생성되는 PR을 직접 확인하는 방식만 가능.
+- Backward compatibility: changeset/manifest 스키마를 깨면 과거 데이터 재처리 부담이 발생하므로 신규 스키마 변경 회피 필요.
+- LLM 실행자 입장의 명확성: SKILL.md 텍스트는 LLM이 그대로 따라 실행하므로 모호한 표현은 잘못된 동작으로 직결됨.
+
+## Open Questions
+- 다음 batch-refine 실제 실행에서 reviewer 지정이 의도대로 동작하는지 검증 필요(operational verification, 별도 단계).
+
+## Context
+"refine 결과 PR에 추가 후보 entry 작성자들을 리뷰어로 지정해 줘" 요청에 대한 구현. brainstorming → writing-plans → subagent-driven-development 흐름으로 진행. `plugins/knowledge-distillery/skills/batch-refine/SKILL.md`의 Step 8(Create Report PR) procedure 확장 + Error Handling 표 4행 추가로 작업 완료. 각 task별 spec compliance + code quality review를 거쳐 발견된 important 이슈들을 수정하고 최종 approve 받음.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

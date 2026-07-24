@@ -1,0 +1,20 @@
+## Decisions Made
+- superpowers workflow가 만들어 낸 spec/plan 문서를 프로젝트 트리에서 제거: 실제 동작 변경은 SKILL.md commit에 모두 담겨 있고 dev artifact는 보관할 가치보다 노이즈가 큼.
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+직전까지 작업한 reviewer 자동 지정 변경에 동반되어 commit되었던 `docs/superpowers/specs/2026-04-27-report-pr-reviewers-design.md`와 `docs/superpowers/plans/2026-04-27-report-pr-reviewers.md`를 사용자 요청에 따라 제거. SKILL.md 변경(f18f6fc)은 그대로 유지.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
