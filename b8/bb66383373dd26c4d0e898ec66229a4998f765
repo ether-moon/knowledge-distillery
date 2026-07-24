@@ -1,0 +1,26 @@
+## Decisions Made
+- Knowledge Distillery 실행 자산을 소유 스킬 내부에 배치해 npx skills 복사·symlink 설치에서도 CLI와 자산을 사용할 수 있게 했다.
+- lifecycle hook은 setup이 Codex 또는 Claude Code의 repo-local 설정에 설치하도록 전환했다.
+- PR #54는 저장소의 기존 병합 형식에 맞춰 squash merge했다.
+
+## Problems Encountered
+- 기존 구조가 CLAUDE_PLUGIN_ROOT와 plugin-root scripts/schema에 결합되어 Codex에서 CLI 경로를 찾지 못했다.
+- origin/main 리베이스 중 Stage B metadata, setup workflow, triage-backtest 경로 충돌을 최신 upstream 동작과 portable 구조를 함께 보존하도록 해결했다.
+- shipping 자동 리뷰에서 Claude 신호가 없었지만 test-harness와 CodeRabbit은 성공했고 actionable thread와 merge conflict는 없었다.
+
+## Constraints Identified
+- npx skills가 전달하는 스킬 디렉터리 안에 실행 파일, schema, workflow template이 있어야 한다.
+- portable installer가 lifecycle hook을 등록하지 않으므로 setup이 host별 hook 설정을 병합해야 한다.
+- Claude-first 배포를 유지하면서 portable 실행 경로는 vendor-neutral이어야 한다.
+
+## Open Questions
+- None
+
+## Context
+PR #54는 knowledge-gate CLI/schema/triage 도구와 setup hook/workflow 자산을 skill-local 구조로 이동하고, 11개 스킬 metadata와 문서를 Codex 및 npx skills 설치에 맞게 갱신했다. 전체 테스트, portable skill validation, 실제 npx discovery/copy 설치 smoke를 통과한 뒤 main에 병합됐다.
+
+## Recorded Decisions
+- portable-skill-local-packaging: 실행 자산을 소유 스킬에 배치하고 hooks는 setup이 호스트별 repo-local 설정에 설치한다.
+
+## Vault Entries Referenced
+- None
