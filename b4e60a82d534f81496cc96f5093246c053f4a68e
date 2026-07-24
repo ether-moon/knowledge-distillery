@@ -1,0 +1,34 @@
+## Decisions Made
+- Knowledge Distillery 실행 자산을 소유 스킬 내부에 배치: npx skills 복사·symlink 설치에서도 동일한 상대 경로로 CLI와 자산을 사용할 수 있게 했다.
+- lifecycle hook을 setup 설치 방식으로 전환: portable skill installer가 훅을 등록하지 않으므로 setup이 Codex와 Claude Code의 repo-local 설정을 병합한다.
+- 훅에서 구체적인 CLI 경로를 전달: project skill을 우선하고 Codex 전역 설치는 CODEX_HOME으로 fallback한다.
+- Claude 전용 frontmatter 제거: 11개 플러그인 스킬을 portable validator가 모두 수용하도록 했다.
+- origin/main 리베이스 중 추가된 triage 도구도 knowledge-gate 스킬 하위로 이동하고 최신 workflow를 setup asset에 반영했다.
+
+## Problems Encountered
+- 기존 CLI가 CLAUDE_PLUGIN_ROOT와 plugin-root scripts/schema에 결합됨: CLI와 schema를 knowledge-gate 스킬로 이동해 해결했다.
+- 기존 pre-prompt hook이 일반 knowledge-gate 명령만 안내해 Codex에서 실행 파일을 못 찾음: 정확한 설치 경로를 탐색·출력하도록 수정했다.
+- setup SKILL.md가 599줄이고 workflow template을 본문에 포함: assets/workflows로 분리해 169줄로 줄였다.
+- Codex validator가 기존 user-invocable/argument-hint와 curate-report의 누락된 name을 거부: portable frontmatter로 정리했다.
+- origin/main 리베이스에서 Stage B frontmatter, setup workflow 본문, 새 triage-backtest 경로가 충돌: 최신 Stage B 본문은 유지하고 portable metadata와 skill-local asset 구조를 적용했다.
+- 기존 orchestration 테스트가 setup 본문에 workflow가 인라인된다고 가정: 번들 workflow asset의 live parity를 검증하도록 갱신했다.
+- 최초 npx 실행이 sandbox DNS 제한으로 실패: 승인된 네트워크 실행으로 discovery/copy smoke를 완료했다.
+
+## Constraints Identified
+- npx skills는 스킬 디렉터리만 전달하므로 실행 파일과 schema/template이 해당 스킬 하위에 있어야 한다.
+- portable skill 설치는 lifecycle hook 등록을 보장하지 않으므로 setup이 호스트별 .codex/hooks.json 또는 .claude/settings.json을 설치해야 한다.
+- Codex project hook은 trusted project와 /hooks 검토가 필요하다.
+- 저장소는 Claude-first 배포를 유지하면서도 CLI와 skill-local execution path는 vendor-neutral이어야 한다.
+- setup에 번들된 workflow asset은 저장소의 live workflow와 동일해야 한다.
+
+## Open Questions
+- None
+
+## Context
+Codex와 npx skills 환경에서 Knowledge Distillery가 Claude plugin root 없이 동작하도록 패키징과 setup 흐름을 재설계했다. knowledge-gate CLI/schema/triage 도구, setup hook/workflow assets, portability frontmatter, English/Korean docs, regression tests를 갱신했다. 최신 origin/main에 리베이스한 뒤 전체 테스트, 11개 skill validator, 실제 npx discovery/copy 설치와 설치된 CLI의 vault 초기화가 통과했다.
+
+## Recorded Decisions
+- portable-skill-local-packaging (c2af191): 실행 자산을 소유 스킬에 배치하고 hooks는 setup이 호스트별 repo-local 설정에 설치한다.
+
+## Vault Entries Referenced
+- None
