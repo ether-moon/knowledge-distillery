@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "batch_date": "2026-07-24",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "portable-skill-local-packaging",
+        "type": "fact",
+        "title": "Portable skill-local packaging for Codex/npx installs",
+        "claim": "Package the knowledge-gate CLI, schema, and hooks inside the owning skill directory (not a plugin root); have setup install lifecycle hooks into host-specific config for portable Codex/npx installs.",
+        "body": "## Background\nCodex and other `npx skills` installers copy or symlink only the individual skill directory — not any surrounding plugin root — and do not auto-register lifecycle hooks the way the Claude Code plugin loader does. The prior structure kept the CLI, schema, and hooks under the Claude Code plugin root and located them via `CLAUDE_PLUGIN_ROOT`, which does not exist in a Codex/npx-installed session.\n\n## Details\nRuntime execution assets (CLI script, schema/migrations, templates) live inside the skill directory that uses them (e.g. the `knowledge-gate` skill), so the same relative path resolves under both copy and symlink installs. The `setup` skill is responsible for installing lifecycle hook registration (`.codex/hooks.json` or `.claude/settings.json`) into the host repository, since portable skill installers do not register hooks themselves. Hooks resolve the CLI path explicitly, preferring a project-local skill install and falling back to `CODEX_HOME` for global installs.\n\n## Rejected Alternatives\n- Keep the Claude Code plugin-root structure: simpler for Claude Code but has no plugin-root env var or bundled path available in a Codex session installed via `npx skills`.\n- Require a separate CLI install per agent: decouples the CLI version from the skill version and lowers reproducibility of `setup`.\n\n## Open Questions\nNone identified from current evidence.\n\n## Stop Conditions\nRe-evaluate if Codex's `npx skills` installer starts supporting bundle-root references or automatic hook registration, or if a third agent platform introduces a different installation contract.",
+        "alternative": null,
+        "considerations": "Applies specifically to portable/npx-based skill installs; Claude Code plugin installs via the marketplace structure are unaffected. Re-check if Codex's installer model changes.",
+        "applies_to": {
+          "domains": ["skills", "plugin-infra"]
+        },
+        "evidence": [
+          { "type": "pr", "ref": "#54" },
+          { "type": "memento", "ref": "b4e60a8" }
+        ]
+      }
+    }
+  ]
+}
