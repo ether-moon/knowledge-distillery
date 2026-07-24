@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-07-24
+
+### Added
+
+- **setup**: Bundle workflow templates and an idempotent Codex/Claude Code hook installer inside the setup skill.
+
+### Improved
+
+- **distribution**: Co-locate the `knowledge-gate` CLI, schema, and triage helper inside the skill for portable `npx skills` copy and symlink installs.
+- **skills**: Normalize all 11 skill manifests and document portable installation paths for Codex and Claude Code.
+
+### Fixed
+
+- **knowledge-gate hook**: Resolve hook-provided, project-local, and `CODEX_HOME` CLI paths so Codex sessions can query active vault constraints.
+
 ## [0.5.0] - 2026-07-19
 
 ### Added
