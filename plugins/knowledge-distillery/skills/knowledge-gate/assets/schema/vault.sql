@@ -1,3 +1,4 @@
+-- Bundled as a knowledge-gate skill asset so standalone installs can initialize a vault.
 PRAGMA user_version = 1;
 PRAGMA foreign_keys = ON;
 

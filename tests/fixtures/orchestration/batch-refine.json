@@ -7,7 +7,8 @@
     "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
     "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
     "batch_refine_workflow": ".github/workflows/batch-refine.yml",
-    "setup_skill": "plugins/knowledge-distillery/skills/setup/SKILL.md"
+    "setup_skill": "plugins/knowledge-distillery/skills/setup/SKILL.md",
+    "setup_batch_refine_workflow": "plugins/knowledge-distillery/skills/setup/assets/workflows/batch-refine.yml"
   },
   "scenarios": [
     {
@@ -75,26 +76,23 @@
       ]
     },
     {
-      "id": "stage-b-effort-tiers-are-scoped-and-mirrored",
+      "id": "stage-b-effort-tier-is-workflow-scoped-and-bundled",
       "checks": [
         {
           "doc": "collect_evidence_skill",
-          "ordered_contains": [
-            "user-invocable: false",
-            "effort: low",
-            "---",
-            "# collect-evidence — Stage B-1 Evidence Collection"
-          ]
+          "absent": "user-invocable:"
+        },
+        {
+          "doc": "collect_evidence_skill",
+          "absent": "effort:"
         },
         {
           "doc": "quality_gate_skill",
-          "ordered_contains": [
-            "user-invocable: false",
-            "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
-            "effort: high",
-            "---",
-            "# quality-gate — Stage B-3 Quality Verification"
-          ]
+          "absent": "user-invocable:"
+        },
+        {
+          "doc": "quality_gate_skill",
+          "absent": "effort:"
         },
         {
           "doc": "batch_refine_workflow",
@@ -105,11 +103,13 @@
         },
         {
           "doc": "setup_skill",
+          "contains": "<setup-skill-directory>/assets/workflows/batch-refine.yml"
+        },
+        {
+          "doc": "setup_batch_refine_workflow",
           "ordered_contains": [
-            "#### `.github/workflows/batch-refine.yml`",
             "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
-            "claude_args: \"--model claude-sonnet-5 --effort medium",
-            "```"
+            "claude_args: \"--model claude-sonnet-5 --effort medium"
           ]
         }
       ]
@@ -437,7 +437,7 @@
           "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
         },
         {
-          "doc": "setup_skill",
+          "doc": "setup_batch_refine_workflow",
           "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
         },
         {
@@ -445,7 +445,7 @@
           "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         },
         {
-          "doc": "setup_skill",
+          "doc": "setup_batch_refine_workflow",
           "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         }
       ]
@@ -578,9 +578,8 @@
       "id": "setup-template-carries-live-bounded-wave-workflow-contract",
       "checks": [
         {
-          "doc": "setup_skill",
+          "doc": "setup_batch_refine_workflow",
           "ordered_contains": [
-            "#### `.github/workflows/batch-refine.yml`",
             "workflow_dispatch:",
             "inputs:",
             "retry_count:",
@@ -775,7 +774,7 @@
           "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {
-          "doc": "setup_skill",
+          "doc": "setup_batch_refine_workflow",
           "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {

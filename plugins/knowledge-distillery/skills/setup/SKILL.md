@@ -1,509 +1,100 @@
 ---
 name: setup
-description: "Sets up or updates Knowledge Distillery in a project. Creates vault, workflows, directive sections, and permissions — always converging to the latest expected state. Safe to re-run after plugin upgrades. Use when setting up, updating, or troubleshooting a Knowledge Distillery installation — any mention of 'initialize', 'set up', 'install', 'bootstrap', or 'update' knowledge distillery should trigger this."
+description: "Sets up or updates Knowledge Distillery in a repository. Use when initializing, installing, bootstrapping, updating, repairing, or verifying a Knowledge Distillery installation in Codex, Claude Code, or another agent that installs portable skills."
 ---
 
-# setup — Knowledge Distillery Setup
+# Set Up Knowledge Distillery
 
-## When to Use
+Converge an adopting repository to the current Knowledge Distillery layout. Preserve existing vault data and unrelated configuration. Use the user's language for progress, warnings, and the final summary.
 
-Run `/knowledge-distillery:setup` to set up a new project, update an existing installation after a plugin upgrade, or verify configuration state. Safe to re-run — always converges to the latest expected state.
+## Resolve Bundled Resources
 
-## What This Skill Manages
+Resolve the directory containing this `SKILL.md` as `<setup-skill-directory>`.
 
-1. `.knowledge/vault.db` — SQLite vault initialized from the plugin's schema
-2. `.knowledge/reports/` — Directory for batch report files
-3. `.knowledge/changesets/` — Directory for batch changeset files
-4. `.github/workflows/mark-evidence.yml` — Stage A workflow (merge-time marking)
-5. `.github/workflows/batch-refine.yml` — Stage B workflow (batch collection + refinement)
-6. `.github/workflows/curate-report.yml` — Report PR curation workflow (comment-triggered)
-7. `.github/workflows/apply-changeset.yml` — Post-merge workflow (applies changeset to vault.db)
-8. Knowledge Vault & Memento sections in the project's directive file (CLAUDE.md or AGENTS.md)
-9. `.knowledge/` entries in `.gitignore`
-10. CLI permissions in `.claude/settings.json`
+Resolve the `knowledge-gate` CLI in this order:
 
-## Execution Steps
+1. Use an exact CLI path supplied by the UserPromptSubmit hook.
+2. Use the sibling skill at `<setup-skill-directory>/../knowledge-gate/scripts/knowledge-gate`.
+3. Use a separately installed `knowledge-gate` skill path visible in the current skill catalog.
 
-### Step 1: Create or Verify Knowledge Vault
+If no CLI exists, stop and ask the user to install the `knowledge-gate` skill. Do not fall back to a plugin-root environment variable.
 
-```bash
-mkdir -p .knowledge
-```
+Bundled setup resources:
 
-If `.knowledge/vault.db` does not exist, initialize it:
+- Hook installer: `<setup-skill-directory>/scripts/install-hooks`
+- Workflow templates: `<setup-skill-directory>/assets/workflows/`
+
+Substitute concrete absolute paths in commands. Do not create a shell variable for an executable path.
+
+## 1. Create or Verify the Vault
+
+Create `.knowledge/` when absent. If `.knowledge/vault.db` does not exist, initialize it:
 
 ```bash
 <knowledge-gate> init-db .knowledge/vault.db
 ```
 
-If `.knowledge/vault.db` already exists, verify its health:
+If it exists, verify without modifying data:
 
 ```bash
 sqlite3 .knowledge/vault.db "PRAGMA user_version;"
-```
-
-Expected: `1` or higher. If `0` or empty, report the problem and stop.
-
-```bash
 sqlite3 .knowledge/vault.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('entries','entry_domains','domain_registry','domain_paths','evidence');"
 ```
 
-Expected: `5`. If less, report the problem and stop.
+Require schema version `1` or higher and exactly five required tables. Stop and report the failed check instead of replacing an unhealthy vault.
 
-### Step 2: Create Reports and Changesets Directories
+Create the working directories:
 
 ```bash
-mkdir -p .knowledge/reports
-mkdir -p .knowledge/changesets
+mkdir -p .knowledge/reports .knowledge/changesets
 ```
 
-### Step 3: Write GitHub Actions Workflows
+## 2. Install Workflow Templates
 
-Create `.github/workflows/` directory if it doesn't exist. Write each workflow file below. If the file already exists, overwrite it with the latest template.
+Create `.github/workflows/`, then copy these bundled assets into it:
 
-#### `.github/workflows/mark-evidence.yml`
-
-```yaml
-name: Knowledge Distillery — Mark Evidence
-
-on:
-  pull_request:
-    types: [closed]
-    branches: [main, master]
-
-jobs:
-  mark-evidence:
-    if: >-
-      github.event.pull_request.merged == true &&
-      !startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v6
-        with:
-          repository: ether-moon/knowledge-distillery
-          ref: main
-          path: .knowledge-distillery-plugin
-
-      - name: Write dynamic MCP config
-        run: |
-          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
-          cat > .mcp.json << 'MCPEOF'
-          {
-            "mcpServers": {
-              "github": {
-                "type": "http",
-                "url": "https://api.githubcopilot.com/mcp/",
-                "headers": {
-                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
-                  "X-MCP-Toolsets": "pull_requests,issues,labels"
-                }
-              },
-              "linear": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "mcp-linear"],
-                "env": {
-                  "LINEAR_API_KEY": "${{ secrets.LINEAR_API_KEY }}"
-                }
-              }
-            }
-          }
-          MCPEOF
-
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
-            Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
-            and add 'knowledge:pending' label.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
-          show_full_output: true
-
-      - name: Cleanup sensitive files
-        if: always()
-        run: rm -f .mcp.json
+```text
+<setup-skill-directory>/assets/workflows/mark-evidence.yml
+  → .github/workflows/mark-evidence.yml
+<setup-skill-directory>/assets/workflows/batch-refine.yml
+  → .github/workflows/batch-refine.yml
+<setup-skill-directory>/assets/workflows/curate-report.yml
+  → .github/workflows/curate-report.yml
+<setup-skill-directory>/assets/workflows/apply-changeset.yml
+  → .github/workflows/apply-changeset.yml
 ```
 
-#### `.github/workflows/batch-refine.yml`
+Always replace managed workflow files with the current templates. Leave user-visible differences in the git diff.
 
-```yaml
-name: Knowledge Distillery — Batch Refine
+## 3. Install Agent Hooks
 
-on:
-  schedule:
-    - cron: '23 9 * * *'  # Every day 09:23 UTC
-  workflow_dispatch:
-    inputs:
-      retry_count:
-        description: "Self-retrigger count (passed automatically by graceful handoff). Leave 0 for fresh runs."
-        required: false
-        default: "0"
+Install hooks for the active host:
 
-concurrency:
-  group: knowledge-batch-refine
-  cancel-in-progress: false   # keep the active run; coalesce pending triggers to the latest one
-
-jobs:
-  collect-and-refine:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60   # safety net only; graceful handoff fires earlier at DEADLINE_SECONDS
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      actions: write       # required for `gh workflow run` self-retrigger
-      id-token: write
-    env:
-      DEADLINE_SECONDS: "2700"   # 45 min — keep a provisional 15 min handoff margin
-      WAVE_SIZE: "3"              # bounded read-only analysis fan-out
-      MAX_RETRY_COUNT: "5"
-      RETRY_COUNT: ${{ inputs.retry_count || '0' }}
-    steps:
-      - name: Record batch start timestamp
-        run: echo "BATCH_START_TS=$(date +%s)" >> "$GITHUB_ENV"
-
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v6
-        with:
-          repository: ether-moon/knowledge-distillery
-          ref: main
-          path: .knowledge-distillery-plugin
-
-      - name: Write dynamic MCP config
-        run: |
-          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
-          if [ -n "${{ secrets.SLACK_API_KEY }}" ]; then echo "::add-mask::${{ secrets.SLACK_API_KEY }}"; fi
-          if [ -n "${{ secrets.NOTION_API_KEY }}" ]; then echo "::add-mask::${{ secrets.NOTION_API_KEY }}"; fi
-          cat > .mcp.json << 'MCPEOF'
-          {
-            "mcpServers": {
-              "github": {
-                "type": "http",
-                "url": "https://api.githubcopilot.com/mcp/",
-                "headers": {
-                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
-                  "X-MCP-Toolsets": "pull_requests,issues,labels"
-                }
-              },
-              "linear": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "mcp-linear"],
-                "env": {
-                  "LINEAR_API_KEY": "${{ secrets.LINEAR_API_KEY }}"
-                }
-              },
-              "slack": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-slack"],
-                "env": {
-                  "SLACK_BOT_TOKEN": "${{ secrets.SLACK_API_KEY }}"
-                }
-              },
-              "notion": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@notionhq/notion-mcp-server"],
-                "env": {
-                  "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ${{ secrets.NOTION_API_KEY }}\", \"Notion-Version\": \"2022-06-28\"}"
-                }
-              }
-            }
-          }
-          MCPEOF
-
-      - name: Configure git identity
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            Use skill /knowledge-distillery:batch-refine.
-            Find all PRs with 'knowledge:pending' label,
-            collect evidence using each PR's Evidence Bundle Manifest, run refinement pipeline,
-            write accepted entries to a changeset file.
-            Naming conventions (MUST follow exactly):
-            - Report branch: knowledge/batch-YYYY-MM-DD (e.g. knowledge/batch-2026-03-27)
-            - Changeset file: .knowledge/changesets/batch-YYYY-MM-DD.json
-            - Only entries with .entries[].status == "accepted" are included
-            On success: update label to 'knowledge:collected'.
-            On insufficient evidence: leave label as 'knowledge:pending' and report the reason.
-            Create a Report PR with change summary.
-            Do NOT modify vault.db directly — the changeset will be applied on merge.
-
-            Time budget and self-retrigger:
-            - BATCH_START_TS=$BATCH_START_TS, DEADLINE_SECONDS=$DEADLINE_SECONDS.
-            - Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order.
-            - Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`.
-            - When the budget is reached, follow the skill's "Post-budget completion gate":
-              re-query `knowledge:pending` after all in-flight work settles. Zero pending
-              follows full completion (Step 7, then Step 8) without handoff or retrigger.
-            - Only the Pending remains branch enters the skill's "Graceful Handoff Procedure":
-              run Step 8, commit/push progress, update the Report PR progress table, then run
-              `gh workflow run batch-refine.yml -f retry_count=$((RETRY_COUNT + 1))` if
-              RETRY_COUNT < MAX_RETRY_COUNT and pending PRs remain, and exit 0.
-            - RETRY_COUNT=$RETRY_COUNT, MAX_RETRY_COUNT=$MAX_RETRY_COUNT.
-          # Session default: Sonnet + medium effort for batch-refine/extract-candidates.
-          # Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.
-          # Skill frontmatter applies the low/high overrides while each skill is active.
-          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,mcp__slack__*,mcp__notion__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
-          show_full_output: true
-
-      - name: Cleanup sensitive files
-        if: always()
-        run: rm -f .mcp.json
+```bash
+<setup-skill-directory>/scripts/install-hooks codex <project-root>
+<setup-skill-directory>/scripts/install-hooks claude-code <project-root>
 ```
 
-#### `.github/workflows/curate-report.yml`
+- Use `codex` for Codex. This writes scripts under `.codex/hooks/` and merges `.codex/hooks.json`.
+- Use `claude-code` for Claude Code. This writes scripts under `.claude/hooks/` and merges `.claude/settings.json`.
+- Install both only when the user explicitly wants both repository integrations.
 
-```yaml
-name: Knowledge Distillery — Curate Report
+The installer must preserve unrelated configuration, replace managed hook scripts, and avoid duplicate hook entries when re-run. Codex project hooks require a trusted project and user review through `/hooks` after a new or changed hook definition.
 
-on:
-  issue_comment:
-    types: [created]
+Hooks are installed by setup; do not depend on plugin auto-loading or `CLAUDE_PLUGIN_ROOT`.
 
-jobs:
-  curate-report:
-    if: >-
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/curate') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write
-    steps:
-      - name: Get PR details
-        id: pr
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
-            const branch = pr.data.head.ref;
-            if (!branch.startsWith('knowledge/batch-')) {
-              core.notice('Skipping: not a Report PR branch (' + branch + ')');
-              core.setOutput('skip', 'true');
-              return;
-            }
-            core.setOutput('skip', 'false');
-            core.setOutput('branch', branch);
-            core.setOutput('pr_number', context.issue.number);
+## 4. Add Directive Sections
 
-      - uses: actions/checkout@v6
-        if: steps.pr.outputs.skip != 'true'
-        with:
-          ref: ${{ steps.pr.outputs.branch }}
-          fetch-depth: 0
+Choose the directive file:
 
-      - name: Checkout Knowledge Distillery plugin
-        if: steps.pr.outputs.skip != 'true'
-        uses: actions/checkout@v6
-        with:
-          repository: ether-moon/knowledge-distillery
-          ref: main
-          path: .knowledge-distillery-plugin
-
-      - name: Write dynamic MCP config
-        if: steps.pr.outputs.skip != 'true'
-        run: |
-          cat > .mcp.json << 'MCPEOF'
-          {
-            "mcpServers": {
-              "github": {
-                "type": "http",
-                "url": "https://api.githubcopilot.com/mcp/",
-                "headers": {
-                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
-                  "X-MCP-Toolsets": "pull_requests,issues"
-                }
-              }
-            }
-          }
-          MCPEOF
-
-      - name: Configure git identity
-        if: steps.pr.outputs.skip != 'true'
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-
-      - uses: anthropics/claude-code-action@v1
-        if: steps.pr.outputs.skip != 'true'
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Use skill /knowledge-distillery:curate-report.
-            Process reviewer feedback on Report PR #${{ steps.pr.outputs.pr_number }}
-            (branch: ${{ steps.pr.outputs.branch }}).
-            Read all PR comments, classify feedback into reject/update/keep actions,
-            update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary.
-            Do NOT modify vault.db directly — operate on the changeset file only.
-          claude_args: "--plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
-          show_full_output: true
-
-      - name: Cleanup sensitive files
-        if: always() && steps.pr.outputs.skip != 'true'
-        run: rm -f .mcp.json
-```
-
-#### `.github/workflows/apply-changeset.yml`
-
-```yaml
-name: Knowledge Distillery — Apply Changeset
-
-on:
-  pull_request:
-    types: [closed]
-    branches: [main, master]
-
-jobs:
-  apply-changeset:
-    if: >-
-      github.event.pull_request.merged &&
-      startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-          fetch-depth: 0
-
-      - name: Checkout Knowledge Distillery plugin
-        uses: actions/checkout@v6
-        with:
-          repository: ether-moon/knowledge-distillery
-          ref: main
-          path: .knowledge-distillery-plugin
-
-      - name: Configure git identity
-        run: |
-          git config user.name "knowledge-distillery[bot]"
-          git config user.email "knowledge-distillery[bot]@users.noreply.github.com"
-
-      - name: Extract batch date from branch name
-        id: batch
-        env:
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          if [[ ! "$BRANCH" =~ ^knowledge/batch-([0-9]{4}-[0-9]{2}-[0-9]{2})(-[0-9]+)?$ ]]; then
-            echo "::error::Unexpected branch format: ${BRANCH}"
-            exit 1
-          fi
-          DATE="${BASH_REMATCH[1]}"
-          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
-          echo "Batch date: ${DATE}"
-
-      - name: Find and apply changeset
-        run: |
-          GATE=$(find .knowledge-distillery-plugin -name knowledge-gate -path '*/scripts/*' -type f | head -1)
-          if [ -z "$GATE" ]; then
-            echo "::error::knowledge-gate script not found in plugin checkout"
-            exit 1
-          fi
-          chmod +x "$GATE"
-
-          CHANGESET=".knowledge/changesets/batch-${{ steps.batch.outputs.date }}.json"
-
-          if [ ! -f "$CHANGESET" ]; then
-            echo "::warning::No changeset file found at ${CHANGESET} — skipping"
-            exit 0
-          fi
-
-          ACCEPTED=$(jq '[.entries[] | select(.status == "accepted")] | length' "$CHANGESET")
-          echo "Accepted entries to apply: ${ACCEPTED}"
-
-          if [ "$ACCEPTED" -eq 0 ]; then
-            echo "No accepted entries — skipping vault update"
-            exit 0
-          fi
-
-          "$GATE" _changeset-apply "$CHANGESET"
-
-      - name: Commit and push vault.db
-        run: |
-          if git diff --quiet .knowledge/vault.db 2>/dev/null; then
-            echo "No vault.db changes — skipping commit"
-            exit 0
-          fi
-
-          git add .knowledge/vault.db
-          git commit -m "knowledge: apply batch ${{ steps.batch.outputs.date }} changeset"
-          git push origin ${{ github.event.pull_request.base.ref }}
-
-      - name: Clean up batch artifacts
-        env:
-          BATCH_DATE: ${{ steps.batch.outputs.date }}
-        run: |
-          CHANGESET=".knowledge/changesets/batch-${BATCH_DATE}.json"
-          REPORT=".knowledge/reports/batch-${BATCH_DATE}.md"
-          CHANGED=false
-
-          if [ -f "$CHANGESET" ]; then
-            git rm "$CHANGESET"
-            CHANGED=true
-          fi
-
-          if [ -f "$REPORT" ]; then
-            git rm "$REPORT"
-            CHANGED=true
-          fi
-
-          if [ "$CHANGED" = true ]; then
-            git pull --rebase origin ${{ github.event.pull_request.base.ref }}
-            git commit -m "knowledge: clean up batch ${BATCH_DATE} artifacts"
-            git push origin ${{ github.event.pull_request.base.ref }}
-          fi
-```
-
-### Step 4: Add Directive Sections
-
-Two sections need to be added: **Knowledge Vault** and **Memento**. The target file depends on the project's existing directive pattern.
-
-#### 4a: Detect target file
-
-Check the project root for directive files and determine where to append:
-
-| Project state | Target file |
-|---------------|-------------|
-| `CLAUDE.md` contains `@AGENTS.md` | `AGENTS.md` (create if missing) |
-| `AGENTS.md` exists (no `@AGENTS.md` in CLAUDE.md) | `AGENTS.md` |
+| Repository state | Target |
+|---|---|
+| `CLAUDE.md` contains `@AGENTS.md` | `AGENTS.md` |
+| `AGENTS.md` exists | `AGENTS.md` |
 | Only `CLAUDE.md` exists | `CLAUDE.md` |
 | Neither exists | Create `CLAUDE.md` |
 
-#### 4b: Append sections (idempotent)
-
-For each section below, check if it already exists in the target file (search for the `##` heading). Skip any section that already exists.
-
-**Knowledge Vault section:**
+Append each missing section by heading. Preserve all existing content.
 
 ```markdown
 ## Knowledge Vault
@@ -516,120 +107,63 @@ For each section below, check if it already exists in the target file (search fo
 - MUST/MUST-NOT rules from returned entries must be strictly followed
 - For structural changes in areas without related rules, confirm with a human first
 - Do not directly read files in the .knowledge/ directory
-```
 
-**Memento section:**
-
-```markdown
 ## Memento
 - After every git commit, attach a memento session summary as a git note on `refs/notes/commits`
 - The summary follows the 7-section format: Decisions Made, Problems Encountered, Constraints Identified, Open Questions, Context, Recorded Decisions, Vault Entries Referenced
 - See `/knowledge-distillery:memento-commit` for the full workflow and format specification
-- If the PostToolUse hook fires a reminder, follow it — generate the summary and attach the note
+- If a hook fires a reminder, follow it and attach the note
 ```
 
-### Step 5: Update .gitignore
+## 5. Update Ignore and Claude Permissions
 
-If `.gitignore` does not exist, create it. Check if `.knowledge/` related entries already exist. If not, append:
+Append missing ignore entries without removing existing rules:
 
-```
-# Knowledge Distillery — vault is committed as binary, reports are committed
-# Only ignore temporary/working files
+```gitignore
+# Knowledge Distillery temporary files
 .knowledge/tmp/
-
-# Vault usage tracking (consumed and cleared by memento-commit)
 tmp/
 
-# Dynamic MCP config — contains secrets at runtime, must never be committed
+# Dynamic MCP config can contain runtime secrets
 .mcp.json
 ```
 
-Note: `.knowledge/vault.db` and `.knowledge/reports/` are intentionally NOT gitignored — they are committed to the repository. Only temporary working files are ignored.
-
-### Step 6: Add CLI Permissions to .claude/settings.json
-
-The `knowledge-gate` CLI requires Bash permissions to run without manual approval. Add them to the project-level `.claude/settings.json` so all team members get them automatically.
-
-Read `.claude/settings.json` if it exists. Merge the following permissions into the `permissions.allow` array (skip any that already exist):
+For Claude Code, merge these entries into `.claude/settings.json` under `permissions.allow`:
 
 ```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(*/knowledge-gate:*)",
-      "Bash(sqlite3 .knowledge/vault.db:*)"
-    ]
-  }
-}
+[
+  "Bash(*/knowledge-gate:*)",
+  "Bash(sqlite3 .knowledge/vault.db:*)"
+]
 ```
 
-- `Bash(*/knowledge-gate:*)` — allows running the CLI from any install path (plugin cache path varies per machine)
-- `Bash(sqlite3 .knowledge/vault.db:*)` — allows direct vault queries for verification
+Preserve every unrelated key and permission. Codex permissions remain controlled by the active Codex configuration and sandbox.
 
-Preserve all existing keys in the file. Only add to the `permissions.allow` array.
+## 6. Verify
 
-### Step 7: Verify Setup
-
-After all files are created or updated, verify the repository state:
+Run deterministic checks:
 
 ```bash
 sqlite3 .knowledge/vault.db "PRAGMA user_version;"
-# Expected: >= 1
-
 sqlite3 .knowledge/vault.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('entries','entry_domains','domain_registry','domain_paths','evidence');"
-# Expected: 5
-
-ls -d .knowledge/reports .knowledge/changesets .github/workflows/mark-evidence.yml .github/workflows/batch-refine.yml .github/workflows/curate-report.yml .github/workflows/apply-changeset.yml
-# All should exist
+test -d .knowledge/reports
+test -d .knowledge/changesets
+test -f .github/workflows/mark-evidence.yml
+test -f .github/workflows/batch-refine.yml
+test -f .github/workflows/curate-report.yml
+test -f .github/workflows/apply-changeset.yml
 ```
 
-Verify directive file contains both sections:
+Also verify both directive headings, the ignore entries, the active host's hook scripts, and exactly one configured entry for each managed hook command.
 
-```bash
-grep -Fq '## Knowledge Vault' <directive-file>
-grep -Fq '## Memento' <directive-file>
-```
+## 7. Report
 
-Verify .gitignore entries:
-
-```bash
-grep -Fq '.knowledge/tmp/' .gitignore
-grep -Fq '.mcp.json' .gitignore
-```
-
-If any check fails after the create/update steps, report the specific failure.
-
-### Step 8: Output Summary
-
-Print a summary of all managed files:
-
-```
-Knowledge Distillery setup complete:
-  [created|updated|unchanged] .knowledge/vault.db (schema v<N>)
-  [created|unchanged] .knowledge/reports/
-  [created|unchanged] .knowledge/changesets/
-  [created|updated] .github/workflows/mark-evidence.yml
-  [created|updated] .github/workflows/batch-refine.yml
-  [created|updated] .github/workflows/curate-report.yml
-  [created|updated] .github/workflows/apply-changeset.yml
-  [created|updated|unchanged] <target file> (Knowledge Vault + Memento sections)
-  [created|updated|unchanged] .gitignore
-  [created|updated|unchanged] .claude/settings.json (CLI permissions)
-  Verification: all checks passed
-
-Next steps:
-  1. Add ANTHROPIC_API_KEY to your repository secrets
-  2. Add LINEAR_API_KEY to your repository secrets (if using Linear)
-  3. Add SLACK_API_KEY to your repository secrets (if using Slack as evidence source)
-  4. Add NOTION_API_KEY to your repository secrets (if using Notion as evidence source)
-  5. Seed initial entries: knowledge-gate add --type fact --title "..." ...
-  6. Review and customize workflow schedules as needed
-```
+Report every managed path as `created`, `updated`, or `unchanged`, the vault schema version, active host, hook review requirement, and verification result. Include repository-secret next steps only when GitHub Actions were installed.
 
 ## Constraints
 
-- Vault initialization must go through the bundled CLI command so schema asset lookup stays inside the plugin package
-- Idempotent: safe to run multiple times without duplication
-- Does NOT modify existing vault.db data
-- Workflows are always overwritten with the latest templates — user customizations are visible in git diff
-- Does NOT remove existing directive file content (only appends missing sections)
+- Initialize a new vault only through the bundled skill-local CLI and schema asset.
+- Never replace or directly mutate existing vault data during setup.
+- Keep setup idempotent.
+- Overwrite only the four managed workflow templates and three managed hook scripts.
+- Preserve unrelated directive, ignore, hook, and settings content.

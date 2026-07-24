@@ -1,7 +1,6 @@
 ---
 name: extract-candidates
 description: "Analyzes an Evidence Bundle and extracts knowledge candidates — the core LLM extraction step of the distillation pipeline. Stage B step 2. Transforms raw evidence into structured vault entry candidates by identifying confirmed team decisions, anti-patterns from incidents, and established conventions."
-user-invocable: false
 ---
 
 # extract-candidates — Stage B-2 Candidate Extraction
@@ -14,7 +13,7 @@ user-invocable: false
 
 ## Prerequisites
 
-- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
+- `knowledge-gate` CLI available (use the hook-provided exact path or the `knowledge-gate` skill's own `scripts/knowledge-gate`)
 - `.knowledge/vault.db` accessible via CLI only (no direct reads)
 - Evidence Bundle from `/knowledge-distillery:collect-evidence` available in-memory
 

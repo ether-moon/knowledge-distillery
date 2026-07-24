@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: install-hooks <codex|claude-code> [project-root]" >&2
+}
+
+AGENT="${1:-}"
+PROJECT_ROOT="${2:-}"
+
+if [ -z "$AGENT" ]; then
+  usage
+  exit 1
+fi
+
+if [ -z "$PROJECT_ROOT" ]; then
+  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
+
+if [ ! -d "$PROJECT_ROOT" ]; then
+  echo "Project root not found: $PROJECT_ROOT" >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to merge hook configuration" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOOK_SOURCE_DIR="${SCRIPT_DIR}/hooks"
+
+case "$AGENT" in
+  codex)
+    HOOK_DIR="${PROJECT_ROOT}/.codex/hooks"
+    CONFIG_PATH="${PROJECT_ROOT}/.codex/hooks.json"
+    ROOT_EXPR='$(git rev-parse --show-toplevel)'
+    PROMPT_COMMAND="bash \"${ROOT_EXPR}/.codex/hooks/pre-prompt-knowledge-gate.sh\""
+    PRE_COMMIT_COMMAND="bash \"${ROOT_EXPR}/.codex/hooks/pre-commit-memento.sh\""
+    POST_COMMIT_COMMAND="bash \"${ROOT_EXPR}/.codex/hooks/post-commit-memento.sh\""
+    ;;
+  claude-code)
+    HOOK_DIR="${PROJECT_ROOT}/.claude/hooks"
+    CONFIG_PATH="${PROJECT_ROOT}/.claude/settings.json"
+    PROMPT_COMMAND='bash "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-prompt-knowledge-gate.sh"'
+    PRE_COMMIT_COMMAND='bash "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit-memento.sh"'
+    POST_COMMIT_COMMAND='bash "$CLAUDE_PROJECT_DIR/.claude/hooks/post-commit-memento.sh"'
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
+
+mkdir -p "$HOOK_DIR"
+
+for hook_name in \
+  pre-prompt-knowledge-gate.sh \
+  pre-commit-memento.sh \
+  post-commit-memento.sh
+do
+  cp "${HOOK_SOURCE_DIR}/${hook_name}" "${HOOK_DIR}/${hook_name}"
+  chmod +x "${HOOK_DIR}/${hook_name}"
+done
+
+mkdir -p "$(dirname "$CONFIG_PATH")"
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo '{}' > "$CONFIG_PATH"
+fi
+
+TMP_CONFIG="$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")"
+trap 'rm -f "$TMP_CONFIG"' EXIT
+
+jq \
+  --arg prompt_command "$PROMPT_COMMAND" \
+  --arg pre_commit_command "$PRE_COMMIT_COMMAND" \
+  --arg post_commit_command "$POST_COMMIT_COMMAND" \
+  '
+    def ensure_hook($event; $group):
+      .hooks[$event] = (
+        (.hooks[$event] // []) as $groups
+        | if any($groups[]?; any(.hooks[]?; .command == $group.hooks[0].command))
+          then $groups
+          else $groups + [$group]
+          end
+      );
+
+    .hooks = (.hooks // {})
+    | ensure_hook(
+        "UserPromptSubmit";
+        {
+          hooks: [
+            {
+              type: "command",
+              command: $prompt_command,
+              statusMessage: "Checking Knowledge Vault"
+            }
+          ]
+        }
+      )
+    | ensure_hook(
+        "PreToolUse";
+        {
+          matcher: "Bash",
+          hooks: [
+            {
+              type: "command",
+              command: $pre_commit_command,
+              statusMessage: "Checking memento commit policy"
+            }
+          ]
+        }
+      )
+    | ensure_hook(
+        "PostToolUse";
+        {
+          matcher: "Bash",
+          hooks: [
+            {
+              type: "command",
+              command: $post_commit_command,
+              statusMessage: "Checking memento note"
+            }
+          ]
+        }
+      )
+  ' "$CONFIG_PATH" > "$TMP_CONFIG"
+
+mv "$TMP_CONFIG" "$CONFIG_PATH"
+trap - EXIT
+
+echo "Installed Knowledge Distillery hooks for ${AGENT} in ${PROJECT_ROOT}"

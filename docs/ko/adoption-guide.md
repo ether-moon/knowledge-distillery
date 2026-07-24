@@ -4,41 +4,55 @@ Knowledge Distillery를 적용하려는 저장소에서 이 가이드를 따른�
 
 ## 사전 조건
 
-- Claude Code plugin 설치 권한
+- 다음 설치 경로 중 하나:
+  - Claude Code plugin 설치 권한
+  - Codex portable skill 설치용 Node.js와 `npx`
 - 머신에 `sqlite3` 설치
 - 파이프라인/관리 커맨드까지 사용할 경우 `jq` 설치
 - 저장소 secret 준비:
   - `ANTHROPIC_API_KEY`
   - Linear를 쓰는 경우 `LINEAR_API_KEY`
 
-## 1. Plugin 설치
+## 1. Skill 설치
 
-이 저장소의 Claude Code plugin을 설치한다.
+설치 환경에 맞는 경로를 선택한다.
 
-기대 결과:
+Claude Code에서는 이 저장소의 plugin을 설치한다. 설치된 skill은 `/knowledge-distillery:*` namespace로 노출된다.
 
-- Claude Code가 `/knowledge-distillery:*` skill을 인식한다
-- 번들 자산이 `${CLAUDE_PLUGIN_ROOT}`를 통해 접근 가능하다
+Codex에서는 portable skill 디렉터리를 설치한다.
+
+```bash
+npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex
+```
+
+Codex의 project skill은 기본적으로 `.agents/skills/`에, global skill은 `$CODEX_HOME/skills/`에 설치된다. 각 skill이 필요한 script와 asset을 직접 포함하므로 `CLAUDE_PLUGIN_ROOT`가 필요하지 않다.
 
 ## 2. 저장소 설정
 
-적용 대상 저장소에서 다음을 실행한다.
+적용 대상 저장소에서 setup skill을 호출한다.
 
 ```text
-/knowledge-distillery:setup
+Claude Code plugin: /knowledge-distillery:setup
+Codex skill install: $setup
 ```
 
 이 단계에서 다음이 설정된다.
 
 - `.knowledge/vault.db`
 - `.knowledge/reports/`
+- `.knowledge/changesets/`
 - `.github/workflows/mark-evidence.yml`
 - `.github/workflows/batch-refine.yml`
-- `CLAUDE.md`의 Knowledge Vault 섹션
-- `.gitignore`의 `.knowledge/tmp/` 항목
+- `.github/workflows/curate-report.yml`
+- `.github/workflows/apply-changeset.yml`
+- `AGENTS.md` 또는 `CLAUDE.md`의 Knowledge Vault와 Memento 섹션
+- `.gitignore`의 임시 파일 규칙
+- 현재 에이전트용 repo-local hook과 hook 설정
 
 Skill은 설정을 마지막에 자체 검증하고 결과를 보고한다.
 모든 검증 항목이 통과해야 설정이 완료된 것으로 본다.
+
+Codex에서는 저장소를 trust한 뒤 `/hooks`에서 새 hook 또는 변경된 hook을 검토한다. Portable skill installer는 skill만 복사하므로, lifecycle hook 등록은 setup이 호스트별로 수행한다.
 
 ## 3. 저장소 설정 조정
 
@@ -81,7 +95,7 @@ knowledge-gate add \
 
 본격 사용 전 다음만 확인하면 된다.
 
-- `/knowledge-distillery:setup`이 모든 검증 항목을 통과했다고 보고한다
+- setup skill이 모든 검증 항목을 통과했다고 보고한다
 - 대표 경로 하나에 대해 `knowledge-gate query-paths <file>`가 의미 있는 결과를 반환한다
 - GitHub Actions가 필요한 secret에 접근할 수 있다
 - 생성된 workflow가 저장소의 branch/schedule 정책과 맞는다

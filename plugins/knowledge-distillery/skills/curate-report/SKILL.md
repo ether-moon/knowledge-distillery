@@ -1,4 +1,5 @@
 ---
+name: curate-report
 description: "Processes reviewer feedback on Report PRs to selectively accept, reject, or modify changeset entries. Triggered by /curate comment on knowledge/batch-* PRs. Reads PR comments, interprets natural language feedback, updates the changeset file, regenerates report, and commits."
 ---
 

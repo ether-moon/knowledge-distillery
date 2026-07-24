@@ -1,0 +1,71 @@
+name: Knowledge Distillery — Mark Evidence
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+jobs:
+  mark-evidence:
+    if: >-
+      github.event.pull_request.merged == true &&
+      !startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v6
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Write dynamic MCP config
+        run: |
+          if [ -n "${{ secrets.LINEAR_API_KEY }}" ]; then echo "::add-mask::${{ secrets.LINEAR_API_KEY }}"; fi
+          cat > .mcp.json << 'MCPEOF'
+          {
+            "mcpServers": {
+              "github": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
+                  "X-MCP-Toolsets": "pull_requests,issues,labels"
+                }
+              },
+              "linear": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "mcp-linear"],
+                "env": {
+                  "LINEAR_API_KEY": "${{ secrets.LINEAR_API_KEY }}"
+                }
+              }
+            }
+          }
+          MCPEOF
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Use skill /knowledge-distillery:mark-evidence for PR #${{ github.event.pull_request.number }}.
+            Extract evidence identifiers, write Evidence Bundle Manifest as PR comment,
+            and add 'knowledge:pending' label.
+          # Stage A is high-frequency (every merged PR) and low-judgment (identifier
+          # extraction + coarse L1/L2 triage) — Sonnet + medium effort is sufficient.
+          claude_args: "--model claude-sonnet-5 --effort medium --plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,mcp__linear__*,Bash(*),Read(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f .mcp.json
