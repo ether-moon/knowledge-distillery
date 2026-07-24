@@ -1,0 +1,24 @@
+## Decisions Made
+- Portable Codex/npx skills 지원을 새 배포 기능으로 분류해 minor 버전을 0.5.0에서 0.6.0으로 올렸다.
+- 직전 버전 범프와 동일하게 CHANGELOG.md와 plugin.json만 별도 커밋으로 갱신했다.
+
+## Problems Encountered
+- 로컬 main 브랜치가 다른 worktree에서 사용 중이고 origin/main보다 뒤처져 있었다.
+- 최신 origin/main에서 전용 로컬 bump 브랜치를 만들어 기존 worktree 상태를 변경하지 않고 해결했다.
+
+## Constraints Identified
+- 버전 범프는 기능 커밋과 분리된 커밋이어야 한다.
+- origin/main의 확인된 SHA에서만 normal fast-forward push해야 하며 원격이 이동하면 push를 중단해야 한다.
+- changelog 날짜는 2026-07-24이고 기존 형식을 유지해야 한다.
+
+## Open Questions
+- None
+
+## Context
+PR #54 병합 후 최신 origin/main을 기준으로 portable skill packaging 변경을 0.6.0 릴리스 항목으로 정리했다. plugin manifest JSON 검증, diff check, 전체 tests/all.sh가 통과했다.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None
