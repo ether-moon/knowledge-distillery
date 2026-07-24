@@ -1,11 +1,6 @@
 ---
 name: quality-gate
 description: "Validates knowledge candidates against quality rules before vault insertion. Stage B step 3. Two-layer verification: deterministic rule checks (schema, R3, R5) followed by LLM-based semantic judgment (R1 evidence sufficiency, R6 duplicate detection, R7 directly-derivable heuristic)."
-user-invocable: false
-# This is the precision gate: false positives (wrong knowledge in the vault) are the
-# costly, hard-to-detect failure, so it raises effort for the duration of this skill.
-# Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.
-effort: high
 ---
 
 # quality-gate — Stage B-3 Quality Verification
@@ -18,7 +13,7 @@ effort: high
 
 ## Prerequisites
 
-- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
+- `knowledge-gate` CLI available (use the hook-provided exact path or the `knowledge-gate` skill's own `scripts/knowledge-gate`)
 - `.knowledge/vault.db` accessible via CLI only (no direct reads)
 - Candidate array from `/knowledge-distillery:extract-candidates` available in-memory
 

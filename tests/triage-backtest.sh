@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPT="${ROOT}/plugins/knowledge-distillery/scripts/triage-backtest.sh"
+SCRIPT="${ROOT}/plugins/knowledge-distillery/skills/knowledge-gate/scripts/triage-backtest.sh"
 
 fail() {
   echo "FAIL: $1" >&2

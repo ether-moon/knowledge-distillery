@@ -1,7 +1,6 @@
 ---
 name: knowledge-gate
 description: "Queries team-verified knowledge from the Knowledge Vault. A UserPromptSubmit hook reminds you when active vault entries exist — use this skill to query and interpret them before planning code changes."
-argument-hint: "[file-path or keyword]"
 ---
 
 # knowledge-gate
@@ -14,10 +13,12 @@ A `UserPromptSubmit` hook fires on each user prompt. When the vault has active e
 
 ## CLI Path
 
-Resolve the CLI path once at session start. If `plugins/knowledge-distillery/scripts/knowledge-gate` exists in the current repo root, use the local development path. Otherwise use the installed plugin path:
+Resolve the CLI path once at session start in this order:
 
-- **Development repo**: `plugins/knowledge-distillery/scripts/knowledge-gate`
-- **Installed plugin**: `${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-gate`
+1. Use the hook-provided exact path when the UserPromptSubmit context supplies one.
+2. Otherwise use `<skill-directory>/scripts/knowledge-gate`, where `<skill-directory>` is the directory containing this `SKILL.md`.
+
+This skill-local path works when the skill is copied or symlinked into `.agents/skills`, `.codex/skills`, `.claude/skills`, or a plugin skill directory. Do not assume an agent-specific environment variable or plugin-root layout.
 
 All commands below use `<knowledge-gate>` as a placeholder for the resolved executable path. Substitute the concrete path directly in the command; do NOT create or execute a shell variable such as `$GATE`.
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-GATE="${ROOT}/plugins/knowledge-distillery/scripts/knowledge-gate"
+GATE="${ROOT}/plugins/knowledge-distillery/skills/knowledge-gate/scripts/knowledge-gate"
 
 fail() {
   echo "FAIL: $1" >&2

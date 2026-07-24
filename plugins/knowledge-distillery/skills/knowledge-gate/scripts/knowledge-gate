@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/knowledge-gate — Knowledge Vault interface
+# knowledge-gate skill CLI — Knowledge Vault interface
 set -euo pipefail
 
 resolve_vault_path() {
@@ -27,10 +27,10 @@ resolve_vault_path() {
   echo "${PWD}/.knowledge/vault.db"
 }
 
-# Resolve plugin root for bundled assets
+# Resolve the skill root for bundled assets
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCHEMA_PATH="${PLUGIN_ROOT}/schema/vault.sql"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCHEMA_PATH="${SKILL_ROOT}/assets/schema/vault.sql"
 
 VAULT="$(resolve_vault_path)"
 CMD="${1:-help}"
@@ -1300,7 +1300,7 @@ domain_report() {
 migrate_vault() {
   local current_version
   current_version=$(sqlite3 "$VAULT" "PRAGMA user_version;")
-  local migration_dir="${PLUGIN_ROOT}/schema/migrations"
+  local migration_dir="${SKILL_ROOT}/assets/schema/migrations"
 
   if [ ! -d "$migration_dir" ]; then
     echo "No migrations directory found" >&2
@@ -1400,7 +1400,7 @@ curate_queue() {
 # ============================================================
 
 auto_migrate() {
-  local migration_dir="${PLUGIN_ROOT}/schema/migrations"
+  local migration_dir="${SKILL_ROOT}/assets/schema/migrations"
   [ -d "$migration_dir" ] || return 0
 
   local current_version

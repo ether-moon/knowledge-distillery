@@ -3,7 +3,7 @@
 **Refinement Pipeline Design Overview**
 
 > This document is an architecture overview, not the canonical implementation spec.
-> For exact schema details, see [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql). For CLI behavior, run `knowledge-gate help` or see the [README CLI Quick Reference](../README.md#cli-quick-reference). For pipeline behavior, see [`skills/`](../plugins/knowledge-distillery/skills/).
+> For exact schema details, see the [`knowledge-gate` schema asset](../plugins/knowledge-distillery/skills/knowledge-gate/assets/schema/vault.sql). For CLI behavior, run `knowledge-gate help` or see the [README CLI Quick Reference](../README.md#cli-quick-reference). For pipeline behavior, see [`skills/`](../plugins/knowledge-distillery/skills/).
 
 ---
 
@@ -160,7 +160,7 @@ The design intentionally prefers SQLite-native migration mechanics over an addit
 
 ### 4.2 Knowledge Vault Schema
 
-The exact DDL lives in [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql). Conceptually, the schema has five parts.
+The exact DDL lives in the [`knowledge-gate` schema asset](../plugins/knowledge-distillery/skills/knowledge-gate/assets/schema/vault.sql). Conceptually, the schema has five parts.
 
 - **entries**: the Fact / Anti-Pattern content itself
 - **domain_registry / domain_paths**: controlled vocabulary plus path-to-domain resolution
@@ -335,16 +335,17 @@ What matters in this document is not command syntax. It is why `knowledge-gate` 
 
 **Design principles governing the CLI:**
 
-- **Vendor-neutral runtime / Claude-first delivery**: Agent runtime commands use only `sqlite3` (pre-installed) to maintain vendor neutrality. Pipeline/management commands additionally require `jq` (for JSON processing). Delivery is via Claude Code Plugin, but the CLI itself can run from any agent.
-- **Standard plugin packaging**: The repository acts as a marketplace (`.claude-plugin/marketplace.json`). The plugin lives under `plugins/knowledge-distillery/` with its own `plugin.json`. Bundled assets (`skills/`, `scripts/`, `schema/`) are referenced through `${CLAUDE_PLUGIN_ROOT}`.
+- **Vendor-neutral runtime / Claude-first delivery**: Agent runtime commands use only `sqlite3` (pre-installed) to maintain vendor neutrality. Pipeline, setup, and management commands additionally require `jq` for JSON processing. The Claude Code Plugin remains the primary distribution, while the same skill directories can be installed by portable skill installers such as `npx skills`.
+- **Skill-local packaging**: Each skill contains the scripts and assets required for its workflow. The `knowledge-gate` skill bundles its CLI and schema; the `setup` skill bundles hook scripts and workflow templates. No portable execution path depends on `${CLAUDE_PLUGIN_ROOT}`.
+- **Setup-installed hooks**: Portable skill installation does not register lifecycle hooks. The setup skill copies hook scripts into the adopting repository and merges the active host's `.codex/hooks.json` or `.claude/settings.json`.
 - **Standardized DB manipulation**: The LLM decides, and the CLI manipulates the DB. Direct SQL execution is prohibited.
 
-### 7.6 Agent Skill Template
+### 7.6 Agent Skill Package
 
-The CLI and data are shared across all agents; only the Skill file is provided per agent.
+The vault data is shared across agents. Each portable Skill directory includes its instructions and any required scripts or assets, so copying or symlinking that directory preserves its execution path.
 
 ```markdown
-# knowledge-gate Skill Example (for Claude Code)
+# knowledge-gate Skill Example
 
 ---
 description: Queries related rules from the knowledge vault before code modification.
@@ -452,6 +453,6 @@ The goal of metrics is not a perfect scorecard. It is to verify whether this str
 This document intentionally omits detailed implementation material. Use these as the canonical sources:
 
 - CLI commands and I/O behavior: `knowledge-gate help` and [README CLI Quick Reference](../README.md#cli-quick-reference)
-- Exact SQLite schema: [`schema/vault.sql`](../plugins/knowledge-distillery/schema/vault.sql)
+- Exact SQLite schema: [`knowledge-gate/assets/schema/vault.sql`](../plugins/knowledge-distillery/skills/knowledge-gate/assets/schema/vault.sql)
 - Pipeline skill details: [`skills/`](../plugins/knowledge-distillery/skills/)
 - Adopted and rejected tool analysis: [`docs/tool-evaluation.md`](./tool-evaluation.md)

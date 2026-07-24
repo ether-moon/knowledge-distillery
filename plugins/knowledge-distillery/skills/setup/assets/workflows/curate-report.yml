@@ -1,0 +1,94 @@
+name: Knowledge Distillery — Curate Report
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  curate-report:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/curate') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const branch = pr.data.head.ref;
+            if (!branch.startsWith('knowledge/batch-')) {
+              core.notice('Skipping: not a Report PR branch (' + branch + ')');
+              core.setOutput('skip', 'true');
+              return;
+            }
+            core.setOutput('skip', 'false');
+            core.setOutput('branch', branch);
+            core.setOutput('pr_number', context.issue.number);
+
+      - uses: actions/checkout@v6
+        if: steps.pr.outputs.skip != 'true'
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Checkout Knowledge Distillery plugin
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Write dynamic MCP config
+        if: steps.pr.outputs.skip != 'true'
+        run: |
+          cat > .mcp.json << 'MCPEOF'
+          {
+            "mcpServers": {
+              "github": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}",
+                  "X-MCP-Toolsets": "pull_requests,issues"
+                }
+              }
+            }
+          }
+          MCPEOF
+
+      - name: Configure git identity
+        if: steps.pr.outputs.skip != 'true'
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.pr.outputs.skip != 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Use skill /knowledge-distillery:curate-report.
+            Process reviewer feedback on Report PR #${{ steps.pr.outputs.pr_number }}
+            (branch: ${{ steps.pr.outputs.branch }}).
+            Read all PR comments, classify feedback into reject/update/keep actions,
+            update the changeset file (.knowledge/changesets/), regenerate the batch report, commit, and post summary.
+            Do NOT modify vault.db directly — operate on the changeset file only.
+          claude_args: "--plugin-dir .knowledge-distillery-plugin/plugins/knowledge-distillery --allowedTools 'mcp__github__*,Bash(*),Read(*),Write(*),Glob(*),Grep(*),Skill(*),Agent(*)'"
+          show_full_output: true
+
+      - name: Cleanup sensitive files
+        if: always() && steps.pr.outputs.skip != 'true'
+        run: rm -f .mcp.json

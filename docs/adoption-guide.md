@@ -4,7 +4,9 @@ Use this guide in a repository that wants to adopt Knowledge Distillery.
 
 ## Prerequisites
 
-- Claude Code plugin installation access
+- One supported installation path:
+  - Claude Code plugin installation access
+  - Node.js and `npx` for a portable Codex skill installation
 - `sqlite3` available on the machine
 - `jq` available if the project will run pipeline/admin commands
 - Repository secrets for:
@@ -15,34 +17,46 @@ Use this guide in a repository that wants to adopt Knowledge Distillery.
 - Slack MCP server configured (optional — only if using Slack threads as evidence)
 - Notion MCP server configured (optional — only if using Notion pages as evidence)
 
-## 1. Install the Plugin
+## 1. Install the Skills
 
-Install the Claude Code plugin from this repository.
+Choose one installation path.
 
-Expected outcome:
+For Claude Code, install the plugin from this repository. Claude Code exposes the skills with the `/knowledge-distillery:*` namespace.
 
-- Claude Code can see the `/knowledge-distillery:*` skills
-- The bundled assets are available through `${CLAUDE_PLUGIN_ROOT}`
+For Codex, install the portable skill directories:
+
+```bash
+npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex
+```
+
+Codex installs project skills under `.agents/skills/` by default or global skills under `$CODEX_HOME/skills/`. Each skill contains its own scripts and assets, so neither path requires `CLAUDE_PLUGIN_ROOT`.
 
 ## 2. Set Up the Repository
 
-In the adopting repository, run:
+In the adopting repository, invoke the setup skill:
 
 ```text
-/knowledge-distillery:setup
+Claude Code plugin: /knowledge-distillery:setup
+Codex skill install: $setup
 ```
 
 This sets up:
 
 - `.knowledge/vault.db`
 - `.knowledge/reports/`
+- `.knowledge/changesets/`
 - `.github/workflows/mark-evidence.yml`
 - `.github/workflows/batch-refine.yml`
-- `CLAUDE.md` Knowledge Vault section
-- `.gitignore` entry for `.knowledge/tmp/`
+- `.github/workflows/curate-report.yml`
+- `.github/workflows/apply-changeset.yml`
+- Knowledge Vault and Memento sections in `AGENTS.md` or `CLAUDE.md`
+- temporary-file rules in `.gitignore`
+- repo-local hooks and hook configuration for the active agent
 
 The skill validates the configuration at the end and reports the result.
 Setup is complete when all verification checks pass.
+
+For Codex, trust the repository and review new or changed hook definitions with `/hooks`. Portable skill installers copy skills but do not register lifecycle hooks; setup performs that host-specific step.
 
 ## 3. Configure the Repository
 
@@ -85,7 +99,7 @@ After adoption:
 
 Before relying on the system, confirm:
 
-- `/knowledge-distillery:setup` reports all verification checks passed
+- The setup skill reports all verification checks passed
 - `knowledge-gate query-paths <file>` returns results for at least one representative path
 - GitHub Actions can access the required secrets
 - The generated workflows match the repository's branch and schedule policies

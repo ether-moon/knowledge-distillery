@@ -1,7 +1,6 @@
 ---
 name: mark-evidence
 description: "Extracts evidence identifiers from a merged PR and posts an Evidence Bundle Manifest comment. Stage A of the distillation pipeline — lightweight, identifier-only, no content fetching. Triggered on PR merge or manual invocation. Use after a PR merge to begin knowledge tracking, or manually with a specific PR number to retroactively mark evidence."
-argument-hint: "[PR-number]"
 ---
 
 # mark-evidence — Stage A Evidence Marking

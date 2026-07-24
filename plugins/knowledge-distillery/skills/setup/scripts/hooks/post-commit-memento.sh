@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# PostToolUse hook: detect git commit and remind to attach memento session summary.
+# Installed PostToolUse hook: detect git commit and remind to attach memento session summary.
 # Fires on every Bash tool use — exits fast for non-commit commands.
 
 INPUT=$(cat)

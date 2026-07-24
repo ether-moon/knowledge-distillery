@@ -136,7 +136,7 @@ When a retrigger run starts, it picks up the existing branch + Report PR, reads 
 ## Prerequisites
 
 - GitHub MCP server configured with `pull_requests,issues,labels` toolsets
-- `knowledge-gate` CLI available (resolve path as described in the `knowledge-gate` skill — local dev path if available, else `${CLAUDE_PLUGIN_ROOT}`)
+- `knowledge-gate` CLI available (use the hook-provided exact path or the `knowledge-gate` skill's own `scripts/knowledge-gate`)
 - `jq` CLI available
 - `git` with push access
 - Linear MCP server (graceful degradation if unavailable)

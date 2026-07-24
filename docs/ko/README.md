@@ -107,8 +107,14 @@ knowledge-gate search "callback"
 
 ## 배포 형태
 
-**Claude Code Plugin**으로 배포합니다 — `claude plugin install`로 설치하면 런타임 Skill, 파이프라인 Skill, 번들된 schema 자산, `knowledge-gate` CLI가 일체로 제공됩니다. CLI 자체는 벤더 중립(`sqlite3` 기반)이며, 어떤 코딩 에이전트에서든 실행 가능합니다.
-레포지토리가 marketplace를 겸한다. `.claude-plugin/marketplace.json`이 marketplace를 선언하고, 플러그인 자체는 `plugins/knowledge-distillery/` 하위에 `plugin.json`, `skills/`, `scripts/`, `schema/`와 함께 위치한다.
+Knowledge Distillery는 두 가지 배포 경로를 지원한다.
+
+- **Portable agent skills**: `npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex`
+- **Claude Code Plugin**: `claude plugin install`로 설치해 `/knowledge-distillery:*` namespace 사용
+
+각 skill은 자신에게 필요한 script와 asset을 직접 소유한다. `knowledge-gate` CLI와 schema는 `knowledge-gate` skill에, hook template과 workflow asset은 `setup` skill에 들어 있다. setup을 실행하면 현재 호스트의 repo-local 설정에 lifecycle hook이 설치된다. 런타임은 `sqlite3` 기반으로 벤더 중립을 유지하며, pipeline과 setup 작업은 `jq`도 사용한다.
+
+레포지토리는 Claude plugin marketplace도 겸한다. `.claude-plugin/marketplace.json`은 `plugins/knowledge-distillery/`를 가리키며, 그 안의 `skills/` 디렉터리는 portable skill installer에서도 발견할 수 있다.
 
 ## 상태
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# PreToolUse hook: block direct git commit and redirect to memento-commit skill.
+# Installed PreToolUse hook: block direct git commit and redirect to memento-commit skill.
 # Fires on every Bash tool use — exits fast for non-commit commands.
 #
 # Detection logic:

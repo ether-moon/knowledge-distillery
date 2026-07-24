@@ -107,8 +107,14 @@ Run `knowledge-gate help` for full usage details.
 
 ## Delivery Format
 
-Distributed as a **Claude Code Plugin** — install with `claude plugin install` to get runtime skills, pipeline skills, bundled schema assets, and the `knowledge-gate` CLI in one package. The CLI itself is vendor-neutral (`sqlite3`-based), runnable from any coding agent.
-The repository doubles as a marketplace. `.claude-plugin/marketplace.json` declares the marketplace; the plugin itself lives under `plugins/knowledge-distillery/` with its own `plugin.json`, `skills/`, `scripts/`, and `schema/`.
+Knowledge Distillery supports two delivery paths:
+
+- **Portable agent skills**: `npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex`
+- **Claude Code Plugin**: install with `claude plugin install` to use the `/knowledge-distillery:*` namespace
+
+Each skill owns the scripts and assets it needs. The `knowledge-gate` CLI and schema live inside the `knowledge-gate` skill; hook templates and workflow assets live inside the `setup` skill. Running setup installs lifecycle hooks into the active host's repo-local configuration. The runtime remains vendor-neutral and uses `sqlite3`; pipeline and setup operations also use `jq`.
+
+The repository doubles as a Claude plugin marketplace. `.claude-plugin/marketplace.json` points to `plugins/knowledge-distillery/`, whose `skills/` directory is also discoverable by portable skill installers.
 
 ## Status
 

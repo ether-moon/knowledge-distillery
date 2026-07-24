@@ -1,8 +1,6 @@
 ---
 name: collect-evidence
 description: "Collects the actual content of all evidence sources identified in a PR's Evidence Bundle Manifest and produces a structured Evidence Bundle. Stage B step 1 — transforms identifier references into full content for downstream candidate extraction. Called by batch-refine orchestrator per PR."
-user-invocable: false
-effort: low
 ---
 
 # collect-evidence — Stage B-1 Evidence Collection
