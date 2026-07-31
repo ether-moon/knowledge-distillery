@@ -7,7 +7,7 @@ description: "Records a project decision as a committed markdown file under .kno
 
 Records a project-level decision as a structured markdown file and commits it to git. The commit flows into the distillery pipeline when the branch merges as a PR (mark-evidence → batch-refine → vault), preserving the decision as verified team knowledge.
 
-Mirrors the auto-memory pattern: Claude detects a clear decision moment and invokes this skill automatically without explicit user request.
+Mirrors the auto-memory pattern: the coding agent detects a clear decision moment and invokes this skill automatically without explicit user request.
 
 ## When to Use
 
@@ -58,7 +58,7 @@ From the session conversation, extract:
 **IMPORTANT — No command substitution:** Never use `$(...)` or backtick substitution in Bash calls. Claude Code's security layer blocks these patterns.
 
 ```bash
-test -d .knowledge || { echo "knowledge-distillery not initialized. Run /knowledge-distillery:setup"; exit 1; }
+test -d .knowledge || { echo "knowledge-distillery not initialized. Follow the Knowledge Distillery Agent Installation Guide"; exit 1; }
 mkdir -p .knowledge/decisions && cat > ".knowledge/decisions/YYYY-MM-DD-<slug>.md" << 'DECISION_EOF'
 # Decision: <title>
 
@@ -102,7 +102,7 @@ Decision recorded: <sha> decision: <slug>
 
 | Failure | Behavior |
 |---------|----------|
-| `.knowledge/` directory does not exist | Report that knowledge-distillery is not initialized. Suggest `/knowledge-distillery:setup`. |
+| `.knowledge/` directory does not exist | Report that Knowledge Distillery is not initialized. Direct the user to the Agent Installation Guide linked from the root README. |
 | File with same date+slug already exists | Append numeric suffix to slug (e.g., `pr-template-out-of-scope-2`). |
 | `git commit` fails | Report the error. The file remains on disk for manual review. |
 

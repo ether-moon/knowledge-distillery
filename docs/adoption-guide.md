@@ -17,46 +17,31 @@ Use this guide in a repository that wants to adopt Knowledge Distillery.
 - Slack MCP server configured (optional — only if using Slack threads as evidence)
 - Notion MCP server configured (optional — only if using Notion pages as evidence)
 
-## 1. Install the Skills
+## 1. Ask an Agent to Install the Skills
 
-Choose one installation path.
+Give the coding agent the [Agent Installation Guide](agent-installation.md), either through the root README or as a direct URL. The guide is the source of truth for project-scoped skill selection, repository configuration, preservation rules, and verification.
 
-For Claude Code, install the plugin from this repository. Claude Code exposes the skills with the `/knowledge-distillery:*` namespace.
+The installer keeps four runtime skills in the adopting repository. The six pipeline-only skills are loaded by the managed workflows from their own plugin checkout.
 
-For Codex, install the portable skill directories:
+## 2. Let the Installing Agent Configure the Repository
 
-```bash
-npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex
-```
-
-Codex installs project skills under `.agents/skills/` by default or global skills under `$CODEX_HOME/skills/`. Each skill contains its own scripts and assets, so neither path requires `CLAUDE_PLUGIN_ROOT`.
-
-## 2. Set Up the Repository
-
-In the adopting repository, invoke the setup skill:
-
-```text
-Claude Code plugin: /knowledge-distillery:setup
-Codex skill install: $setup
-```
-
-This sets up:
+The same agent continues with the installation guide; there is no setup skill to invoke. It configures:
 
 - `.knowledge/vault.db`
 - `.knowledge/reports/`
 - `.knowledge/changesets/`
+- `.knowledge/decisions/`
 - `.github/workflows/mark-evidence.yml`
 - `.github/workflows/batch-refine.yml`
 - `.github/workflows/curate-report.yml`
 - `.github/workflows/apply-changeset.yml`
-- Knowledge Vault and Memento sections in `AGENTS.md` or `CLAUDE.md`
+- Knowledge Vault, Memento, and Decision Recording sections in `AGENTS.md` or `CLAUDE.md`
 - temporary-file rules in `.gitignore`
 - repo-local hooks and hook configuration for the active agent
 
-The skill validates the configuration at the end and reports the result.
-Setup is complete when all verification checks pass.
+The agent fetches canonical assets from `plugins/knowledge-distillery/install/`, preserves unrelated configuration, validates the final state, and reports the result. Installation is complete only when all guide checks pass.
 
-For Codex, trust the repository and review new or changed hook definitions with `/hooks`. Portable skill installers copy skills but do not register lifecycle hooks; setup performs that host-specific step.
+For Codex, trust the repository and review new or changed hook definitions with `/hooks`. Portable skill installers copy skills but do not register lifecycle hooks; the installation guide performs that host-specific step.
 
 ## 3. Configure the Repository
 
@@ -99,7 +84,7 @@ After adoption:
 
 Before relying on the system, confirm:
 
-- The setup skill reports all verification checks passed
+- The installing agent reports all installation-guide checks passed
 - `knowledge-gate query-paths <file>` returns results for at least one representative path
 - GitHub Actions can access the required secrets
 - The generated workflows match the repository's branch and schedule policies

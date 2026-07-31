@@ -7,8 +7,7 @@
     "extract_candidates_skill": "plugins/knowledge-distillery/skills/extract-candidates/SKILL.md",
     "quality_gate_skill": "plugins/knowledge-distillery/skills/quality-gate/SKILL.md",
     "batch_refine_workflow": ".github/workflows/batch-refine.yml",
-    "setup_skill": "plugins/knowledge-distillery/skills/setup/SKILL.md",
-    "setup_batch_refine_workflow": "plugins/knowledge-distillery/skills/setup/assets/workflows/batch-refine.yml"
+    "install_batch_refine_workflow": "plugins/knowledge-distillery/install/workflows/batch-refine.yml"
   },
   "scenarios": [
     {
@@ -102,11 +101,7 @@
           ]
         },
         {
-          "doc": "setup_skill",
-          "contains": "<setup-skill-directory>/assets/workflows/batch-refine.yml"
-        },
-        {
-          "doc": "setup_batch_refine_workflow",
+          "doc": "install_batch_refine_workflow",
           "ordered_contains": [
             "Stage B effort tiers: collect-evidence=low; batch-refine/extract-candidates=medium; quality-gate=high.",
             "claude_args: \"--model claude-sonnet-5 --effort medium"
@@ -437,7 +432,7 @@
           "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
         },
         {
-          "doc": "setup_batch_refine_workflow",
+          "doc": "install_batch_refine_workflow",
           "contains": "Before starting each wave, check `(date +%s) - BATCH_START_TS < DEADLINE_SECONDS`."
         },
         {
@@ -445,7 +440,7 @@
           "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         },
         {
-          "doc": "setup_batch_refine_workflow",
+          "doc": "install_batch_refine_workflow",
           "contains": "Analyze pending PRs in bounded waves of WAVE_SIZE=$WAVE_SIZE: issue one separate fresh Agent call per PR in one message, then persist sequentially in mergedAt order."
         }
       ]
@@ -575,10 +570,10 @@
       ]
     },
     {
-      "id": "setup-template-carries-live-bounded-wave-workflow-contract",
+      "id": "install-template-carries-live-bounded-wave-workflow-contract",
       "checks": [
         {
-          "doc": "setup_batch_refine_workflow",
+          "doc": "install_batch_refine_workflow",
           "ordered_contains": [
             "workflow_dispatch:",
             "inputs:",
@@ -774,7 +769,7 @@
           "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {
-          "doc": "setup_batch_refine_workflow",
+          "doc": "install_batch_refine_workflow",
           "absent": "When the budget is reached, follow the skill's \"Graceful Handoff Procedure\""
         },
         {

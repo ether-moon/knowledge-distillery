@@ -13,46 +13,31 @@ Knowledge Distillery를 적용하려는 저장소에서 이 가이드를 따른�
   - `ANTHROPIC_API_KEY`
   - Linear를 쓰는 경우 `LINEAR_API_KEY`
 
-## 1. Skill 설치
+## 1. 에이전트에게 Skill 설치 요청
 
-설치 환경에 맞는 경로를 선택한다.
+Root README를 통하거나 직접 URL로 [Agent Installation Guide](../agent-installation.md)를 코딩 에이전트에게 전달한다. 이 문서가 project-scope skill 선택, 저장소 구성, 보존 규칙, 검증의 source of truth다.
 
-Claude Code에서는 이 저장소의 plugin을 설치한다. 설치된 skill은 `/knowledge-distillery:*` namespace로 노출된다.
+설치기는 적용 대상 저장소에 런타임 skill 네 개만 유지한다. 파이프라인 전용 skill 여섯 개는 관리되는 workflow가 자체 plugin checkout에서 로드한다.
 
-Codex에서는 portable skill 디렉터리를 설치한다.
+## 2. 설치 에이전트가 저장소 구성
 
-```bash
-npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex
-```
-
-Codex의 project skill은 기본적으로 `.agents/skills/`에, global skill은 `$CODEX_HOME/skills/`에 설치된다. 각 skill이 필요한 script와 asset을 직접 포함하므로 `CLAUDE_PLUGIN_ROOT`가 필요하지 않다.
-
-## 2. 저장소 설정
-
-적용 대상 저장소에서 setup skill을 호출한다.
-
-```text
-Claude Code plugin: /knowledge-distillery:setup
-Codex skill install: $setup
-```
-
-이 단계에서 다음이 설정된다.
+같은 에이전트가 설치 문서 절차를 계속 수행하며 호출할 setup skill은 없다. 다음을 구성한다.
 
 - `.knowledge/vault.db`
 - `.knowledge/reports/`
 - `.knowledge/changesets/`
+- `.knowledge/decisions/`
 - `.github/workflows/mark-evidence.yml`
 - `.github/workflows/batch-refine.yml`
 - `.github/workflows/curate-report.yml`
 - `.github/workflows/apply-changeset.yml`
-- `AGENTS.md` 또는 `CLAUDE.md`의 Knowledge Vault와 Memento 섹션
+- `AGENTS.md` 또는 `CLAUDE.md`의 Knowledge Vault, Memento, Decision Recording 섹션
 - `.gitignore`의 임시 파일 규칙
 - 현재 에이전트용 repo-local hook과 hook 설정
 
-Skill은 설정을 마지막에 자체 검증하고 결과를 보고한다.
-모든 검증 항목이 통과해야 설정이 완료된 것으로 본다.
+에이전트는 `plugins/knowledge-distillery/install/`에서 정식 asset을 가져오고, 무관한 기존 설정을 보존하며, 최종 상태를 검증해 보고한다. 설치 문서의 모든 검증 항목이 통과해야 완료된 것으로 본다.
 
-Codex에서는 저장소를 trust한 뒤 `/hooks`에서 새 hook 또는 변경된 hook을 검토한다. Portable skill installer는 skill만 복사하므로, lifecycle hook 등록은 setup이 호스트별로 수행한다.
+Codex에서는 저장소를 trust한 뒤 `/hooks`에서 새 hook 또는 변경된 hook을 검토한다. Portable skill installer는 skill만 복사하므로, lifecycle hook 등록은 설치 문서 절차가 호스트별로 수행한다.
 
 ## 3. 저장소 설정 조정
 
@@ -95,7 +80,7 @@ knowledge-gate add \
 
 본격 사용 전 다음만 확인하면 된다.
 
-- setup skill이 모든 검증 항목을 통과했다고 보고한다
+- 설치 에이전트가 설치 문서의 모든 검증 항목을 통과했다고 보고한다
 - 대표 경로 하나에 대해 `knowledge-gate query-paths <file>`가 의미 있는 결과를 반환한다
 - GitHub Actions가 필요한 secret에 접근할 수 있다
 - 생성된 workflow가 저장소의 branch/schedule 정책과 맞는다

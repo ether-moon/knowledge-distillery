@@ -104,7 +104,7 @@ fi
 CLI_PATH="$(resolve_cli_path || true)"
 
 if [ -z "$CLI_PATH" ]; then
-  emit_context "Knowledge Vault active (${COUNT} entries), but the knowledge-gate CLI could not be resolved. Re-run the Knowledge Distillery setup skill so the hook can find the project skill install or CODEX_HOME skill cache."
+  emit_context "Knowledge Vault active (${COUNT} entries), but the knowledge-gate CLI could not be resolved. Re-run the Knowledge Distillery Agent Installation Guide so the hook can find the project skill install."
   exit 0
 fi
 

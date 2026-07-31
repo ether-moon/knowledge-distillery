@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Installed PreToolUse hook: block direct git commit and redirect to memento-commit skill.
+# Installed PreToolUse hook: block direct git commit and redirect to the installed memento-commit skill.
 # Fires on every Bash tool use — exits fast for non-commit commands.
 #
 # Detection logic:
@@ -35,6 +35,6 @@ fi
 cat <<'EOF'
 {
   "decision": "block",
-  "reason": "Direct git commit is not allowed in this project. Use /knowledge-distillery:memento-commit instead — it generates a commit message, attaches a memento session summary as a git note, and ensures the evidence pipeline receives session context."
+  "reason": "Direct git commit is not allowed in this project. Use the installed memento-commit skill instead — it generates a commit message, attaches a memento session summary as a git note, and ensures the evidence pipeline receives session context."
 }
 EOF

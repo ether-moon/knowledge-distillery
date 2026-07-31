@@ -329,9 +329,9 @@ PR 변경 맥락 (커밋 메시지, 리뷰 논의, Linear 이슈)
 
 **CLI를 지배하는 설계 원칙:**
 
-- **벤더 중립 지향(런타임) / Claude-first(배포)**: 에이전트 런타임 커맨드는 `sqlite3`(사전 설치)만 사용하여 벤더 중립을 유지한다. pipeline, setup, 관리 커맨드는 JSON 처리를 위해 `jq`도 요구한다. Claude Code Plugin을 주 배포 경로로 유지하면서, 같은 skill 디렉터리를 `npx skills` 같은 portable installer로도 설치할 수 있다.
-- **Skill-local 패키징**: 각 skill은 실행에 필요한 script와 asset을 직접 포함한다. `knowledge-gate` skill은 CLI와 schema를, `setup` skill은 hook script와 workflow template을 번들한다. Portable 실행 경로는 `${CLAUDE_PLUGIN_ROOT}`에 의존하지 않는다.
-- **Setup 설치형 hook**: Portable skill 설치는 lifecycle hook을 등록하지 않는다. setup skill이 적용 저장소에 hook script를 복사하고 현재 호스트의 `.codex/hooks.json` 또는 `.claude/settings.json`을 병합한다.
+- **벤더 중립 지향(런타임) / Claude-first(배포)**: 에이전트 런타임 커맨드는 `sqlite3`(사전 설치)만 사용하여 벤더 중립을 유지한다. pipeline, 설치, 관리 커맨드는 JSON 처리를 위해 `jq`도 요구한다. Claude Code Plugin을 주 배포 경로로 유지하면서, 같은 skill 디렉터리를 `npx skills` 같은 portable installer로도 설치할 수 있다.
+- **Portable runtime 패키징**: 각 상시 skill은 런타임 workflow에 필요한 script와 asset을 직접 포함한다. `knowledge-gate` skill은 CLI와 schema를 번들하고, 일회성 hook script, 설정 fragment, workflow template은 `plugins/knowledge-distillery/install/`에 둔다. Portable 실행 경로는 `${CLAUDE_PLUGIN_ROOT}`에 의존하지 않는다.
+- **Guide 설치형 hook**: Portable skill 설치는 lifecycle hook을 등록하지 않는다. 설치 LLM이 root README에 연결된 Agent Installation Guide를 따라 정식 hook asset을 적용하고, 상시 setup skill 없이 현재 호스트의 `.codex/hooks.json` 또는 `.claude/settings.json`을 병합한다.
 - **규격화된 DB 조작**: LLM이 판단하고, CLI가 DB를 조작한다. 직접 SQL 실행 금지.
 
 ### 7.6 에이전트 Skill 패키지
