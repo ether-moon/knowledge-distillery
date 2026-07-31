@@ -387,6 +387,33 @@ if invalid_changeset_output=$("${GATE}" _changeset-apply "${TMP_DIR}/changeset-i
 fi
 assert_contains "${invalid_changeset_output}" "Unsupported or missing changeset version" "_changeset-apply should validate changeset versions"
 
+cat > "${TMP_DIR}/changeset-missing-alternative.json" <<'EOF'
+{
+  "version": 1,
+  "batch_date": "2026-04-01",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "missing-alternative",
+        "type": "anti-pattern",
+        "title": "Missing Alternative",
+        "claim": "MUST-NOT accept anti-patterns without an alternative.",
+        "body": "## Background\nThe deterministic gate was skipped.\n\n## Details\nValidate changesets before merge.",
+        "alternative": null,
+        "considerations": "This is a regression fixture.",
+        "applies_to": {"domains": ["payment"]},
+        "evidence": [{"type": "pr", "ref": "#1242"}]
+      }
+    }
+  ]
+}
+EOF
+if missing_alternative_output=$("${GATE}" _changeset-validate "${TMP_DIR}/changeset-missing-alternative.json" 2>&1); then
+  fail "_changeset-validate should reject anti-patterns without alternatives"
+fi
+assert_contains "${missing_alternative_output}" "anti-pattern 'missing-alternative' requires alternative" "_changeset-validate should enforce R3 before merge"
+
 cat > "${TMP_DIR}/changeset-empty.json" <<'EOF'
 {"version":1,"batch_date":"2026-04-01","entries":[{"status":"rejected","data":{"id":"ignored"}}]}
 EOF

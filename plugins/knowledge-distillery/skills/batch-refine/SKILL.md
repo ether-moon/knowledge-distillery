@@ -227,7 +227,7 @@ for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
   leave the whole wave pending, skip Step 3c/3d, Step 7/8, and handoff, then exit non-zero.
 
   The original invocation slot and PR number are authoritative; reject duplicate slots, foreign PR numbers, or mismatched results before persistence. On validation failure, discard the whole unpersisted wave and exit non-zero.
-  Before strict non-auth payload validation, defensively normalize only a missing `changed_files` field to `[]`; all other common and outcome-specific fields remain required.
+  Before strict non-auth payload validation, defensively normalize only a missing `changed_files` field to `[]`; all other common and outcome-specific fields remain required. Deterministic candidate validation MUST reject a `pass` verdict whose candidate violates Layer 1, including an `anti-pattern` with a null, empty, or whitespace-only `alternative`.
   After authoritative slot/PR validation, validate every non-auth outcome payload before persistence. If any non-auth payload is malformed, discard the whole unpersisted wave and exit non-zero before any Step 3c write; do not persist otherwise valid peers.
   A missing non-auth payload becomes that authoritative slot's complete `failed` result: `duration_seconds=null`, `changed_files=[]`, `candidate_results=[]`, `missing=[]`, `reason=null`, and `error="subagent crashed without returning a payload"`.
 
@@ -238,9 +238,11 @@ for wave_prs in pending_prs (sorted by mergedAt asc, contiguous chunks of K):
     - Append accepted entries to .knowledge/changesets/batch-YYYY-MM-DD.json
     - Append a progress table row with duration + per-PR detail to .knowledge/reports/batch-YYYY-MM-DD.md
     - Append the result's compact KD_BATCH_PR_META line immediately after its per-PR detail
+    - Run `<knowledge-gate> _changeset-validate .knowledge/changesets/batch-YYYY-MM-DD.json`
     - git add .knowledge/ && git commit -m "kd: PR #<n> processed"
     - git push (creates the branch on first commit; updates Report PR body via Step 4 if it exists)
 
+    A changeset validation failure counts as a Step 3c write failure.
     If a Step 3c write or commit fails, or if `git push` still fails after one retry, abort the batch immediately with a non-zero exit. Never continue to the next PR with dirty files or an unpushed local commit. Do not flip this or any later PR's label.
 
     # 3d. Replace the label set atomically (only after the commit landed)
@@ -593,7 +595,8 @@ This PR contains a **changeset** with new knowledge entry candidates. Entries ar
    - Update domains: "Move `entry-id` to domain `new-domain`"
 2. Post a comment with **`/curate`** to trigger automated processing
 3. Review the updated changeset after curation completes
-4. Merge when satisfied, or run `/curate` again for further changes
+4. Confirm the `validate-changeset` check passes
+5. Merge when satisfied, or run `/curate` again for further changes
 
 **What `/curate` does:**
 - Rejected entries are marked as `rejected` in the changeset (excluded from vault insertion)

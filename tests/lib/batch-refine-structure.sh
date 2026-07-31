@@ -37,6 +37,13 @@ prepare_wave_results() {
         )
       )
       and has("alternative")
+      and (
+        if .type == "anti-pattern" then
+          (.alternative | nonempty_string)
+        else
+          true
+        end
+      )
       and (.considerations | nonempty_string);
     def complete_verdict:
       type == "object"

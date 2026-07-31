@@ -2,10 +2,58 @@ name: Knowledge Distillery — Apply Changeset
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
     branches: [main, master]
 
 jobs:
+  validate-changeset:
+    if: >-
+      github.event.action != 'closed' &&
+      startsWith(github.event.pull_request.head.ref, 'knowledge/batch-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout Knowledge Distillery plugin
+        uses: actions/checkout@v6
+        with:
+          repository: ether-moon/knowledge-distillery
+          ref: main
+          path: .knowledge-distillery-plugin
+
+      - name: Extract batch date from branch name
+        id: validation-batch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ ! "$BRANCH" =~ ^knowledge/batch-([0-9]{4}-[0-9]{2}-[0-9]{2})(-[0-9]+)?$ ]]; then
+            echo "::error::Unexpected branch format: ${BRANCH}"
+            exit 1
+          fi
+          DATE="${BASH_REMATCH[1]}"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate changeset
+        run: |
+          GATE=$(find .knowledge-distillery-plugin -name knowledge-gate -path '*/scripts/*' -type f | head -1)
+          if [ -z "$GATE" ]; then
+            echo "::error::knowledge-gate script not found in plugin checkout"
+            exit 1
+          fi
+          chmod +x "$GATE"
+
+          CHANGESET=".knowledge/changesets/batch-${{ steps.validation-batch.outputs.date }}.json"
+          if [ ! -f "$CHANGESET" ]; then
+            echo "::error::Changeset file not found at ${CHANGESET}"
+            exit 1
+          fi
+
+          "$GATE" _changeset-validate "$CHANGESET"
+
   apply-changeset:
     if: >-
       github.event.pull_request.merged &&

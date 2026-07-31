@@ -27,6 +27,15 @@ assert_not_exists() {
   fi
 }
 
+assert_file_contains() {
+  local path="$1"
+  local needle="$2"
+  local message="$3"
+  if ! grep -Fq -- "$needle" "$path"; then
+    fail "${message}: missing '${needle}' in ${path}"
+  fi
+}
+
 assert_file "${GATE}" "knowledge-gate CLI should be bundled with its skill"
 assert_file "${GATE_SKILL}/assets/schema/vault.sql" "knowledge-gate schema should be bundled as a skill asset"
 assert_not_exists "${ROOT}/plugins/knowledge-distillery/scripts/knowledge-gate" "plugin-root CLI should not be required"
@@ -47,6 +56,23 @@ do
     fail "setup workflow asset should match the dogfood workflow: ${workflow_name}"
   fi
 done
+
+assert_file_contains \
+  "${ROOT}/.github/workflows/apply-changeset.yml" \
+  "validate-changeset:" \
+  "apply workflow should validate Report PR changesets before merge"
+assert_file_contains \
+  "${ROOT}/.github/workflows/apply-changeset.yml" \
+  '_changeset-validate "$CHANGESET"' \
+  "pre-merge workflow job should use the read-only CLI validator"
+assert_file_contains \
+  "${ROOT}/plugins/knowledge-distillery/skills/batch-refine/SKILL.md" \
+  '_changeset-validate' \
+  "batch-refine should validate a changeset before checkpointing it"
+assert_file_contains \
+  "${ROOT}/plugins/knowledge-distillery/skills/curate-report/SKILL.md" \
+  '_changeset-validate' \
+  "curation should validate the updated changeset before committing it"
 
 if [ "$(wc -l < "${GATE_SKILL}/SKILL.md")" -gt 200 ]; then
   fail "knowledge-gate SKILL.md should stay within the progressive-disclosure target"
