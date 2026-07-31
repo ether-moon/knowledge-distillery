@@ -37,6 +37,17 @@ prepare_wave_results() {
         )
       )
       and has("alternative")
+      and (
+        if .type == "anti-pattern" then
+          (
+            .alternative
+            | if type == "string" then gsub("^\\s+|\\s+$"; "") else . end
+            | nonempty_string
+          )
+        else
+          true
+        end
+      )
       and (.considerations | nonempty_string);
     def complete_verdict:
       type == "object"

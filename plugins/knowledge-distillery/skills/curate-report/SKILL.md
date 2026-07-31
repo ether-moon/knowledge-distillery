@@ -99,6 +99,16 @@ jq '(.entries[] | select(.data.id == "<entry-id>") | .data.claim) = "<new claim>
 - If the entry is already rejected: record as "Failed — cannot update rejected entry"
 - If update fails: record as "Failed" with error message
 
+### Step 6.5: Validate the Updated Changeset
+
+Before regenerating the report, updating the PR body, committing, or pushing, run the deterministic validator:
+
+```bash
+<knowledge-gate> _changeset-validate .knowledge/changesets/batch-YYYY-MM-DD.json
+```
+
+If validation fails, abort without regenerating the report, updating the PR body, committing, or pushing. Post an error summary containing the validator output so the invalid accepted entry can be corrected through reviewer feedback. Do not rely on the prior quality-gate verdict after curation has modified candidate data.
+
 ### Step 7: Regenerate Batch Report
 
 After all actions are executed, regenerate `.knowledge/reports/batch-YYYY-MM-DD.md` to reflect the current changeset state.
@@ -187,6 +197,7 @@ To provide feedback, leave comments referencing specific entry IDs and run `/cur
 | No actionable feedback | Post "no changes" comment, exit |
 | Single reject/update fails | Log error, continue with remaining actions, report failure in summary |
 | All actions fail | Post summary with all failures, suggest manual intervention |
+| Updated changeset fails deterministic validation | Abort before PR-body update, commit, or push; post validator errors |
 | git push fails after rebase | Post error comment, output manual instructions |
 | GitHub MCP unavailable | Abort — cannot read comments or post summary without it |
 
@@ -196,6 +207,7 @@ To provide feedback, leave comments referencing specific entry IDs and run `/cur
 - MUST NOT auto-merge the PR
 - MUST NOT modify entries that are not in this batch's whitelist
 - MUST NOT modify vault.db — all changes go to the changeset file
+- MUST validate the updated changeset before updating the PR body, committing, or pushing
 - MUST post a summary comment after each curation run
 - MUST regenerate the report to reflect current changeset state
 - MUST handle partial failures (one failed action does not block others)

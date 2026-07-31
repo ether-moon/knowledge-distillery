@@ -37,7 +37,7 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
-  help|--help|-h|init-db) ;;
+  help|--help|-h|init-db|_changeset-validate) ;;
   *)
     if [ ! -f "$VAULT" ]; then
       echo "Knowledge vault not found at $VAULT" >&2
@@ -744,6 +744,73 @@ add_entry() {
   echo "$id"
 }
 
+validate_pipeline_entries() {
+  local json="$1"
+  local errors
+
+  if ! jq -e 'type == "array"' >/dev/null 2>&1 <<< "$json"; then
+    echo "ERROR: pipeline entries must be a JSON array" >&2
+    return 1
+  fi
+
+  errors=$(jq -r '
+    def trimmed:
+      gsub("^\\s+|\\s+$"; "");
+    def nonblank:
+      if type == "string" then (trimmed | length > 0) else false end;
+    def valid_claim:
+      if type == "string" then ((trimmed | length > 0) and (length <= 200)) else false end;
+    def valid_body:
+      if type == "string" then (contains("## Background") and contains("## Details")) else false end;
+    def valid_string_array:
+      if type == "array" then (length > 0 and all(.[]; nonblank)) else false end;
+    def valid_evidence:
+      if type == "array" then
+        length > 0 and all(
+          .[];
+          if type == "object" then ((.type | nonblank) and (.ref | nonblank)) else false end
+        )
+      else
+        false
+      end;
+    def valid_considerations:
+      if type == "string" then
+        (trimmed) as $value
+        | (($value | length) > 0 and ($value | ascii_downcase) != "none")
+      else
+        false
+      end;
+    to_entries[]
+    | .key as $index
+    | .value as $entry
+    | if ($entry | type) != "object" then
+        "ERROR: entry at index \($index) must be an object"
+      else
+        ($entry.id | if nonblank then . else "index \($index)" end) as $id
+        | [
+            if ($entry.id | nonblank) then empty else "ERROR: entry at index \($index) has empty id" end,
+            if ($entry.type == "fact" or $entry.type == "anti-pattern") then empty else "ERROR: entry \u0027\($id)\u0027 has invalid type" end,
+            if ($entry.title | nonblank) then empty else "ERROR: entry \u0027\($id)\u0027 has empty title" end,
+            if ($entry.claim | valid_claim) then empty else "ERROR: entry \u0027\($id)\u0027 has an empty or over-200-character claim" end,
+            if ($entry.body | valid_body) then empty else "ERROR: entry \u0027\($id)\u0027 body requires ## Background and ## Details sections" end,
+            if ($entry.applies_to.domains | valid_string_array) then empty else "ERROR: entry \u0027\($id)\u0027 has no valid domains" end,
+            if ($entry.evidence | valid_evidence) then empty else "ERROR: entry \u0027\($id)\u0027 has no evidence or contains invalid evidence" end,
+            if ($entry.type == "anti-pattern" and (($entry.alternative | nonblank) | not)) then "ERROR: anti-pattern \u0027\($id)\u0027 requires alternative" else empty end,
+            if ($entry.considerations | valid_considerations) then empty else "ERROR: entry \u0027\($id)\u0027 has invalid considerations" end
+          ]
+        | .[]
+      end
+  ' <<< "$json") || {
+    echo "ERROR: failed to validate pipeline entries" >&2
+    return 1
+  }
+
+  if [ -n "$errors" ]; then
+    printf '%s\n' "$errors" >&2
+    return 1
+  fi
+}
+
 pipeline_insert() {
   local _allow_bypass="${1:-0}"
   assert_not_batch_branch "$_allow_bypass" || return 1
@@ -758,6 +825,8 @@ pipeline_insert() {
     echo "Inserted 0 entries"
     return 0
   fi
+
+  validate_pipeline_entries "$json" || return 1
 
   local sql="PRAGMA foreign_keys = ON; BEGIN;"
 
@@ -1011,11 +1080,16 @@ pipeline_update() {
   echo "Updated ${entry_id}"
 }
 
-changeset_apply() {
+changeset_validate() {
   local changeset_file="$1"
 
   if [ ! -f "$changeset_file" ]; then
     echo "ERROR: Changeset file not found: ${changeset_file}" >&2
+    return 1
+  fi
+
+  if ! jq -e . "$changeset_file" >/dev/null 2>&1; then
+    echo "ERROR: Changeset is not valid JSON: ${changeset_file}" >&2
     return 1
   fi
 
@@ -1025,6 +1099,38 @@ changeset_apply() {
     echo "ERROR: Unsupported or missing changeset version (expected 1, got '${version}')" >&2
     return 1
   fi
+
+  if ! jq -e '.entries | type == "array"' "$changeset_file" >/dev/null 2>&1; then
+    echo "ERROR: Changeset entries must be an array" >&2
+    return 1
+  fi
+
+  local invalid_statuses
+  invalid_statuses=$(jq -r '
+    .entries
+    | to_entries[]
+    | select(.value.status != "accepted" and .value.status != "rejected")
+    | "ERROR: changeset entry at index \(.key) has invalid status"
+  ' "$changeset_file")
+  if [ -n "$invalid_statuses" ]; then
+    printf '%s\n' "$invalid_statuses" >&2
+    return 1
+  fi
+
+  local accepted
+  accepted=$(jq -c '[.entries[] | select(.status == "accepted") | .data]' "$changeset_file")
+
+  local count
+  count=$(echo "$accepted" | jq 'length')
+
+  validate_pipeline_entries "$accepted" || return 1
+  echo "Validated ${count} accepted entries"
+}
+
+changeset_apply() {
+  local changeset_file="$1"
+
+  changeset_validate "$changeset_file" || return 1
 
   local accepted
   accepted=$(jq -c '[.entries[] | select(.status == "accepted") | .data]' "$changeset_file")
@@ -1581,6 +1687,10 @@ case "$CMD" in
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate _pipeline-update <id> (reads JSON from stdin)" >&2; exit 1; }
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _pipeline-update" >&2; exit 1; }
     pipeline_update "$@" ;;
+  _changeset-validate)
+    [ $# -ge 1 ] || { echo "Usage: knowledge-gate _changeset-validate <changeset-file>" >&2; exit 1; }
+    command -v jq &>/dev/null || { echo "ERROR: jq is required for _changeset-validate" >&2; exit 1; }
+    changeset_validate "$1" ;;
   _changeset-apply)
     [ $# -ge 1 ] || { echo "Usage: knowledge-gate _changeset-apply <changeset-file>" >&2; exit 1; }
     command -v jq &>/dev/null || { echo "ERROR: jq is required for _changeset-apply" >&2; exit 1; }
@@ -1632,6 +1742,7 @@ case "$CMD" in
     echo "  _pipeline-insert              Bulk insert from JSON stdin (pipeline only)"
     echo "  _pipeline-archive <id>        Archive an entry with reason (pipeline only)"
     echo "  _pipeline-update <id>         Update entry fields from JSON stdin (pipeline only)"
+    echo "  _changeset-validate <file>    Validate accepted entries without modifying the vault"
     echo ""
     echo "Diagnostics & Maintenance:"
     echo "  init-db [path]                Create a new vault from bundled schema"

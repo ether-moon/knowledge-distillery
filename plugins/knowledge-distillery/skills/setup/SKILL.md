@@ -66,6 +66,8 @@ Create `.github/workflows/`, then copy these bundled assets into it:
 
 Always replace managed workflow files with the current templates. Leave user-visible differences in the git diff.
 
+The managed `apply-changeset.yml` runs a read-only `validate-changeset` job on open Report PRs and applies the same changeset only after merge. Repository branch protection should require `validate-changeset` before Report PRs can merge.
+
 ## 3. Install Agent Hooks
 
 Install hooks for the active host:
