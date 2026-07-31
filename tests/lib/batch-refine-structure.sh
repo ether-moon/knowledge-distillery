@@ -39,7 +39,11 @@ prepare_wave_results() {
       and has("alternative")
       and (
         if .type == "anti-pattern" then
-          (.alternative | nonempty_string)
+          (
+            .alternative
+            | if type == "string" then gsub("^\\s+|\\s+$"; "") else . end
+            | nonempty_string
+          )
         else
           true
         end

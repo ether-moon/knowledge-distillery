@@ -105,6 +105,17 @@ if prepare_wave_results "${INVALID_R3_WAVE_FIXTURE}" >/dev/null 2>&1; then
   fail "an anti-pattern without an alternative must abort before changeset persistence"
 fi
 
+INVALID_R3_WHITESPACE_WAVE_FIXTURE="${TMP_DIR}/input-wave-invalid-r3-whitespace.json"
+jq '
+  (.results[]
+    | select(.outcome == "processed")
+    | .candidate_results[0].candidate
+  ) |= (.type = "anti-pattern" | .alternative = " \t ")
+' "${PAYLOAD_WAVE_FIXTURE}" > "${INVALID_R3_WHITESPACE_WAVE_FIXTURE}"
+if prepare_wave_results "${INVALID_R3_WHITESPACE_WAVE_FIXTURE}" >/dev/null 2>&1; then
+  fail "an anti-pattern with a whitespace-only alternative must abort before changeset persistence"
+fi
+
 assert_eq \
   '{"slot":1,"pr_number":1302,"outcome":"github_auth","duration_seconds":12,"changed_files":[],"candidate_results":[],"missing":["github_auth"],"reason":"Required GitHub baseline is unavailable","error":null}' \
   "$(jq -c '.results[] | select(.outcome == "github_auth")' "${AUTH_WAVE_FIXTURE}")" \
