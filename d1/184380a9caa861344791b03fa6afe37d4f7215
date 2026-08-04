@@ -1,0 +1,20 @@
+## Decisions Made
+- L1을 docs·i18n 패턴/가드의 단일 소스로 삼고 L2는 참조: L1 R5/R6가 결정론으로 명확 케이스를 먼저 skip하므로 L2의 중복 리스트를 제거해도 동작 불변이며 drift 위험만 사라짐.
+
+## Problems Encountered
+- CodeRabbit이 L1(R5/R6)과 L2 docs-only 기준의 키워드·경로 중복(sync 이탈 위험)을 지적 → L2를 L1 참조로 변경해 해결.
+
+## Constraints Identified
+- L1(결정론)과 L2(LLM)의 docs·i18n 기준은 반드시 일치해야 분류 일관성이 유지됨 — 단일 소스화로 계약을 문서 구조에 반영.
+
+## Open Questions
+- None
+
+## Context
+shipping-pr 사이클 중 CodeRabbit의 trivial nitpick(패턴 중복) 반영. mark-evidence/SKILL.md의 L2 decision guide에서 docs-only/i18n 키워드·경로 재기술을 제거하고 L1 R5/R6 블록 참조로 대체. 동작 불변, bash tests/all.sh 전체 통과.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

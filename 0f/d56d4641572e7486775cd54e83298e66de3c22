@@ -1,0 +1,20 @@
+## Decisions Made
+- Heredoc 템플릿에서 optional 섹션을 분리: 코어 4필드만 heredoc에 표시하고, optional 섹션은 별도 문서 블록으로 분리. CodeRabbit 리뷰 피드백 반영
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+PR #37에 대한 CodeRabbit 리뷰에서 heredoc에 optional 섹션이 pre-filled로 보이면 생략해야 할 때도 포함하기 쉽다는 피드백. 코어 템플릿과 optional 블록을 분리하여 해결.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

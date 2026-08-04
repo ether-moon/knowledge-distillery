@@ -1,0 +1,23 @@
+## Decisions Made
+- Added --allowedTools to init workflow templates (mark-evidence, batch-refine)
+- Added doctor checks for --allowedTools presence in workflows
+
+## Problems Encountered
+- Adopting project (hoian-webapp) had 12 permission denials in CI because claude-code-action had no tool allowlist
+- Root cause: init SKILL.md templates missing --allowedTools in claude_args
+
+## Constraints Identified
+- claude-code-action requires explicit --allowedTools for CI — no interactive approval available
+
+## Open Questions
+- (none)
+
+## Context
+- Investigated CI failure log from hoian-webapp PR #18414 merge
+- The actual repo workflows had been manually patched but templates were never updated
+
+## Recorded Decisions
+- (none)
+
+## Vault Entries Referenced
+- (none)

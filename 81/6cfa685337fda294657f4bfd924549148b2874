@@ -1,0 +1,20 @@
+## Decisions Made
+- Add detection-only checks to doctor (not auto-fix): Doctor stays read-only diagnostic, reports issues with actionable messages for users to fix manually or via LLM
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- init skips existing files (idempotent): Cannot re-run init to update existing projects, doctor must fill the gap
+
+## Open Questions
+- None
+
+## Context
+Added 3 new checks to knowledge-gate doctor: tmp/ in gitignore, BASH_REMATCH date extraction in apply-changeset, and batch artifact cleanup step presence. All checks follow existing pass/fail pattern. Enables detection of outdated configurations in projects initialized before the vault-usage-tracking changes.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

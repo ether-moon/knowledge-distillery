@@ -1,0 +1,25 @@
+## Decisions Made
+- Error Handling 일관성: 시간 예산 도달 행도 Post-budget completion gate를 첫 단계로 지정해 본문의 zero-pending 및 pending-remains 분기와 동일한 순서를 사용한다.
+- 원자적 보고서 교체: curation 결과는 보고서와 같은 디렉터리의 destination 임시 파일에 진행 이력과 모든 metadata까지 완성한 뒤 단 한 번의 mv로 교체한다.
+- 실패 정리: render 함수는 subshell EXIT trap으로 모든 임시 파일을 정리하고 최종 mv 전 오류에서는 기존 보고서를 그대로 둔다.
+
+## Problems Encountered
+- Stale error contract: Error Handling 표가 새 completion gate를 우회해 직접 handoff하도록 안내하던 문구를 정확한 두 분기 설명으로 교체했다.
+- 비원자적 metadata 복원: 기존 구현은 보고서를 먼저 교체한 뒤 marker를 append해 중간 실패 시 marker 없는 보고서가 노출될 수 있었고, append 대상을 destination으로 옮겨 해결했다.
+
+## Constraints Identified
+- 파일시스템 원자성: 최종 mv가 원자적이려면 destination 임시 파일이 보고서와 같은 디렉터리 및 파일시스템에 있어야 한다.
+- 기존 상태 보존: 최종 교체 전 어떤 명령이 실패해도 원본 report bytes가 변하지 않아야 한다.
+- 임시 산출물 위생: 실패와 성공 모두에서 `.knowledge/reports/` 아래 임시 파일이 남으면 후속 git add에 섞일 수 있으므로 반드시 정리해야 한다.
+
+## Open Questions
+- None
+
+## Context
+Task 3 리뷰에서 발견된 두 Important 항목을 보완했다. batch-refine의 Error Handling 계약을 completion gate 순서와 맞추고, curate-report 구조 helper를 same-directory destination과 single-mv 방식으로 바꿨으며 실패 주입 테스트로 원본 보존과 임시 파일 정리를 확인했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

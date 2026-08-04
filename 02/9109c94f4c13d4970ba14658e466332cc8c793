@@ -1,0 +1,20 @@
+## Decisions Made
+- None
+
+## Problems Encountered
+- apply-changeset workflow fails with "cannot pull with rebase: uncommitted changes": git rm stages removals in the index, but git pull --rebase ran before git commit, so rebase refused to proceed. Fixed by swapping the order.
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Fixed a one-line ordering bug in `.github/workflows/apply-changeset.yml`. The cleanup step ran `git rm` then `git pull --rebase` before `git commit`, which fails because rebase refuses uncommitted index changes. Swapped commit before rebase.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

@@ -1,0 +1,24 @@
+## Decisions Made
+- Report entries grouped by PR author then PR number: Improves scannability by letting reviewers find their own contributions quickly
+- List format over table for entries: Tables were hard to read with long IDs and descriptions; lists with `[type] id — description` pattern are more readable
+- Report language inferred from agent directives: Eliminates need for explicit language config in workflow files; agent directives already reveal the team language
+- Removed Source PR Details section: Redundant with the author-grouped accepted entries which already show PR numbers
+
+## Problems Encountered
+- English/Korean mixing in reports: Root cause was no language specification in template; agent translated headers but entry data stayed in source PR language. Resolved by adding language inference instruction.
+- Multiple format iterations (flat list, table, nested list): User iterated through several formats before settling on author-grouped lists with bracketed type prefix. Resolved through iterative feedback.
+
+## Constraints Identified
+- curate-report parses entry IDs from PR body: Format changes to accepted entries must keep backtick-quoted IDs parseable by the curate-report skill
+
+## Open Questions
+- None
+
+## Context
+Improved the batch-refine report PR format for better readability. Changed accepted entries and rejected candidates from flat tables to author-grouped lists with human-readable descriptions. Added language inference from project directives. Updated both batch-refine and curate-report SKILL.md templates, and applied the new format to a live PR (karrot-emu/hoian-webapp#18614).
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

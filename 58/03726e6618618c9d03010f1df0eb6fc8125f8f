@@ -1,0 +1,24 @@
+## Decisions Made
+- Decision record format을 v2로 확장: `Alternatives considered`와 `Supersedes` 두 optional 필드 추가. 3/3 피어 LLM이 Alternatives 추가에 합의했고, Supersedes는 결정 간 모순 축적 방지를 위해 채택
+- CIR(Change Intent Records)은 별도 체계로 도입하지 않음: memento 시스템이 이미 세션 의도를 커버하며, 세 번째 포맷 추가는 복잡성만 증가
+- Pre-implementation 결정 기록은 현 단계에서 불채택: 디자인 철학 §3 "미완료 정보 불신" 원칙과 충돌
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- Alternatives 필드에서 자명하게 열등한 대안(padding)은 Q2에서 residual value로 인정되지 않음 — 기존 quality-gate R7 정책과 일관성 유지 필요
+- Supersedes는 `.knowledge/decisions/`에 실제 파일이 존재할 때만 사용 가능
+
+## Open Questions
+- Supersedes 링크가 있을 때 vault entry 자동 아카이브 트리거를 파이프라인에 추가할지 여부 (현재는 수동 큐레이션)
+- Status 필드(proposed/accepted/deprecated) 도입 여부 — Codex 찬성 vs Claude 반대 (vault와 이중 상태 우려)
+
+## Context
+GitHub Engineering의 ADR 블로그와 Bryan Liles의 CIR 블로그를 기반으로 Gemini, Codex, Claude 3개 피어 LLM에 전략적 분석을 의뢰. 합의된 2가지 개선안(Alternatives, Supersedes)을 record-decision SKILL.md에 반영. 파이프라인과 vault schema는 변경 불필요 — evidence 품질 개선만으로 추출 품질이 자연스럽게 향상.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

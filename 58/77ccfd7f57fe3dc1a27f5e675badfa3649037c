@@ -1,0 +1,17 @@
+## Decisions Made
+- Apply 4 of 7 CodeRabbit findings to the init template: shell injection fix, actor restriction, .mcp.json gitignore, and tightened naming conventions were all applicable to the source template
+- Skip 3 findings (version pinning, memento on bot commits, settings allowlist alignment): accepted the PR author's rationale — same-org trust boundary, CI-only context, and intentional design choice respectively
+- Fix both init template (SKILL.md) and deployed workflows simultaneously: ensures the source of truth and live instances stay in sync
+
+## Problems Encountered
+- The skill-set#11 PR auto-fixed only the deployed copy, leaving the source template (init/SKILL.md) still vulnerable: resolved by backporting all 4 fixes to the template
+
+## Constraints Identified
+- Branch name regex `^knowledge/batch-YYYY-MM-DD(-N)?$` must match the format used by batch-refine skill: the apply-changeset validation and batch-refine naming conventions must stay aligned
+- `fromJSON('["OWNER","MEMBER","COLLABORATOR"]')` is the GitHub Actions idiom for array membership checks in `if:` expressions
+
+## Open Questions
+- Whether to pin plugin checkout and claude-code-action to specific SHAs (skipped for now as same-org trust boundary, but worth revisiting for public adoption)
+
+## Context
+Reviewed CodeRabbit security findings from ether-moon/skill-set#11 (Knowledge Distillery init PR). Identified 4 actionable issues in the workflow templates, applied fixes to both the init template source (plugins/knowledge-distillery/skills/init/SKILL.md) and the deployed workflows (.github/workflows/). Key files: apply-changeset.yml, curate-report.yml, batch-refine.yml, .gitignore, init/SKILL.md.

@@ -1,0 +1,21 @@
+## Decisions Made
+- LLM fallback over strict-only parsing: 비표준 manifest 형식을 가진 PR들이 batch-refine에서 insufficient로 처리되는 문제를 해결하기 위해, collect-evidence에 deterministic 파싱 실패 시 LLM 기반 fallback 경로를 추가하기로 결정. mark-evidence 수정보다 collect-evidence 방어를 우선.
+- 3단계 분리 구조 (1a/1b/1c): strict parsing을 preferred로 유지하면서 fallback을 별도 서브스텝으로 분리하여 명확성 확보.
+
+## Problems Encountered
+- 4개 외부 PR에서 mark-evidence가 spec과 다른 형식으로 manifest를 작성 (prose/EVD-001/E1-E6 형식): LLM skill의 특성상 format compliance가 보장되지 않아 발생. collect-evidence 측에서 방어적으로 대응.
+
+## Constraints Identified
+- mark-evidence는 LLM skill이므로 출력 형식 compliance를 100% 보장할 수 없음: 파서 측에서 유연하게 대응해야 함.
+
+## Open Questions
+- mark-evidence skill 자체의 format 지시 강화도 병행할지 여부
+
+## Context
+외부 프로젝트에서 batch-refine 실행 시 4개 PR이 manifest 형식 불일치로 insufficient verdict를 받는 문제를 분석하고 수정했다. collect-evidence/SKILL.md의 Step 1을 strict(1a) → LLM fallback(1b) → not found(1c) 3단계로 분리하여, 비표준 형식 manifest도 파싱 가능하도록 개선했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

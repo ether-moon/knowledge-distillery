@@ -1,0 +1,27 @@
+## Decisions Made
+- 작업 위치를 main의 새 구조에 맞춰 Step 8 → Step 4 (Maintain Report PR)로 이동: PR #48의 graceful-handoff 도입으로 Step 8이 사라지고 PR 생성/refresh가 Step 4로 통합됨.
+- Reviewer를 incremental하게 점진 추가: changeset이 per-PR atomic loop에서 누적되므로, PR 생성 시점엔 그때까지의 changeset 기반으로 reviewers 인자 전달, 이후 매 refresh에선 `gh pr edit --add-reviewer`로 새 author 추가.
+- `gh pr edit --add-reviewer`의 idempotent 특성을 활용: 매 refresh마다 full current set을 그대로 전달해도 기존 요청은 no-op으로 처리되므로 "previously-requested" 상태를 별도 추적할 필요 없음.
+- Reviewer 소스를 `changeset.entries[].data.evidence[].ref`로 통일: changeset의 모든 status (accepted/modified/rejected) 엔트리의 source PR 작성자를 포함. Quality-gate에서 100% rejected된 PR은 changeset에 entry 자체가 없으므로 자연 제외.
+- Bot 필터링과 빈 로그인 제외 정책은 그대로 유지.
+- 사용자 요청에 따라 spec/plan 등 superpowers 워크플로우 문서는 commit하지 않음.
+
+## Problems Encountered
+- 기존 브랜치(force-pushed)에서 작업한 Step 8 기반 구현이 main의 새 구조와 충돌: main의 graceful-handoff 변경(PR #48)으로 Step 8 자체가 사라져 strict preservation은 SKILL.md에 내부 모순을 만들었음. main 위에 다시 구현하여 해결.
+
+## Constraints Identified
+- batch-refine SKILL.md는 LLM 실행 procedure 문서: 자동화 단위 테스트 단위가 아니므로 검증은 다음 batch 실제 실행 결과 PR을 직접 확인하는 방식만 가능.
+- main의 atomic per-PR commit + 자가 retrigger 구조: reviewer 로직은 단일 시점이 아닌 incremental refresh 사이클 안에서 동작해야 함.
+- changeset 스키마 변경 회피: 기존 evidence[].ref 필드만 활용해 backward compatible 유지.
+
+## Open Questions
+- Quality-gate에서 100% rejected된 PR(즉 changeset에 entry 0개)의 작성자는 reviewer로 지정되지 않음. 그 케이스에서 author가 자기 PR 평가 결과를 받지 못하는 점을 따로 보완할지는 추후 운영 관찰로 판단 필요.
+
+## Context
+PR #50의 conflict 해소 과정에서 main이 PR #48(graceful-handoff)로 크게 재구조화된 것을 발견. 사용자가 "main 위에 작업한 것으로 가정해서 정리"를 요청하여 브랜치를 origin/main으로 hard-reset하고 reviewer 로직을 새 Step 4 구조에 맞춰 단일 commit으로 재구현. tests/all.sh 23 batch-refine + 9 curate-report scenarios 통과 확인.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

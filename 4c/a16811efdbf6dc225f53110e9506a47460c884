@@ -1,0 +1,30 @@
+## Decisions Made
+- Plan을 10개 task로 분해: knowledge-gate 신규 서브커맨드, mark-evidence Step 1/Layer 1/Layer 2 추가, batch-refine report 두 섹션 추가, triage-backtest.sh L1+L2 구현, 실제 데이터 검증, 통합 PR. 각 task가 독립적으로 commit 가능
+- TDD 적용 범위는 bash 코드 (knowledge-gate, triage-backtest.sh) 만: SKILL.md 변경은 자동 행동 검증 인프라가 없어 수동 invoke + backtest 회귀 측정으로 검증
+- 라벨 ensure 는 각 exit 경로에서 인라인 처리 (기존 Step 9 패턴 일관): Step 0 신설 대신 DRY 위반 감수하고 기존 스타일 유지
+- triage-backtest.sh 는 `--layer1-only` sub-mode 를 두어 stdin JSON 으로 단위 테스트 가능하게 설계: bash regex 패턴 검증을 fixture 의존 없이 수행
+- Layer 2 LLM 호출은 `claude --print` 로 동일 프롬프트 invoke, JSON 한 줄 추출 후 파싱 실패 시 extract fallback
+
+## Problems Encountered
+- knowledge-gate CLI 가 "최근 N개 accepted entry의 source PR 번호" 를 직접 제공하지 않음: → Task 1로 신규 서브커맨드 `recent-accepted-prs` 추가 (.knowledge/ 직접 접근 금지 규칙 준수)
+- SKILL.md 변경의 자동 테스트 인프라 부재: → 각 task에 수동 검증 시나리오(fixture PR 카테고리별)와 backtest 회귀 측정 두 단계로 대체
+- mark-evidence 의 idempotency가 새 라벨 도입으로 복잡해짐: → 5-case 표 로 명시 (Task 2)
+
+## Constraints Identified
+- vault evidence 의 실제 스키마 (컬럼명, JSON 구조)에 따라 Task 1의 SQL 이 조정 필요: plan 상 sketch 코드를 schema/vault.sql 확인 후 수정해야 함
+- Layer 1을 mark-evidence skill 내부에 두는 것은 Claude Code Action 실행 비용을 절약하지 않음: 진짜 절약은 Stage B 진입 차단으로 한정. 후속 GitHub Actions pre-step 승격 path 가 plan Task 10 follow-up에 명시됨
+- triage-backtest.sh 의 full 모드는 `gh auth` + `claude` CLI + vault 가 모두 필요: CI 자동화 대신 수동 실행 (PoC 단계)
+
+## Open Questions
+- vault 의 실제 evidence 스키마 (Task 1 Step 1에서 확인 예정)
+- 첫 backtest 결과가 5% 임계 초과 시 어느 layer 가 주 원인인지 (Task 9에서 분기)
+- `claude --print` 의 stdout 형식이 JSON 한 줄을 정확히 반환하는지 (실제 호출 후 확인)
+
+## Context
+spec 합의 후 brainstorming → writing-plans 흐름의 마지막 단계로 구현 계획을 작성. `docs/plans/2026-05-27-pr-triage-pre-filter-plan.md`. Spec coverage 매핑, placeholder scan, type consistency 자체 검토 완료. 10개 task 각각 file paths, code snippets, 검증 명령, 커밋 메시지까지 포함. 다음은 사용자의 실행 방식 선택(subagent-driven vs inline).
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

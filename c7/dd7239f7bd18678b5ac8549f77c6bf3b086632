@@ -1,0 +1,25 @@
+## Decisions Made
+- Exclude `github_auth` outcomes from persisted report metrics and source details: Auth-dead results are Actions-log-only and must not appear as processed source PRs.
+- Represent zero-spawn runs with an explicit fixture: This locks the exact `N/A (run #N)` Summary contract without inventing wall-clock data.
+- Model a payload-less failed subagent by omitting `duration_seconds`: This verifies the literal `duration unknown` fallback instead of assigning a fabricated duration.
+
+## Problems Encountered
+- The auth sentinel fixture increased Source PRs processed from three to four: Filtering `github_auth` outcomes in the shell/jq renderer resolved the focused RED.
+- Zero-spawn and missing-duration guards passed on their first focused runs: Those branches already existed and are now protected by explicit regression fixtures.
+
+## Constraints Identified
+- Report tests and helpers must remain shell/jq-only: All filtering and assertions use Bash and jq with no Python dependency.
+- Auth-dead payloads cannot be persisted: Their PR number, sentinel duration, metrics, and detail rows must remain absent from the report.
+- The fix commit is limited to reviewer findings: No skill invocation order, progress schema, workflow behavior, or vault data changed.
+
+## Open Questions
+- None
+
+## Context
+This follow-up addresses Task 1 review findings in the batch-refine structure harness. It adds an auth-dead sentinel payload, a zero-spawn fixture, and a payload-less failure guard, then filters auth-dead outcomes from persisted report metrics and details. Focused and full shell test suites passed before commit.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

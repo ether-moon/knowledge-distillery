@@ -1,0 +1,26 @@
+## Decisions Made
+- Step 7 완료 전용 실행: 도메인 요약과 batch reconciliation은 전체 작업이 완료된 런에서만 한 번 실행하고 handoff 런에서는 모두 건너뛴다.
+- 완료 판정 게이트 선행: 시간 예산 도달 후 pending을 Step 7과 Step 8보다 먼저 재조회해, zero-pending과 handoff 분기 모두 Step 8을 정확히 한 번만 실행한다.
+- 보고서 기반 changed-file 상태: 비-auth PR 결과는 compact KD_BATCH_PR_META를 원자적 보고서 커밋에 포함하고, 최종 요약은 누적 마커를 PR과 경로 기준으로 중복 제거해 사용한다.
+- Curation 상태 보존: curate-report는 진행 이력과 메타데이터 마커를 불투명한 텍스트로 snapshot하고 재생성 후 원문 그대로 복원한다.
+
+## Problems Encountered
+- 실행 순서 모순: handoff 내부에서 zero-pending을 완료로 재분류하면 이미 수행한 Step 8을 다시 실행할 수 있었고, 판정 게이트를 Step 7/8 앞으로 이동해 해결했다.
+- Verbatim 공백 회귀: 진행 블록 복원 시 여분의 빈 줄이 추가되어 byte-level 비교가 실패했고, snapshot 자체의 공백만 출력하도록 수정했다.
+
+## Constraints Identified
+- Auth 원자성: github_auth 결과는 시간, 행, KD_BATCH_PR_META 모두 보고서에 남기지 않아야 한다.
+- Append-only 호환성: Report PR은 batch 완료 전에도 curation될 수 있으므로 진행 이력과 hidden metadata가 재생성 과정에서 손실되면 안 된다.
+- 재트리거 중복: insufficient와 failed PR은 다시 처리될 수 있어 최종 changed-path 분석은 pr_number와 path 조합으로 중복 제거해야 한다.
+
+## Open Questions
+- None
+
+## Context
+Task 3은 graceful handoff마다 반복되던 Step 7 도메인 요약을 완료 런으로 미루고, 재트리거 사이 changed-file 상태를 안전하게 전달하도록 batch-refine과 curate-report 계약을 보완했다. 셸 기반 구조 테스트와 orchestration fixture로 marker 정규화, auth 제외, 완료 분기 순서, curation 보존을 검증했으며 전체 테스트를 통과했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

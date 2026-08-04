@@ -1,0 +1,27 @@
+## Decisions Made
+- Prefer a normalized two-call gh fast path for ordinary PRs: It replaces separate GitHub evidence round-trips while preserving raw bodies and commit messages.
+- Treat GitHub collection as transport-atomic: Any non-auth gh failure discards partial output and restarts the complete read through the read-only MCP fallback.
+- Classify blanket HTTP 401/403 and bad credentials as auth-dead before fallback or rate-limit handling: This preserves the existing `github_auth` sentinel and prevents partial evidence from reaching extraction.
+- Reuse normalized comments for Greptile evidence: The result preserves each manifest `review_id` without any additional GitHub call.
+
+## Problems Encountered
+- The new orchestration fixture failed before implementation because the gh fast-path contract was absent: Rewriting Steps 1 and 2 supplied the normalized collection contract.
+- The first GREEN attempt missed a fixture's sentence-case snippet for whole-collection fallback: Splitting the fallback instruction into an explicit imperative resolved the focused failure.
+
+## Constraints Identified
+- `gh pr view` can cap files and commits: Files use changed-file-count comparison and commits use the exactly-100 trigger to select paginated REST fallbacks.
+- Paginated gh API output is page arrays: Every overflow and inline-comment request uses `--slurp` with a flattening projection.
+- Issue comments and inline review comments are distinct sources: The fast path retains `comments` from `gh pr view` and reads `/pulls/<n>/comments` separately.
+- Skill and regression contracts must remain shell/jq-compatible and read-only: No runtime file or GitHub resource writes were introduced.
+
+## Open Questions
+- Does the first live batch propagate `GH_TOKEN` or `GITHUB_TOKEN` into each fresh subagent context? The documented experiment must confirm this before the fast path is considered operationally proven.
+
+## Context
+Task 2 replaces multiple GitHub MCP evidence reads with a normalized gh CLI fast path while retaining an atomic MCP fallback. It adds strict PR context validation, complete file and commit pagination, auth-aware failure handling, and transport-neutral Greptile reuse. The focused orchestration harness and full shell test suite passed before commit.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

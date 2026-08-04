@@ -1,0 +1,22 @@
+## Decisions Made
+- UserPromptSubmit을 knowledge gate 훅 이벤트로 선택 — 새 지시/스코프 변경이 항상 사용자 프롬프트로 시작되므로 계획 전 타이밍에 자연스러움
+- 훅은 리마인드만 반환, 자동 쿼리 아님 — convention-based air gap 철학과 일관
+- per-file 쿼리 대신 per-task 1회 쿼리로 전환 — 매 Edit마다는 과도
+- PreToolUse(Edit) 대신 UserPromptSubmit 선택 — Edit 시점은 이미 계획 완료 후라 늦음, 에이전트가 도메인 단위로 한꺼번에 쿼리하는 게 Context Gate 설계 의도에 부합
+
+## Problems Encountered
+- knowledge-gate SKILL.md의 description과 behavioral rule이 훅 기반 설계와 불일치 — "Must be used", "Always consult", per-file 쿼리 지시가 남아있었음
+- 훅 스크립트에서 sqlite3 미설치 시 카운트=0으로 폴백하여 리마인드가 무응답으로 실패하는 문제
+
+## Constraints Identified
+- 훅의 additionalContext는 에이전트에게 텍스트 리마인드만 전달 가능 — 자동으로 스킬을 로드하거나 쿼리를 실행하는 메커니즘은 없음
+- UserPromptSubmit은 모든 프롬프트에 발동되므로, 비코드 대화에서도 리마인드가 보임 (에이전트가 무시해야 함)
+
+## Open Questions
+- 훅 리마인드의 실제 준수율이 얼마나 될지 — dogfooding으로 검증 필요
+- context compaction 이후 vault 쿼리 결과가 유실될 수 있는지
+
+## Context
+- knowledge-distillery 플러그인의 AI 에이전트 사전 지식 수집 절차 구현 검토에서 출발
+- 설계 철학(convention-based air gap)과 memento 훅 패턴을 참고하여 동일한 패턴으로 구현
+- creating-skills 체크리스트 기반 리뷰를 통해 스킬과 훅 간 불일치 발견 및 수정

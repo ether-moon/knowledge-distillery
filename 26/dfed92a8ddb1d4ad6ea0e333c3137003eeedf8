@@ -1,0 +1,20 @@
+## Decisions Made
+- Use function argument instead of env var for changeset bypass: An env var can be set by any external caller, defeating the guard. A positional argument is only passable by internal callers (changeset_apply -> pipeline_insert -> assert_not_batch_branch).
+
+## Problems Encountered
+- CodeRabbit flagged that _KD_VIA_CHANGESET_APPLY is externally controllable: Resolved by replacing the env var check with a local function parameter passed through the internal call chain.
+
+## Constraints Identified
+- Batch-branch guard bypass must be internal-only: External callers must never be able to skip the guard, so the sentinel mechanism must not be reachable from the process environment.
+
+## Open Questions
+- None
+
+## Context
+Scanned PR #42 for blockers (merge conflicts, CI failures, review comments). No conflicts or CI failures found. CodeRabbit left one actionable review comment about the externally-controllable _KD_VIA_CHANGESET_APPLY env var in assert_not_batch_branch(). Fixed by converting the bypass mechanism from an env var to an internal function argument threaded through pipeline_insert. Tests updated and passing.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

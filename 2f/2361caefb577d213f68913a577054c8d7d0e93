@@ -1,0 +1,23 @@
+## Decisions Made
+- Use per-run unique temp files ($$.$RANDOM) with trap EXIT cleanup instead of fixed /tmp paths: Ensures concurrent agent safety and automatic cleanup on any exit path
+- Use HEAD instead of capturing SHA via $(git log ...): After git commit, HEAD already points to the new commit — no variable capture needed
+- Simplify record-decision to single-line -m flag: The decision: slug message is always single-line, so heredoc + command substitution was unnecessary overhead
+- Simplify notes push failure report to omit reason: The stderr is already visible in Bash output; capturing it into a variable would require command substitution
+
+## Problems Encountered
+- Claude Code security layer blocks $(...) command substitution in Bash tool calls: Resolved by replacing all command substitution with temp files, -F flags, and sequential Bash calls
+
+## Constraints Identified
+- Claude Code Bash tool rejects any command containing $(...) or backtick substitution patterns: All skill templates that generate Bash commands must avoid these patterns entirely
+
+## Open Questions
+- None
+
+## Context
+Session focused on eliminating command substitution patterns from three skill Bash templates (memento-commit, record-decision, bumping-version) that were being blocked by Claude Code's built-in security checks. Each skill was rewritten to use temp files with heredocs and -F flags, verified with end-to-end tests in a throwaway git repo. All three skills now produce identical git results without triggering security prompts.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

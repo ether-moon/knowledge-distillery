@@ -1,0 +1,20 @@
+## Decisions Made
+- Use here-string instead of pipe for changeset_apply invocation: The here-string approach (`<<<`) avoids the pipe subshell entirely, and the inline variable assignment (`VAR=val cmd`) exports the variable into the command's environment, making the fix both minimal and idiomatic.
+
+## Problems Encountered
+- Pipe subshell hiding _KD_VIA_CHANGESET_APPLY from pipeline_insert: CodeRabbit review on PR #39 identified that the pipe on line 1042 creates a subshell, so the variable set on line 1041 is invisible to pipeline_insert. This caused changeset_apply to be blocked by its own batch-branch guard. Resolved by switching to a here-string.
+
+## Constraints Identified
+- Bash pipes create subshells on the right-hand side: Non-exported variables set before a pipe are not visible to commands in the pipe. This is a fundamental bash behavior that must be accounted for when using guard variables with piped commands.
+
+## Open Questions
+- None
+
+## Context
+Scanned PR #39 (fix-manifest-parsing branch) for blockers as part of a PR blocker resolution workflow. No merge conflicts or CI failures were found. One actionable CodeRabbit review comment identified a real bug in changeset_apply where a pipe subshell prevented the bypass flag from reaching pipeline_insert. Fixed by replacing the pipe with a here-string in plugins/knowledge-distillery/scripts/knowledge-gate.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

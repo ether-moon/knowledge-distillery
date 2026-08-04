@@ -1,0 +1,24 @@
+## Decisions Made
+- knowledge-gate 실행 예시를 `<knowledge-gate>` placeholder로 표준화: `$GATE` 같은 셸 변수 예시는 approval 레이어의 expansion 판정을 유발하거나 오해를 만들 수 있으므로 문서에서 직접적인 실행 토큰처럼 보이지 않게 정리했다.
+- 로컬 allowlist에서 `Bash($GATE:*)`를 제거: 잘못된 실행 패턴을 허용 규칙으로 암시하는 항목이어서 유지 가치보다 혼란 비용이 컸다.
+- memento-commit 예시를 stdin heredoc 기반으로 유지하고 계약 테스트를 추가: 셸 확장 회귀가 다시 들어오면 문서 단계에서 바로 감지되도록 했다.
+
+## Problems Encountered
+- 기존 git-memento 개선은 `$(...)` 제거만 다뤘고 `${TMPDIR}`, `$$`, `$RANDOM`, `$GATE` 같은 셸 확장은 그대로 남아 있었다: approval 프롬프트의 실제 원인이 command substitution만이 아님을 재확인했다.
+- prompt contract 테스트 초안이 설명 문장 속 `$RANDOM`, `$GATE`까지 오탐했다: 실행 예시 문자열만 금지하도록 좁혀 해결했다.
+
+## Constraints Identified
+- Claude/Conductor approval 레이어는 command substitution뿐 아니라 일반 셸 확장도 민감하게 볼 수 있다: Bash 예시는 변수 실행을 유도하지 않는 형태로 써야 한다.
+- `<knowledge-gate>`는 문서 placeholder일 뿐 실제 실행 키워드가 아니다: 검증은 구체 경로인 `plugins/knowledge-distillery/scripts/knowledge-gate`로 해야 한다.
+
+## Open Questions
+- PostToolUse memento reminder가 생성하는 추가 커맨드 예시도 더 엄격한 무확장 스타일로 맞출 필요가 있는지 여부.
+
+## Context
+git-memento 커밋 경로에서 approval 프롬프트가 계속 뜨는 원인을 추적해 보니, 이전 수정이 command substitution만 제거했고 일반 셸 확장은 여전히 남아 있었다. memento-commit 예시를 stdin heredoc 방식으로 바꾸고, knowledge-gate 관련 문서와 권한 설정에서 `$GATE` 패턴을 제거해 같은 유형의 오해를 줄였다. prompt-contracts와 knowledge-gate 회귀 테스트를 돌려 문서와 CLI 동작이 유지되는 것도 확인했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None

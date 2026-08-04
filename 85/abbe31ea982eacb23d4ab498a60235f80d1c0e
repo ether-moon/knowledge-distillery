@@ -1,0 +1,22 @@
+## Decisions Made
+- Address all three CodeRabbit review comments in a single commit: the comments are closely related (all about parallel execution semantics) so a single cohesive change is cleaner than separate commits.
+- Set concurrency limit at 10 subagents rather than 5: the SKILL.md targets an AI agent audience that can manage 10 concurrent subagents, and 5 would be overly conservative for typical batch sizes.
+- Reword the mergedAt constraint rather than just appending: the original wording was actively misleading under the parallel model, so a rewrite was needed to avoid confusion.
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- Parallel subagent completion order is non-deterministic: without explicit sorting, changeset entries would appear in arbitrary order, breaking test assertions that expect mergedAt-based ordering.
+
+## Open Questions
+- None
+
+## Context
+Scanned PR #40 for blockers (merge conflicts, CI failures, review comments). No merge conflicts or CI failures were found. Three CodeRabbit review comments addressed concurrency limits, deterministic result ordering, and an ambiguous ordering constraint in the batch-refine SKILL.md. All three were resolved in the same file.
+
+## Recorded Decisions
+- None
+
+## Vault Entries Referenced
+- None

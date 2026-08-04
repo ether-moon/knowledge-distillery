@@ -1,0 +1,31 @@
+## Decisions Made
+- 품질 트레이드오프 방향: recall·지시문·낭비 비용만 공격적으로 줄이고 precision(quality-gate)은 보존 — 오탐(vault 오염)이 미탐(다음 사이클 재추출)보다 비싸기 때문.
+- 모델 티어링 메커니즘: 워크플로우 `claude_args`의 `--model claude-sonnet-5 --effort medium`로 세션 기본을 낮추고, quality-gate만 SKILL.md frontmatter `effort: high`로 상향. `CLAUDE_CODE_SUBAGENT_MODEL`/`CLAUDE_CODE_EFFORT_LEVEL` env는 frontmatter를 clamp하므로 미설정.
+- L1만 확대(L2 미변경): docs-only/i18n-only를 결정론 L1로 승격하되 결정신호 가드(키워드+경로)로 ADR/RFC/policy 문서 보호. L2는 PR #51 튜닝 보존.
+- 프롬프트 트림 보수적 적용: extract-candidates §4d 예시만 12→6 축약, collect-evidence/quality-gate는 precision 코어라 미변경.
+- 커밋 전략: 계획의 6개 대신 단일 통합 커밋(사용자 선택).
+
+## Problems Encountered
+- 한 서브에이전트가 collect+extract+quality-gate를 공유해 스킬별 모델 개별 지정 불가 → quality-gate frontmatter 오버라이드로 gate만 상향해 해결.
+- backtest recall 안전망은 gh 인증 + 실제 claude 호출 필요 → 이 샌드박스 미실행, 인증 세션 과제로 이월.
+
+## Constraints Identified
+- skill-frontmatter effort 오버라이드가 claude-code-action headless 서브에이전트 내부에서 실효되는지 미확정(최고 리스크): 실효 안 되면 gate가 medium으로 조용히 하향 → 정밀도 회귀. CI 스모크 검증 필요, fallback(별도 opus spawn 또는 세션 effort high) 마련.
+- backtest L2 모델 변경은 새 baseline 정의 — 티어 경계 넘어 recall 비교 금지.
+- 낭비 제거는 완료 run에만 metric/reviewer 계산 → max-retry로 영영 미완주 시 reviewer 미등록(허용, correctness-critical 아님).
+
+## Open Questions
+- Sonnet 5/medium에서 extract-candidates 4d 판단 품질 — 오탐 증가 시 batch-refine 세션을 --effort high로.
+- 이 최적화를 기존 PR #51에 얹음(현 상태) vs 별도 PR 분리 — 사용자 확인 여지.
+
+## Context
+리뷰 트랜스크립트를 근거로 KD 파이프라인을 속도·토큰 최적화. mark-evidence(L1)·batch-refine(Step4/7)·quality-gate·extract-candidates·triage-backtest·두 워크플로우·plugin.json/CHANGELOG 수정. L1 확대는 TDD(red→green), lazy-gate는 회귀 시나리오로 가드. bash tests/all.sh 전체 통과(25 시나리오). 구현·검증 완료, 단일 커밋으로 정리.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+- `conservative-extraction-principle` [followed]: extract-candidates 트림 시 보수 추출 원칙 보존.
+- `derivability-two-question-test` [followed]: §4d 축약에서 Q1/Q2 테스트 규칙 보존.
+- `git-history-not-derivability-reject` [followed]: git-history 비-derivability 규칙 문장 보존 확인.
+- `tests-must-be-shell-jq-based` [followed]: 신규 L1 테스트를 shell/jq로 작성.

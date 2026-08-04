@@ -1,0 +1,26 @@
+## Decisions Made
+- recent-accepted-prs는 숫자 PR ref만 반환(비-PR 시드 ref 제외), backtest lookup 노이즈 제거.
+- AGENTS.md .knowledge 규칙을 air-gap 의도로 명확화: vault.db/엔트리 직접 읽기 금지(knowledge-gate 경유), 파이프라인 스킬은 자신이 생성한 changeset/report 파일 read/write 허용.
+- 유효 backtest baseline(2026-05-29, usable) 커밋, 무효 2026-05-28 smoke 파일 삭제.
+
+## Problems Encountered
+- backtest가 degraded로 나온 원인은 L2 fallback이 아니라 시드 엔트리 3건의 비-PR ref(0-agents-md, 0-design-philosophy, 0-dogfooding-discovery)로 인한 gh pr view 조회 실패였음.
+- 필터 수정 후 유효 baseline에서 positive-recall regression 1/10=10%로 5% 임계 초과(PR #24).
+
+## Constraints Identified
+- recent-accepted-prs의 type='pr' evidence ref가 항상 숫자가 아님(부트스트랩 시드 엔트리). PR 조회 전 숫자 필터 필요.
+
+## Open Questions
+- PR #24: test-only로 L2가 skip 판정했으나 실제로는 accepted 엔트리를 생산함. L2 "test-only + 신호 없음 → skip" 규칙이 과도한지, skip 대신 defer로 완화할지 사용자 결정 필요.
+
+## Context
+- PR #51 머지 전 후속 마무리: 세션 한도 해소 후 유효 L2 baseline 확보 + CodeRabbit이 지적한 .knowledge 규칙 모호성 해소.
+
+## Recorded Decisions
+- (없음 — record-decision 트리거 해당 없음)
+
+## Vault Entries Referenced
+- vault-changeset-not-direct-db
+- combine-commit-note-single-shell-call
+- push-notes-ref-after-commit
+- memento-commit-no-glob-staging

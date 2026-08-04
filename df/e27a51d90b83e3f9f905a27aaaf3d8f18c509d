@@ -1,0 +1,16 @@
+## Decisions Made
+- Guard conditions (non-Report-PR branch, bot comment) should result in skip/success, not failure — failure status should be reserved for genuine errors
+
+## Problems Encountered
+- curate-report workflow showed failure for expected guard conditions: bot comment rejection by claude-code-action, and branch prefix mismatch
+- Two separate failure modes required two different fix approaches: job-level `if` for bot filter, step-level output flag for branch check
+
+## Constraints Identified
+- GitHub Actions `issue_comment` event fires on all comments — cannot filter at event level, must handle in job/step conditions
+- `claude-code-action` internally rejects bot actors — must prevent bot comments from reaching the action at all
+
+## Open Questions
+- None
+
+## Context
+Fixed curate-report.yml to properly distinguish expected guard conditions (skip) from real errors (failure). Bot comments now filtered at job-level `if`, and non-Report-PR branch validation uses a skip output flag instead of `core.setFailed()`.

@@ -1,0 +1,20 @@
+## Decisions Made
+- Test fixtures updated to include allowedTools keyword so doctor checks pass
+
+## Problems Encountered
+- CI test-harness failed because empty touch-created workflow fixtures triggered new doctor FAIL checks
+
+## Constraints Identified
+- Doctor pass count assertion must stay in sync with actual check count
+
+## Open Questions
+- (none)
+
+## Context
+- Follow-up to adding --allowedTools doctor checks
+
+## Recorded Decisions
+- (none)
+
+## Vault Entries Referenced
+- (none)

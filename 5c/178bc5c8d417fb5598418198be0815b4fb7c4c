@@ -1,0 +1,29 @@
+## Decisions Made
+- 설치 책임 이전: 영구 setup 스킬 대신 저장소의 LLM 설치 가이드가 기존 초기화와 선택적 스킬 설치를 수행한다.
+- 최소 스킬 집합: 채택 프로젝트에는 knowledge-gate, memento-commit, memento-summary, record-decision만 project 레벨로 설치한다.
+- 링크 중심 온보딩: README에는 상세 절차를 중복하지 않고 docs/agent-installation.md 링크와 에이전트용 요청만 제공한다.
+- 자산 재배치: 설치에 필요한 hook과 workflow 자산은 제거되는 setup 스킬 아래가 아니라 plugin install 디렉터리에 둔다.
+
+## Problems Encountered
+- 분리된 HEAD 상태: shipping 시작 시 브랜치가 없어 ether_karrot/readme-agent-installation 브랜치를 생성해 해결했다.
+- 관리형 Git 러너의 도움말 부재: 관련 workflow 문서를 읽어 input-prepare와 CAS 커밋 절차를 확인했다.
+
+## Constraints Identified
+- 선택적 설치: npx skills add는 현재 저장소에 필요한 네 개 런타임 스킬만 설치해야 하며 파이프라인 전용 스킬은 설치하지 않는다.
+- setup 비영속성: setup 스킬은 채택 프로젝트에 남기지 않고 문서 계약으로 대체해야 한다.
+- 문서 단일 출처: README와 직접 문서 URL 양쪽에서 시작할 수 있지만 전체 설치 계약은 docs/agent-installation.md에만 유지한다.
+- 배포 가능성: 모든 설치 자산과 지침은 다른 저장소에도 적용 가능한 plugin 산출물이어야 한다.
+
+## Open Questions
+- None
+
+## Context
+Knowledge Distillery의 설치 방식을 영구 setup 스킬에서 LLM이 읽고 실행하는 저장소 문서 계약으로 전환했다. README, docs/agent-installation.md, plugin 설치 자산과 관련 스킬 및 테스트를 함께 갱신했다. 전체 테스트와 변경 검증을 통과한 상태로 구현 커밋을 생성했다.
+
+## Recorded Decisions
+- llm-led-selective-installation (fea41c8): LLM이 project 레벨에서 필요한 네 개 스킬만 설치하도록 결정했다.
+- readme-replaces-setup-skill (4f1b681): README가 setup 스킬의 진입점 역할을 대신하도록 결정했다.
+- linked-agent-installation-contract (24f86ff): 상세 절차를 전용 문서로 두고 README와 직접 링크 모두를 지원하도록 결정했다.
+
+## Vault Entries Referenced
+None

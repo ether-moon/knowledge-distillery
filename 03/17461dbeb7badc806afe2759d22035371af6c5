@@ -1,0 +1,14 @@
+## Decisions Made
+- Add apply-changeset.yml fixture with BASH_REMATCH and cleanup markers: Enables testing all 3 new doctor checks, not just tmp/ gitignore
+
+## Problems Encountered
+- CI test-harness failed because doctor expected 9 passed but got 9 passed + 1 failed: The new tmp/ gitignore check failed in the fixture repo which only had .knowledge/tmp/. Resolved by adding tmp/ to fixture .gitignore and apply-changeset.yml fixture, updating expected count to 12.
+
+## Constraints Identified
+- None
+
+## Open Questions
+- None
+
+## Context
+Fixed CI failure on PR #32 caused by new doctor checks added to knowledge-gate. The test fixture in tests/knowledge-gate.sh needed tmp/ in .gitignore and a minimal apply-changeset.yml with BASH_REMATCH/cleanup markers. Expected pass count updated from 9 to 12.

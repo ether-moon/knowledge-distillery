@@ -1,0 +1,21 @@
+## Decisions Made
+- 플러그인 버전을 0.2.1로 패치 범프: 0.2.0 이후 변경이 workflow/skill의 버그 수정 성격이어서 semver상 patch가 적절했다.
+- changelog에는 마지막 범프 이후의 실제 수정 2건만 기록: apply-changeset rebase 안정화와 shell-expansion approval prompt 완화에 집중했다.
+
+## Problems Encountered
+- None
+
+## Constraints Identified
+- 버전 범프 커밋은 기능 커밋과 분리되어야 한다: plugin.json과 CHANGELOG.md만 포함해야 릴리스 기록이 명확하다.
+
+## Open Questions
+- None
+
+## Context
+Knowledge Distillery 플러그인의 다음 패치 릴리스를 위해 버전을 0.2.1로 올리고 changelog 상단에 2026-04-06 항목을 추가했다. 이번 범프에는 마지막 릴리스 이후 누적된 수정 사항 두 건만 반영했고, 별도 버전 범프 커밋으로 분리했다.
+
+## Recorded Decisions
+None
+
+## Vault Entries Referenced
+None
