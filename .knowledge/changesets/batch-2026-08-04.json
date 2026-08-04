@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "batch_date": "2026-08-04",
+  "entries": [
+    {
+      "status": "accepted",
+      "data": {
+        "id": "extra-version-files-machine-readable-value",
+        "type": "anti-pattern",
+        "title": "Extra version files field must be machine-readable, not descriptive prose",
+        "claim": "MUST-NOT use parenthetical explanatory text as the value of the Extra version files policy field; use a machine-readable literal such as `(none)`.",
+        "body": "## Background\nThe bumping-version release-workflow policy reads AGENTS.md's `Extra version files` field literally. When the field held descriptive prose explaining why no extra files were needed (parenthetical text), the portable runner parsed that text as a literal file path and `inspect`/`prepare` failed.\n\n## Details\nSet `Extra version files` to the machine-readable sentinel `(none)` when no additional manifest files are configured. This lets the plugin manifest remain auto-detected by the runner rather than being explicitly (and incorrectly) named. Any explanatory rationale should live outside the field value (e.g., in surrounding prose or commit history), not inside the value the runner parses.\n\n## Rejected Alternatives\nExplanatory parenthetical text describing why the field is empty — this was parsed as a literal path by the runner and broke `inspect`.\n\n## Stop Conditions\nRe-evaluate if the release-workflow runner changes its parsing to tolerate free-text annotations in policy fields.",
+        "alternative": "Use the literal `(none)` (or another machine-readable sentinel documented by the release-workflow runner) when no extra version files are configured.",
+        "considerations": "Applies specifically to the bumping-version/release-workflow policy field format; re-check if the runner's parsing logic changes.",
+        "applies_to": {
+          "domains": ["release-tooling"]
+        },
+        "evidence": [{"type": "pr", "ref": "#57"}, {"type": "memento", "ref": "25253d4"}],
+        "curation": [],
+        "_proposed_domain": [
+          {
+            "name": "release-tooling",
+            "description": "Version-bump and release workflow tooling for this repo: the bumping-version skill installation under .agents/skills/bumping-version, its release-workflow script, skills-lock.json, and the AGENTS.md Versioning policy section.",
+            "suggested_patterns": [".agents/skills/bumping-version/", ".claude/skills/bumping-version", "skills-lock.json"]
+          }
+        ]
+      }
+    }
+  ]
+}
