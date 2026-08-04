@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "bumping-version": {
+      "source": "ether-moon/release-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/bumping-version/SKILL.md",
+      "computedHash": "021aa0c317ac5c39b4b916fb2ac0b133a9e5961978e25af3106da38476a7585a"
+    }
+  }
+}

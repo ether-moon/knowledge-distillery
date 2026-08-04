@@ -1,0 +1,1444 @@
+#!/usr/bin/env bash
+
+set -eu
+set -o pipefail
+
+program_name=${0##*/}
+
+emit_error() {
+  error_code=$1
+  error_message=$2
+  recovery=${3:-}
+  exit_status=${4:-1}
+
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn \
+      --arg code "$error_code" \
+      --arg message "$error_message" \
+      --arg recovery "$recovery" \
+      '{ok:false,error:{code:$code,message:$message,recovery:$recovery}}' >&2
+  else
+    escaped_message=$(printf '%s' "$error_message" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    escaped_recovery=$(printf '%s' "$recovery" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '{"ok":false,"error":{"code":"%s","message":"%s","recovery":"%s"}}\n' \
+      "$error_code" "$escaped_message" "$escaped_recovery" >&2
+  fi
+  exit "$exit_status"
+}
+
+preflight() {
+  for dependency in git gh jq bash; do
+    command -v "$dependency" >/dev/null 2>&1 || \
+      emit_error "MISSING_DEPENDENCY" "Required command is unavailable: $dependency" \
+        "Install $dependency and retry."
+  done
+
+  if ((BASH_VERSINFO[0] < 3 || (BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] < 2))); then
+    emit_error "UNSUPPORTED_BASH" "Bash 3.2 or newer is required." \
+      "Run $program_name with Bash 3.2 or newer."
+  fi
+}
+
+resolve_repo() {
+  requested_repo=$1
+  repo_path=$(git -C "$requested_repo" rev-parse --show-toplevel 2>/dev/null) || \
+    emit_error "NOT_A_REPOSITORY" "Not a Git repository: $requested_repo" \
+      "Pass --repo with a path inside the target repository."
+  printf '%s\n' "$repo_path"
+}
+
+policy_value_from_stream() {
+  policy_key=$1
+  awk -v wanted="$policy_key" '
+    /^##[[:space:]]+/ {
+      heading=tolower($0)
+      in_versioning=(heading ~ /^##[[:space:]]+versioning([[:space:]]|$)/)
+      next
+    }
+    in_versioning {
+      line=$0
+      gsub(/[*`]/, "", line)
+      sub(/^[[:space:]-]*/, "", line)
+      separator=index(line, ":")
+      if (separator > 0) {
+        label=tolower(substr(line, 1, separator - 1))
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", label)
+        target=tolower(wanted)
+        if (label == target) {
+          value=substr(line, separator + 1)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+          print value
+          exit
+        }
+      }
+    }
+  '
+}
+
+policy_value_snapshot() {
+  repo_path=$1
+  snapshot_sha=$2
+  policy_key=$3
+  directive_path=AGENTS.md
+  git -C "$repo_path" cat-file -e "$snapshot_sha:$directive_path" 2>/dev/null || return 1
+  value=$(git -C "$repo_path" show "$snapshot_sha:$directive_path" | policy_value_from_stream "$policy_key")
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  return 1
+}
+
+current_branch_name() {
+  repo_path=$1
+  current_branch=$(git -C "$repo_path" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [[ -n "$current_branch" ]] || \
+    emit_error "BASE_REQUIRED" "Unable to infer a base branch from detached HEAD." \
+      "Pass --base with the target branch."
+  printf '%s\n' "$current_branch"
+}
+
+remote_head_branch() {
+  repo_path=$1
+  remote_output=$(git -C "$repo_path" ls-remote --symref origin HEAD 2>/dev/null || true)
+  remote_head=$(printf '%s\n' "$remote_output" | awk '$1 == "ref:" && $3 == "HEAD" {print $2; exit}')
+  case "$remote_head" in
+    refs/heads/*) printf '%s\n' "${remote_head#refs/heads/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+classify_remote_error() {
+  remote_error=$1
+  case "$remote_error" in
+    *[Aa]uthentication*|*"could not read Username"*|*"Permission denied"*|*"HTTP 401"*|*"HTTP 403"*)
+      printf '%s\n' REMOTE_AUTH_FAILED
+      ;;
+    *) printf '%s\n' REMOTE_QUERY_FAILED ;;
+  esac
+}
+
+resolve_exact_base_sha() {
+  repo_path=$1
+  base_branch=$2
+
+  if git -C "$repo_path" remote get-url origin >/dev/null 2>&1; then
+    if ! remote_line=$(git -C "$repo_path" ls-remote --exit-code origin "refs/heads/$base_branch" 2>&1); then
+      remote_code=$(classify_remote_error "$remote_line")
+      emit_error "$remote_code" "Unable to resolve origin/$base_branch." \
+        "Verify the remote branch and authentication, then retry."
+    fi
+    base_sha=${remote_line%%[[:space:]]*}
+    if ! git -C "$repo_path" fetch --no-tags origin "$base_sha" >/dev/null 2>&1; then
+      emit_error "REMOTE_FETCH_FAILED" "Unable to fetch exact base commit $base_sha from origin/$base_branch." \
+        "Verify remote access and retry."
+    fi
+    git -C "$repo_path" cat-file -e "$base_sha^{commit}" 2>/dev/null || \
+      emit_error "BASE_NOT_FOUND" "Fetched base commit is unavailable: $base_sha" \
+        "Fetch origin/$base_branch and retry."
+    printf '%s\n' "$base_sha"
+  elif git -C "$repo_path" show-ref --verify --quiet "refs/heads/$base_branch"; then
+    git -C "$repo_path" rev-parse "refs/heads/$base_branch"
+  else
+    emit_error "BASE_NOT_FOUND" "Base branch not found: $base_branch" \
+      "Add origin/$base_branch or pass an existing local base with --base."
+  fi
+}
+
+resolve_base_snapshot() {
+  repo_path=$1
+  requested_base=$2
+
+  if [[ -n "$requested_base" ]]; then
+    provisional_base=$requested_base
+  else
+    provisional_base=$(remote_head_branch "$repo_path" 2>/dev/null || true)
+    [[ -n "$provisional_base" ]] || provisional_base=$(current_branch_name "$repo_path")
+  fi
+
+  provisional_sha=$(resolve_exact_base_sha "$repo_path" "$provisional_base")
+  if [[ -n "$requested_base" ]]; then
+    base_branch=$requested_base
+    base_sha=$provisional_sha
+  else
+    configured_base=$(policy_value_snapshot "$repo_path" "$provisional_sha" "Base branch" 2>/dev/null || true)
+    if [[ -n "$configured_base" && "$configured_base" != "$provisional_base" ]]; then
+      base_branch=$configured_base
+      base_sha=$(resolve_exact_base_sha "$repo_path" "$base_branch")
+    else
+      base_branch=$provisional_base
+      base_sha=$provisional_sha
+    fi
+  fi
+
+  jq -cn --arg base "$base_branch" --arg base_sha "$base_sha" \
+    '{base:$base,base_sha:$base_sha}'
+}
+
+manifest_version_stream() {
+  manifest_type=$1
+  case "$manifest_type" in
+    plugin-json|package-json)
+      jq -er '.version | select(type == "string" and length > 0)' 2>/dev/null
+      ;;
+    pyproject-toml|cargo-toml)
+      if [[ "$manifest_type" == pyproject-toml ]]; then toml_kind=pyproject; else toml_kind=cargo; fi
+      awk -v kind="$toml_kind" '
+        /^\[[^]]+\][[:space:]]*$/ {
+          section=$0
+          gsub(/[[:space:]]/, "", section)
+          if (kind == "pyproject") active=(section == "[project]" || section == "[tool.poetry]")
+          else active=(section == "[package]")
+          next
+        }
+        active && /^[[:space:]]*version[[:space:]]*=/ {
+          value=$0
+          sub(/^[^=]*=[[:space:]]*/, "", value)
+          gsub(/^["'\'' ]+|["'\'' ]+$/, "", value)
+          print value
+          exit
+        }
+      '
+      ;;
+    python-init)
+      awk '/^[[:space:]]*__version__[[:space:]]*=/ {value=$0; sub(/^[^=]*=[[:space:]]*/, "", value); gsub(/^["'\'' ]+|["'\'' ]+$/, "", value); print value; exit}'
+      ;;
+    gemspec)
+      awk '/\.version[[:space:]]*=/ {value=$0; sub(/^.*\.version[[:space:]]*=[[:space:]]*/, "", value); sub(/[[:space:]]*#.*/, "", value); gsub(/^["'\'' ]+|["'\'' ]+$/, "", value); print value; exit}'
+      ;;
+    ruby-version)
+      awk '/^[[:space:]]*VERSION[[:space:]]*=/ {value=$0; sub(/^[^=]*=[[:space:]]*/, "", value); sub(/[[:space:]]*#.*/, "", value); gsub(/^["'\'' ]+|["'\'' ]+$/, "", value); print value; exit}'
+      ;;
+    plain-version)
+      awk 'NR == 1 {gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit}'
+      ;;
+    generic-version)
+      awk 'tolower($0) ~ /version/ && $0 ~ /[0-9]+\.[0-9]+\.[0-9]+/ {value=$0; sub(/^.*[Vv][Ee][Rr][Ss][Ii][Oo][Nn][^0-9]*/, "", value); sub(/[^0-9.].*$/, "", value); print value; exit}'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+manifest_version() {
+  manifest_path=$1
+  manifest_type=$2
+  manifest_version_stream "$manifest_type" <"$manifest_path"
+}
+
+manifest_type_for_path() {
+  manifest_path=$1
+  case "$manifest_path" in
+    package.json) printf '%s\n' package-json ;;
+    pyproject.toml) printf '%s\n' pyproject-toml ;;
+    Cargo.toml) printf '%s\n' cargo-toml ;;
+    VERSION|version.txt) printf '%s\n' plain-version ;;
+    .claude-plugin/plugin.json|*/.claude-plugin/plugin.json) printf '%s\n' plugin-json ;;
+    __init__.py|*/__init__.py) printf '%s\n' python-init ;;
+    *.gemspec) printf '%s\n' gemspec ;;
+    lib/*/version.rb) printf '%s\n' ruby-version ;;
+    *) printf '%s\n' generic-version ;;
+  esac
+}
+
+append_manifest_value() {
+  manifests_json=$1
+  relative_path=$2
+  manifest_type=$3
+  version=$4
+  [[ -n "$version" ]] || \
+    emit_error "INVALID_MANIFEST" "Unable to read a version from $relative_path" \
+      "Add a valid semantic version before preparing a release."
+  jq -cn --argjson manifests "$manifests_json" --arg path "$relative_path" \
+    --arg type "$manifest_type" --arg version "$version" \
+    '$manifests + [{path:$path,type:$type,version:$version}]'
+}
+
+manifest_is_listed() {
+  manifests_json=$1
+  relative_path=$2
+  printf '%s' "$manifests_json" | jq -e --arg path "$relative_path" 'any(.[]; .path == $path)' >/dev/null
+}
+
+valid_relative_path() {
+  candidate_path=$1
+  case "$candidate_path" in
+    ''|/*|.git|.git/*|../*|*/../*|*/..|..) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+append_snapshot_manifest() {
+  manifests_json=$1
+  repo_path=$2
+  snapshot_sha=$3
+  relative_path=$4
+  manifest_type=$5
+  content=$(git -C "$repo_path" show "$snapshot_sha:$relative_path" 2>/dev/null) || \
+    emit_error "INVALID_MANIFEST" "Unable to read $relative_path from base snapshot $snapshot_sha." \
+      "Verify the committed base snapshot and retry."
+  version=$(printf '%s\n' "$content" | manifest_version_stream "$manifest_type") || \
+    emit_error "INVALID_MANIFEST" "Unable to read a version from $relative_path" \
+      "Add a valid semantic version before preparing a release."
+  append_manifest_value "$manifests_json" "$relative_path" "$manifest_type" "$version"
+}
+
+parse_policy_list() {
+  raw_value=$1
+  case "$raw_value" in
+    ''|'(none)'|'none'|'None') printf '%s\n' '[]'; return ;;
+  esac
+  printf '%s\n' "$raw_value" | awk -F, '{for (item_index=1; item_index<=NF; item_index++) {value=$item_index; gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); if (value != "") print value}}' | \
+    jq -Rsc 'split("\n") | map(select(length > 0))'
+}
+
+discover_manifests_snapshot() {
+  repo_path=$1
+  snapshot_sha=$2
+  extra_paths=$3
+  manifests='[]'
+
+  while IFS= read -r relative_path; do
+    [[ -n "$relative_path" ]] || continue
+    case "$relative_path" in
+      evals/*|*/evals/*|tests/*|*/tests/*|fixtures/*|*/fixtures/*|node_modules/*|*/node_modules/*) continue ;;
+    esac
+    case "$relative_path" in
+      package.json|pyproject.toml|Cargo.toml|VERSION|version.txt|.claude-plugin/plugin.json|*/.claude-plugin/plugin.json|__init__.py|*/__init__.py|*.gemspec|lib/*/version.rb)
+        manifest_type=$(manifest_type_for_path "$relative_path")
+        manifests=$(append_snapshot_manifest "$manifests" "$repo_path" "$snapshot_sha" "$relative_path" "$manifest_type")
+        ;;
+    esac
+  done < <(git -C "$repo_path" ls-tree -r --name-only "$snapshot_sha" | LC_ALL=C sort)
+
+  while IFS= read -r extra_path; do
+    [[ -n "$extra_path" ]] || continue
+    valid_relative_path "$extra_path" || \
+      emit_error "INVALID_EXTRA_VERSION_PATH" "Unsafe Extra version files path: $extra_path" \
+        "Use repository-relative paths without .git or parent traversal."
+    git -C "$repo_path" cat-file -e "$snapshot_sha:$extra_path" 2>/dev/null || \
+      emit_error "EXTRA_VERSION_FILE_NOT_FOUND" "Extra version file is absent from base snapshot: $extra_path" \
+        "Commit the configured file on the base branch or update Versioning policy."
+    if ! manifest_is_listed "$manifests" "$extra_path"; then
+      manifest_type=$(manifest_type_for_path "$extra_path")
+      manifests=$(append_snapshot_manifest "$manifests" "$repo_path" "$snapshot_sha" "$extra_path" "$manifest_type")
+    fi
+  done < <(printf '%s' "$extra_paths" | jq -r '.[]')
+  printf '%s\n' "$manifests"
+}
+
+recent_commits() {
+  repo_path=$1
+  base_sha=$2
+  current_version=$3
+  commit_message_template=$4
+  commits='[]'
+  expected_release_subject=${commit_message_template//\{version\}/$current_version}
+  last_release=
+  while IFS=$'\t' read -r candidate_sha candidate_subject; do
+    if [[ "$candidate_subject" == "$expected_release_subject" ]]; then
+      last_release=$candidate_sha
+      break
+    fi
+  done < <(git -C "$repo_path" log "$base_sha" --format='%H%x09%s' 2>/dev/null)
+  commit_range=$base_sha
+  [[ -z "$last_release" ]] || commit_range="$last_release..$base_sha"
+  while IFS=$'\t' read -r commit_sha subject; do
+    [[ -n "$commit_sha" ]] || continue
+    commits=$(jq -cn --argjson commits "$commits" --arg sha "$commit_sha" \
+      --arg subject "$subject" '$commits + [{sha:$sha,subject:$subject}]')
+  done < <(git -C "$repo_path" log "$commit_range" --format='%H%x09%s' 2>/dev/null)
+  printf '%s\n' "$commits"
+}
+
+inspect_release() {
+  requested_repo=.
+  requested_base=
+  while (($#)); do
+    case "$1" in
+      --repo) (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--repo requires a value." "Pass --repo PATH."; requested_repo=$2; shift 2 ;;
+      --base) (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--base requires a value." "Pass --base BRANCH."; requested_base=$2; shift 2 ;;
+      *) emit_error "INVALID_ARGUMENT" "Unknown inspect argument: $1" "Use inspect [--repo PATH] [--base BRANCH]." ;;
+    esac
+  done
+
+  repo_path=$(resolve_repo "$requested_repo")
+  snapshot=$(resolve_base_snapshot "$repo_path" "$requested_base")
+  base_branch=$(printf '%s' "$snapshot" | jq -r '.base')
+  base_sha=$(printf '%s' "$snapshot" | jq -r '.base_sha')
+  extra_value=$(policy_value_snapshot "$repo_path" "$base_sha" "Extra version files" 2>/dev/null || true)
+  extra_version_files=$(parse_policy_list "$extra_value")
+  categories_value=$(policy_value_snapshot "$repo_path" "$base_sha" "Changelog categories" 2>/dev/null || true)
+  if [[ -n "$categories_value" ]]; then changelog_categories=$(parse_policy_list "$categories_value"); else changelog_categories='["Added","Improved","Fixed"]'; fi
+  (( $(printf '%s' "$changelog_categories" | jq 'length') > 0 )) || \
+    emit_error "INVALID_CHANGELOG_CATEGORIES" "Changelog categories policy is empty." \
+      "Configure at least one Changelog categories value."
+  commit_message_template=$(policy_value_snapshot "$repo_path" "$base_sha" "Commit message" 2>/dev/null || true)
+  [[ -n "$commit_message_template" ]] || commit_message_template='chore: bump version to {version}'
+  manifests=$(discover_manifests_snapshot "$repo_path" "$base_sha" "$extra_version_files")
+  distinct_versions=$(printf '%s' "$manifests" | jq '[.[].version] | unique | length')
+  if ((distinct_versions == 1)); then
+    consistent=true
+    current_version=$(printf '%s' "$manifests" | jq -r '.[0].version')
+    mismatches='[]'
+  else
+    consistent=false
+    current_version=
+    mismatches=$manifests
+  fi
+  if git -C "$repo_path" cat-file -e "$base_sha:CHANGELOG.md" 2>/dev/null; then
+    changelog_present=true
+    changelog_path=CHANGELOG.md
+  else
+    changelog_present=false
+    changelog_path=
+  fi
+  commits=$(recent_commits "$repo_path" "$base_sha" "$current_version" "$commit_message_template")
+
+  jq -cn --arg repo "$repo_path" --arg base "$base_branch" --arg base_ref "$base_sha" \
+    --arg base_sha "$base_sha" --arg current_version "$current_version" \
+    --arg changelog_path "$changelog_path" --arg commit_message_template "$commit_message_template" \
+    --argjson manifests "$manifests" --argjson mismatches "$mismatches" \
+    --argjson consistent "$consistent" --argjson changelog_present "$changelog_present" \
+    --argjson recent_commits "$commits" --argjson changelog_categories "$changelog_categories" \
+    --argjson extra_version_files "$extra_version_files" \
+    '{ok:true,repo:$repo,base:$base,base_ref:$base_ref,base_sha:$base_sha,
+      manifests:$manifests,consistent:$consistent,
+      current_version:(if $current_version == "" then null else $current_version end),
+      mismatches:$mismatches,
+      changelog:{present:$changelog_present,path:(if $changelog_path == "" then null else $changelog_path end)},
+      policy:{commit_message_template:$commit_message_template,changelog_categories:$changelog_categories,
+        extra_version_files:$extra_version_files},recent_commits:$recent_commits}'
+}
+
+next_version() {
+  current_version=$1
+  release_level=$2
+
+  case "$current_version" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+      emit_error "INVALID_VERSION" "Version is not semantic: $current_version" \
+        "Use a numeric MAJOR.MINOR.PATCH version."
+      ;;
+  esac
+  major=${current_version%%.*}
+  version_remainder=${current_version#*.}
+  [[ "$version_remainder" != "$current_version" ]] || \
+    emit_error "INVALID_VERSION" "Version is not semantic: $current_version" \
+      "Use a numeric MAJOR.MINOR.PATCH version."
+  minor=${version_remainder%%.*}
+  patch=${version_remainder#*.}
+  [[ "$patch" != "$version_remainder" && "$patch" != *.* ]] || \
+    emit_error "INVALID_VERSION" "Version is not semantic: $current_version" \
+      "Use a numeric MAJOR.MINOR.PATCH version."
+  case "$major$minor$patch" in
+    *[!0-9]*)
+      emit_error "INVALID_VERSION" "Version is not semantic: $current_version" \
+        "Use a numeric MAJOR.MINOR.PATCH version."
+      ;;
+  esac
+  for version_part in "$major" "$minor" "$patch"; do
+    case "$version_part" in
+      0) ;;
+      0*)
+        emit_error "INVALID_VERSION" "Version is not semantic: $current_version" \
+          "Use MAJOR.MINOR.PATCH without leading zeroes."
+        ;;
+      *) ;;
+    esac
+  done
+
+  case "$release_level" in
+    patch) patch=$((patch + 1)) ;;
+    minor) minor=$((minor + 1)); patch=0 ;;
+    major) major=$((major + 1)); minor=0; patch=0 ;;
+  esac
+  printf '%s.%s.%s\n' "$major" "$minor" "$patch"
+}
+
+build_changelog_entry() {
+  version=$1
+  release_date=$2
+  inspection=$3
+  categories=$(printf '%s' "$inspection" | jq -c '.policy.changelog_categories')
+  categorized='{}'
+  while IFS= read -r category; do
+    categorized=$(printf '%s' "$categorized" | jq -c --arg category "$category" '. + {($category):[]}')
+  done < <(printf '%s' "$categories" | jq -r '.[]')
+  commit_count=$(printf '%s' "$inspection" | jq '.recent_commits | length')
+  if ((commit_count == 0)); then
+    desired_category=Improved
+    subject='Version manifests updated.'
+    actual_category=$(printf '%s' "$categories" | jq -r --arg desired "$desired_category" \
+      'map(select(ascii_downcase == ($desired | ascii_downcase))) | .[0] // empty')
+    [[ -n "$actual_category" ]] || actual_category=$(printf '%s' "$categories" | jq -r '.[0]')
+    categorized=$(printf '%s' "$categorized" | jq -c --arg category "$actual_category" \
+      --arg subject "$subject" '.[$category] += [$subject]')
+  else
+    while IFS= read -r subject; do
+      case "$subject" in
+        feat:*|feat\(*\):*) desired_category=Added ;;
+        fix:*|fix\(*\):*) desired_category=Fixed ;;
+        *) desired_category=Improved ;;
+      esac
+      actual_category=$(printf '%s' "$categories" | jq -r --arg desired "$desired_category" \
+        'map(select(ascii_downcase == ($desired | ascii_downcase))) | .[0] // empty')
+      [[ -n "$actual_category" ]] || actual_category=$(printf '%s' "$categories" | jq -r '.[0]')
+      categorized=$(printf '%s' "$categorized" | jq -c --arg category "$actual_category" \
+        --arg subject "$subject" '.[$category] += [$subject]')
+    done < <(printf '%s' "$inspection" | jq -r '.recent_commits[].subject')
+  fi
+  entry=$(printf '## [%s] - %s' "$version" "$release_date")
+  while IFS= read -r category; do
+    category_count=$(printf '%s' "$categorized" | jq --arg category "$category" '.[$category] | length')
+    ((category_count > 0)) || continue
+    entry="$entry
+
+### $category
+"
+    while IFS= read -r subject; do
+      entry="$entry
+- $subject"
+    done < <(printf '%s' "$categorized" | jq -r --arg category "$category" '.[$category][]')
+  done < <(printf '%s' "$categories" | jq -r '.[]')
+  printf '%s\n' "$entry"
+}
+
+update_json_version() {
+  manifest_path=$1
+  version=$2
+  temporary_path="$manifest_path.release-workflow.$$"
+  if ! jq --arg version "$version" '.version = $version' "$manifest_path" >"$temporary_path"; then
+    rm -f "$temporary_path"
+    return 1
+  fi
+  chmod --reference="$manifest_path" "$temporary_path" 2>/dev/null || true
+  mv "$temporary_path" "$manifest_path"
+}
+
+update_toml_version() {
+  manifest_path=$1
+  manifest_type=$2
+  version=$3
+  temporary_path="$manifest_path.release-workflow.$$"
+  if ! awk -v kind="$manifest_type" -v version="$version" '
+    /^\[[^]]+\][[:space:]]*$/ {
+      section=$0
+      gsub(/[[:space:]]/, "", section)
+      if (kind == "pyproject-toml") {
+        active=(section == "[project]" || section == "[tool.poetry]")
+      } else {
+        active=(section == "[package]")
+      }
+    }
+    active && !updated && /^[[:space:]]*version[[:space:]]*=/ {
+      match($0, /^[[:space:]]*/)
+      indent=substr($0, RSTART, RLENGTH)
+      print indent "version = \"" version "\""
+      updated=1
+      next
+    }
+    { print }
+    END { if (!updated) exit 42 }
+  ' "$manifest_path" >"$temporary_path"; then
+    rm -f "$temporary_path"
+    return 1
+  fi
+  chmod --reference="$manifest_path" "$temporary_path" 2>/dev/null || true
+  mv "$temporary_path" "$manifest_path"
+}
+
+update_text_version() {
+  manifest_path=$1
+  manifest_type=$2
+  version=$3
+  temporary_path="$manifest_path.release-workflow.$$"
+  if [[ "$manifest_type" == plain-version ]]; then
+    printf '%s\n' "$version" >"$temporary_path" || return 1
+  elif ! awk -v kind="$manifest_type" -v version="$version" '
+    {
+      target=0
+      if (kind == "python-init" && $0 ~ /^[[:space:]]*__version__[[:space:]]*=/) target=1
+      else if (kind == "gemspec" && $0 ~ /\.version[[:space:]]*=/) target=1
+      else if (kind == "ruby-version" && $0 ~ /^[[:space:]]*VERSION[[:space:]]*=/) target=1
+      else if (kind == "generic-version" && tolower($0) ~ /version/ && $0 ~ /[0-9]+\.[0-9]+\.[0-9]+/) target=1
+      if (target && !updated) {
+        sub(/[0-9]+\.[0-9]+\.[0-9]+/, version)
+        updated=1
+      }
+      print
+    }
+    END {if (!updated) exit 42}
+  ' "$manifest_path" >"$temporary_path"; then
+    rm -f "$temporary_path"
+    return 1
+  fi
+  chmod --reference="$manifest_path" "$temporary_path" 2>/dev/null || true
+  mv "$temporary_path" "$manifest_path"
+}
+
+canonical_input_file() {
+  requested_path=$1
+  invocation_dir=$2
+  case "$requested_path" in
+    /*) candidate_path=$requested_path ;;
+    *) candidate_path="$invocation_dir/$requested_path" ;;
+  esac
+
+  symlink_count=0
+  while :; do
+    path_directory=${candidate_path%/*}
+    path_name=${candidate_path##*/}
+    [[ "$path_directory" != "$candidate_path" ]] || path_directory=.
+    canonical_directory=$(cd -P "$path_directory" 2>/dev/null && pwd -P) || return 1
+    candidate_path="$canonical_directory/$path_name"
+    [[ -L "$candidate_path" ]] || break
+    symlink_count=$((symlink_count + 1))
+    ((symlink_count <= 40)) || return 1
+    link_target=$(readlink "$candidate_path") || return 1
+    case "$link_target" in
+      /*) candidate_path=$link_target ;;
+      *) candidate_path="$canonical_directory/$link_target" ;;
+    esac
+  done
+  [[ -f "$candidate_path" ]] || return 1
+  printf '%s\n' "$candidate_path"
+}
+
+preview_input_digest() {
+  repo_path=$1
+  base_sha=$2
+  release_level=$3
+  version=$4
+  release_date=$5
+  inspection=$6
+  changelog_entry=$7
+  commit_message=$8
+  message_path=$9
+  shift 9
+  changelog_path=$1
+  changed_paths=$2
+  digest_payload=$(jq -cnS --arg base_sha "$base_sha" --arg level "$release_level" \
+    --arg version "$version" --arg release_date "$release_date" \
+    --arg changelog_entry "$changelog_entry" --arg commit_message "$commit_message" \
+    --arg message_path "$message_path" --arg changelog_path "$changelog_path" \
+    --argjson manifests "$(printf '%s' "$inspection" | jq -c '.manifests')" \
+    --argjson policy "$(printf '%s' "$inspection" | jq -c '.policy')" \
+    --argjson recent_commits "$(printf '%s' "$inspection" | jq -c '.recent_commits')" \
+    --argjson changed_paths "$changed_paths" \
+    '{base_sha:$base_sha,level:$level,version:$version,release_date:$release_date,
+      manifests:$manifests,policy:$policy,recent_commits:$recent_commits,
+      changelog_entry:$changelog_entry,commit_message:$commit_message,
+      message_path:$message_path,changelog_path:$changelog_path,changed_paths:$changed_paths}')
+  printf '%s' "$digest_payload" | git -C "$repo_path" hash-object --stdin
+}
+
+prepend_changelog_entry() {
+  changelog_path=$1
+  entry_path=$2
+  temporary_path="$changelog_path.release-workflow.$$"
+  if ! awk -v entry_path="$entry_path" '
+    function print_entry(line) {
+      while ((getline line < entry_path) > 0) print line
+      close(entry_path)
+    }
+    !inserted && /^## \[/ {
+      print_entry()
+      print ""
+      inserted=1
+    }
+    { print }
+    END {
+      if (!inserted) {
+        print ""
+        print_entry()
+      }
+    }
+  ' "$changelog_path" >"$temporary_path"; then
+    rm -f "$temporary_path"
+    return 1
+  fi
+  chmod --reference="$changelog_path" "$temporary_path" 2>/dev/null || true
+  mv "$temporary_path" "$changelog_path"
+}
+
+absolute_common_dir() {
+  repo_path=$1
+  common_dir=$(git -C "$repo_path" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common_dir" in
+    /*) printf '%s\n' "$common_dir" ;;
+    *)
+      (cd "$repo_path" && cd "$common_dir" && pwd -P)
+      ;;
+  esac
+}
+
+write_state() {
+  state_file=$1
+  state_json=$2
+  state_directory=${state_file%/*}
+  temporary_state="$state_directory/.state.$$.tmp"
+  if ! (printf '%s\n' "$state_json" >"$temporary_state") 2>/dev/null; then
+    return 1
+  fi
+  if ! mv "$temporary_state" "$state_file" 2>/dev/null; then
+    rm -f "$temporary_state"
+    return 1
+  fi
+}
+
+load_state() {
+  state_file=$1
+  [[ -f "$state_file" ]] || \
+    emit_error "STATE_NOT_FOUND" "Release state file not found: $state_file" \
+      "Pass the state_file returned by prepare."
+  state_json=$(jq -ce '
+    select(.schema_version == 1) |
+    select(.status and .repo and .temp_root and .worktree and .branch and .base and
+      .base_sha and .version and .commit_sha and .changed_paths and (.diff != null))
+  ' "$state_file" 2>/dev/null) || \
+    emit_error "INVALID_STATE" "Release state is missing required schema fields: $state_file" \
+      "Use the unmodified state_file returned by prepare."
+
+  state_repo=$(printf '%s' "$state_json" | jq -r '.repo')
+  state_repo=$(resolve_repo "$state_repo")
+  state_common_dir=$(absolute_common_dir "$state_repo") || \
+    emit_error "INVALID_STATE" "Unable to resolve the repository recorded in release state." \
+      "Use the unmodified state_file returned by prepare."
+  supplied_state_directory=$(cd "${state_file%/*}" 2>/dev/null && pwd -P) || \
+    emit_error "INVALID_STATE" "Unable to resolve the release state directory." \
+      "Use the state_file returned by prepare."
+  expected_state_directory="$state_common_dir/release-workflow/releases"
+  [[ "$supplied_state_directory" == "$expected_state_directory" ]] || \
+    emit_error "UNTRUSTED_STATE_PATH" "Release state is outside the repository's release-state directory." \
+      "Use a state_file under $expected_state_directory."
+  state_branch=$(printf '%s' "$state_json" | jq -r '.branch')
+  case "$state_branch" in
+    release-workflow/release-v*) ;;
+    *)
+      emit_error "INVALID_STATE" "Release state contains an unexpected branch name." \
+        "Use the unmodified state_file returned by prepare."
+      ;;
+  esac
+  git check-ref-format --branch "$state_branch" >/dev/null 2>&1 || \
+    emit_error "INVALID_STATE" "Release state contains an invalid branch name." \
+      "Use the unmodified state_file returned by prepare."
+  state_temp_root=$(printf '%s' "$state_json" | jq -r '.temp_root')
+  state_worktree=$(printf '%s' "$state_json" | jq -r '.worktree')
+  [[ "$state_worktree" == "$state_temp_root/worktree" ]] || \
+    emit_error "INVALID_STATE" "Release worktree is outside its recorded temporary directory." \
+      "Use the unmodified state_file returned by prepare."
+  printf '%s\n' "$state_json"
+}
+
+verify_prepared_checkout() {
+  state_json=$1
+  repo_path=$(printf '%s' "$state_json" | jq -r '.repo')
+  worktree=$(printf '%s' "$state_json" | jq -r '.worktree')
+  branch=$(printf '%s' "$state_json" | jq -r '.branch')
+  commit_sha=$(printf '%s' "$state_json" | jq -r '.commit_sha')
+
+  [[ -d "$worktree" ]] || \
+    emit_error "WORKTREE_NOT_FOUND" "Prepared worktree is missing: $worktree" \
+      "Recover the commit from local branch $branch."
+  actual_root=$(git -C "$worktree" rev-parse --show-toplevel 2>/dev/null) || \
+    emit_error "INVALID_WORKTREE" "Prepared worktree is not a Git checkout: $worktree" \
+      "Recover the commit from local branch $branch."
+  [[ "$actual_root" == "$worktree" ]] || \
+    emit_error "INVALID_WORKTREE" "Prepared worktree path does not match its Git root." \
+      "Recover the commit from local branch $branch."
+  actual_commit=$(git -C "$worktree" rev-parse HEAD 2>/dev/null) || \
+    emit_error "INVALID_WORKTREE" "Unable to read the prepared worktree HEAD." \
+      "Recover the commit from local branch $branch."
+  [[ "$actual_commit" == "$commit_sha" ]] || \
+    emit_error "PREPARED_COMMIT_CHANGED" "Prepared worktree HEAD no longer matches release state." \
+      "Inspect $worktree and preserve local branch $branch."
+  branch_commit=$(git -C "$repo_path" rev-parse "refs/heads/$branch" 2>/dev/null) || \
+    emit_error "PREPARED_BRANCH_MISSING" "Prepared release branch is missing: $branch" \
+      "Inspect $worktree before retrying."
+  [[ "$branch_commit" == "$commit_sha" ]] || \
+    emit_error "PREPARED_BRANCH_CHANGED" "Prepared branch no longer matches release state." \
+      "Inspect local branch $branch and worktree $worktree."
+  [[ -z "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]] || \
+    emit_error "WORKTREE_DIRTY" "Prepared worktree contains uncommitted changes." \
+      "Inspect $worktree; cleanup will not discard changes."
+}
+
+prepare_release() {
+  requested_repo=.
+  requested_base=
+  release_level=
+  dry_run=false
+  message_file=
+  changelog_file=
+  expected_base_sha=
+  expected_input_digest=
+  invocation_dir=$(pwd -P)
+
+  while (($#)); do
+    case "$1" in
+      --repo)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--repo requires a value." "Pass --repo PATH."
+        requested_repo=$2
+        shift 2
+        ;;
+      --base)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--base requires a value." "Pass --base BRANCH."
+        requested_base=$2
+        shift 2
+        ;;
+      --level)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--level requires a value." "Pass patch, minor, or major."
+        release_level=$2
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --message-file)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--message-file requires a value." "Pass --message-file PATH."
+        message_file=$2
+        shift 2
+        ;;
+      --changelog-file)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--changelog-file requires a value." "Pass --changelog-file PATH."
+        changelog_file=$2
+        shift 2
+        ;;
+      --expected-base-sha)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--expected-base-sha requires a value." \
+          "Pass the base_sha returned by the accepted dry-run preview."
+        expected_base_sha=$2
+        shift 2
+        ;;
+      --expected-input-digest)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--expected-input-digest requires a value." \
+          "Pass the input_digest returned by the accepted dry-run preview."
+        expected_input_digest=$2
+        shift 2
+        ;;
+      *)
+        emit_error "INVALID_ARGUMENT" "Unknown prepare argument: $1" \
+          "Use prepare --level patch|minor|major [--repo PATH] [--base BRANCH] [--dry-run] with preview CAS arguments."
+        ;;
+    esac
+  done
+
+  case "$release_level" in
+    patch|minor|major) ;;
+    '')
+      emit_error "LEVEL_REQUIRED" "Release level is required." "Pass --level patch, minor, or major."
+      ;;
+    *)
+      emit_error "INVALID_LEVEL" "Unsupported release level: $release_level" "Pass --level patch, minor, or major."
+      ;;
+  esac
+
+  canonical_message_file=
+  canonical_changelog_file=
+  message_file_content=
+  if [[ -n "$message_file" ]]; then
+    canonical_message_file=$(canonical_input_file "$message_file" "$invocation_dir") || \
+      emit_error "MESSAGE_FILE_NOT_FOUND" "Commit message file not found or cannot be resolved: $message_file" \
+        "Pass a readable file path relative to the caller working directory."
+    message_file_content=$(<"$canonical_message_file")
+  fi
+  if [[ -n "$changelog_file" ]]; then
+    canonical_changelog_file=$(canonical_input_file "$changelog_file" "$invocation_dir") || \
+      emit_error "CHANGELOG_FILE_NOT_FOUND" "Changelog entry file not found or cannot be resolved: $changelog_file" \
+        "Pass a readable file path relative to the caller working directory."
+    changelog_file_content=$(<"$canonical_changelog_file")
+  fi
+
+  if [[ -n "$requested_base" ]]; then
+    inspection=$(inspect_release --repo "$requested_repo" --base "$requested_base")
+  else
+    inspection=$(inspect_release --repo "$requested_repo")
+  fi
+  manifest_count=$(printf '%s' "$inspection" | jq '.manifests | length')
+  ((manifest_count > 0)) || \
+    emit_error "MANIFEST_NOT_FOUND" "No supported version manifest was found." \
+      "Add plugin.json, package.json, pyproject.toml, or Cargo.toml."
+  [[ "$(printf '%s' "$inspection" | jq -r '.consistent')" == true ]] || \
+    emit_error "VERSION_MISMATCH" "Version manifests do not agree." \
+      "Reconcile manifest versions, then run inspect again."
+  [[ "$(printf '%s' "$inspection" | jq -r '.changelog.present')" == true ]] || \
+    emit_error "CHANGELOG_MISSING" "CHANGELOG.md is required for release preparation." \
+      "Create and commit CHANGELOG.md on the base branch, then retry."
+  repo_path=$(printf '%s' "$inspection" | jq -r '.repo')
+  base_branch=$(printf '%s' "$inspection" | jq -r '.base')
+  base_sha=$(printf '%s' "$inspection" | jq -r '.base_sha')
+  current_version=$(printf '%s' "$inspection" | jq -r '.current_version')
+  version=$(next_version "$current_version" "$release_level")
+  release_date=${RELEASE_WORKFLOW_DATE:-$(date -u +%Y-%m-%d)}
+  if [[ -n "$canonical_changelog_file" ]]; then
+    changelog_entry=$changelog_file_content
+    changelog_heading=$(printf '%s\n' "$changelog_entry" | sed -n '1p')
+    case "$changelog_heading" in
+      "## [$version] - "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+      *)
+        emit_error "INVALID_CHANGELOG_ENTRY" \
+          "Changelog entry must begin with ## [$version] - YYYY-MM-DD." \
+          "Correct $canonical_changelog_file and retry."
+        ;;
+    esac
+  else
+    changelog_entry=$(build_changelog_entry "$version" "$release_date" "$inspection")
+  fi
+  changed_paths=$(printf '%s' "$inspection" | jq '.manifests | map(.path) + ["CHANGELOG.md"] | unique')
+  if [[ -n "$canonical_message_file" ]]; then
+    commit_message=$message_file_content
+  else
+    commit_message_template=$(printf '%s' "$inspection" | jq -r '.policy.commit_message_template')
+    commit_message=${commit_message_template//\{version\}/$version}
+  fi
+  input_digest=$(preview_input_digest "$repo_path" "$base_sha" "$release_level" "$version" \
+    "$release_date" "$inspection" "$changelog_entry" "$commit_message" \
+    "$canonical_message_file" "$canonical_changelog_file" "$changed_paths")
+
+  if [[ "$dry_run" == true ]]; then
+    jq -cn \
+      --arg repo "$repo_path" \
+      --arg base "$base_branch" \
+      --arg base_sha "$base_sha" \
+      --arg level "$release_level" \
+      --arg version "$version" \
+      --arg changelog_entry "$changelog_entry" \
+      --arg commit_message "$commit_message" \
+      --arg input_digest "$input_digest" \
+      --arg message_file "$canonical_message_file" \
+      --arg changelog_file "$canonical_changelog_file" \
+      --argjson changelog_categories "$(printf '%s' "$inspection" | jq -c '.policy.changelog_categories')" \
+      --argjson changed_paths "$changed_paths" \
+      '{ok:true,dry_run:true,repo:$repo,base:$base,base_sha:$base_sha,level:$level,
+        version:$version,changed_paths:$changed_paths,changelog_entry:$changelog_entry,
+        changelog_categories:$changelog_categories,commit_message:$commit_message,
+        input_digest:$input_digest,managed_inputs:{message_file:$message_file,changelog_file:$changelog_file},
+        state_file:null,worktree:null,branch:null,commit_sha:null}'
+    return
+  fi
+
+  [[ -n "$expected_base_sha" ]] || \
+    emit_error "EXPECTED_BASE_SHA_REQUIRED" "Release preparation requires the accepted preview base SHA." \
+      "Run prepare --dry-run, review it, and pass --expected-base-sha."
+  [[ -n "$expected_input_digest" ]] || \
+    emit_error "EXPECTED_INPUT_DIGEST_REQUIRED" "Release preparation requires the accepted preview input digest." \
+      "Run prepare --dry-run, review it, and pass --expected-input-digest."
+  [[ "$expected_base_sha" == "$base_sha" ]] || \
+    emit_error "BASE_RACE" "The base SHA changed after the accepted preview." \
+      "Review a new dry-run preview before creating a release worktree."
+  [[ "$expected_input_digest" == "$input_digest" ]] || \
+    emit_error "INPUT_CHANGED" "Release inputs changed after the accepted preview." \
+      "Review a new dry-run preview before creating a release worktree."
+
+  common_dir=$(absolute_common_dir "$repo_path") || \
+    emit_error "STATE_DIRECTORY_FAILED" "Unable to resolve the Git common directory." \
+      "Check repository permissions and retry."
+  state_directory="$common_dir/release-workflow/releases"
+  if ! mkdir -p "$state_directory"; then
+    emit_error "STATE_DIRECTORY_FAILED" "Unable to create release state directory: $state_directory" \
+      "Check repository permissions and retry."
+  fi
+
+  temporary_parent=${TMPDIR:-/tmp}
+  temp_root=$(mktemp -d "$temporary_parent/release-workflow.XXXXXX" 2>/dev/null) || \
+    emit_error "WORKTREE_DIRECTORY_FAILED" "Unable to create a temporary release directory." \
+      "Check temporary-directory permissions and retry."
+  temp_root=$(cd "$temp_root" && pwd -P)
+  case "$temp_root/" in
+    "$repo_path"/*)
+      rm -rf "$temp_root"
+      temp_root=$(mktemp -d "/tmp/release-workflow.XXXXXX" 2>/dev/null) || \
+        emit_error "WORKTREE_DIRECTORY_FAILED" "Unable to create a release directory outside the repository." \
+          "Set TMPDIR to a writable directory outside the repository."
+      temp_root=$(cd "$temp_root" && pwd -P)
+      ;;
+  esac
+
+  timestamp_seed=${RELEASE_WORKFLOW_TIMESTAMP:-$(date -u +%Y%m%d%H%M%S)}
+  case "$timestamp_seed" in
+    ''|*[!0-9]*)
+      emit_error "INVALID_TIMESTAMP" "Release timestamp must contain only digits." \
+        "Unset RELEASE_WORKFLOW_TIMESTAMP or provide a numeric timestamp."
+      ;;
+  esac
+  timestamp=$timestamp_seed
+  collision=0
+  branch="release-workflow/release-v$version-$timestamp"
+  state_file="$state_directory/release-v$version-$timestamp.json"
+  while git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch" || [[ -e "$state_file" ]]; do
+    collision=$((collision + 1))
+    timestamp="$timestamp_seed$collision"
+    branch="release-workflow/release-v$version-$timestamp"
+    state_file="$state_directory/release-v$version-$timestamp.json"
+  done
+  worktree="$temp_root/worktree"
+  command_log="$temp_root/command.log"
+
+  if ! git -C "$repo_path" worktree add -b "$branch" "$worktree" "$base_sha" >"$command_log" 2>&1; then
+    emit_error "WORKTREE_CREATE_FAILED" "Unable to create the isolated release worktree." \
+      "Inspect $command_log. The temporary directory is preserved at $temp_root."
+  fi
+
+  entry_file="$temp_root/changelog-entry.md"
+  printf '%s\n' "$changelog_entry" >"$entry_file"
+  commit_message_file="$temp_root/commit-message.txt"
+  printf '%s\n' "$commit_message" >"$commit_message_file"
+  while IFS=$'\t' read -r manifest_path manifest_type; do
+    [[ -n "$manifest_path" ]] || continue
+    case "$manifest_type" in
+      plugin-json|package-json)
+        update_json_version "$worktree/$manifest_path" "$version" || \
+          emit_error "MANIFEST_UPDATE_FAILED" "Unable to update $manifest_path." \
+            "The worktree and branch are preserved at $worktree and $branch."
+        ;;
+      pyproject-toml|cargo-toml)
+        update_toml_version "$worktree/$manifest_path" "$manifest_type" "$version" || \
+          emit_error "MANIFEST_UPDATE_FAILED" "Unable to update $manifest_path." \
+            "The worktree and branch are preserved at $worktree and $branch."
+        ;;
+      python-init|gemspec|ruby-version|plain-version|generic-version)
+        update_text_version "$worktree/$manifest_path" "$manifest_type" "$version" || \
+          emit_error "MANIFEST_UPDATE_FAILED" "Unable to update $manifest_path." \
+            "The worktree and branch are preserved at $worktree and $branch."
+        ;;
+    esac
+  done < <(printf '%s' "$inspection" | jq -r '.manifests[] | [.path,.type] | @tsv')
+
+  prepend_changelog_entry "$worktree/CHANGELOG.md" "$entry_file" || \
+    emit_error "CHANGELOG_UPDATE_FAILED" "Unable to update CHANGELOG.md." \
+      "The worktree and branch are preserved at $worktree and $branch."
+
+  while IFS=$'\t' read -r manifest_path manifest_type; do
+    [[ -n "$manifest_path" ]] || continue
+    prepared_version=$(manifest_version "$worktree/$manifest_path" "$manifest_type") || \
+      emit_error "VERSION_VERIFY_FAILED" "Unable to verify prepared manifest $manifest_path." \
+        "The worktree and branch are preserved at $worktree and $branch."
+    [[ "$prepared_version" == "$version" ]] || \
+      emit_error "VERSION_VERIFY_FAILED" "Prepared manifest $manifest_path has version $prepared_version, expected $version." \
+        "The worktree and branch are preserved at $worktree and $branch."
+  done < <(printf '%s' "$inspection" | jq -r '.manifests[] | [.path,.type] | @tsv')
+
+  changed_path_args=()
+  while IFS= read -r changed_path; do
+    [[ -n "$changed_path" ]] || continue
+    changed_path_args[${#changed_path_args[@]}]=$changed_path
+  done < <(printf '%s' "$changed_paths" | jq -r '.[]')
+  if ! git -C "$worktree" add -- "${changed_path_args[@]}" >"$command_log" 2>&1; then
+    emit_error "STAGE_FAILED" "Unable to stage the prepared release files." \
+      "The worktree and branch are preserved at $worktree and $branch. Inspect $command_log."
+  fi
+
+  staged_paths=$(git -C "$worktree" diff --cached --name-only | LC_ALL=C sort)
+  expected_paths=$(printf '%s' "$changed_paths" | jq -r '.[]' | LC_ALL=C sort)
+  [[ "$staged_paths" == "$expected_paths" ]] || \
+    emit_error "STAGED_SCOPE_MISMATCH" "The staged release scope differs from the inspected file list." \
+      "The worktree and branch are preserved at $worktree and $branch."
+
+  if ! git -C "$worktree" commit -F "$commit_message_file" >"$command_log" 2>&1; then
+    emit_error "COMMIT_FAILED" "Unable to commit the prepared release." \
+      "The worktree and branch are preserved at $worktree and $branch. Inspect $command_log."
+  fi
+
+  commit_sha=$(git -C "$worktree" rev-parse HEAD 2>/dev/null) || \
+    emit_error "COMMIT_VERIFY_FAILED" "Unable to resolve the prepared commit." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  commit_parent=$(git -C "$worktree" rev-parse "$commit_sha^" 2>/dev/null) || \
+    emit_error "COMMIT_VERIFY_FAILED" "Unable to resolve the prepared commit parent." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  [[ "$commit_parent" == "$base_sha" ]] || \
+    emit_error "COMMIT_BASE_MISMATCH" "Prepared commit is not based on the accepted base SHA." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  committed_paths=$(git -C "$worktree" diff-tree --no-commit-id --name-only -r "$commit_sha" | LC_ALL=C sort)
+  [[ "$committed_paths" == "$expected_paths" ]] || \
+    emit_error "COMMIT_SCOPE_MISMATCH" "A Git hook widened the prepared release commit scope." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  [[ -z "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]] || \
+    emit_error "POST_COMMIT_WORKTREE_DIRTY" "A Git hook left changes after the prepared release commit." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  diff=$(git -C "$worktree" show --format= --binary "$commit_sha" 2>/dev/null) || \
+    emit_error "DIFF_FAILED" "Unable to capture the prepared release diff." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  origin_url=$(git -C "$repo_path" remote get-url origin 2>/dev/null || true)
+
+  state_json=$(jq -cn \
+    --arg repo "$repo_path" \
+    --arg temp_root "$temp_root" \
+    --arg worktree "$worktree" \
+    --arg branch "$branch" \
+    --arg base "$base_branch" \
+    --arg base_sha "$base_sha" \
+    --arg level "$release_level" \
+    --arg version "$version" \
+    --arg commit_sha "$commit_sha" \
+    --arg diff "$diff" \
+    --arg origin_url "$origin_url" \
+    --arg input_digest "$input_digest" \
+    --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --argjson changed_paths "$changed_paths" \
+    '{schema_version:1,status:"prepared",repo:$repo,temp_root:$temp_root,worktree:$worktree,
+      branch:$branch,base:$base,base_sha:$base_sha,level:$level,version:$version,
+      commit_sha:$commit_sha,changed_paths:$changed_paths,diff:$diff,origin_url:$origin_url,
+      input_digest:$input_digest,
+      created_at:$created_at}')
+  if ! write_state "$state_file" "$state_json"; then
+    emit_error "STATE_WRITE_FAILED" "Unable to persist prepared release state." \
+      "The worktree and branch are preserved at $worktree and $branch."
+  fi
+
+  jq -cn \
+    --arg repo "$repo_path" \
+    --arg state_file "$state_file" \
+    --arg worktree "$worktree" \
+    --arg branch "$branch" \
+    --arg base "$base_branch" \
+    --arg base_sha "$base_sha" \
+    --arg version "$version" \
+    --arg commit_sha "$commit_sha" \
+    --arg diff "$diff" \
+    --arg input_digest "$input_digest" \
+    --argjson changed_paths "$changed_paths" \
+    '{ok:true,dry_run:false,status:"prepared",repo:$repo,state_file:$state_file,
+      worktree:$worktree,branch:$branch,base:$base,base_sha:$base_sha,version:$version,
+      commit_sha:$commit_sha,changed_paths:$changed_paths,diff:$diff,input_digest:$input_digest}'
+}
+
+cleanup_release() {
+  state_file=
+  cleanup_mode=
+  dry_run=false
+
+  while (($#)); do
+    case "$1" in
+      --state-file)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--state-file requires a value." "Pass --state-file PATH."
+        state_file=$2
+        shift 2
+        ;;
+      --mode)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--mode requires a value." "Pass success, declined, or failure."
+        cleanup_mode=$2
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      *)
+        emit_error "INVALID_ARGUMENT" "Unknown cleanup argument: $1" \
+          "Use cleanup --state-file PATH --mode success|declined|failure [--dry-run]."
+        ;;
+    esac
+  done
+
+  [[ -n "$state_file" ]] || \
+    emit_error "STATE_REQUIRED" "Release state is required for cleanup." "Pass --state-file PATH."
+  case "$cleanup_mode" in
+    success|declined|failure) ;;
+    '')
+      emit_error "CLEANUP_MODE_REQUIRED" "Cleanup mode is required." "Pass --mode success, declined, or failure."
+      ;;
+    *)
+      emit_error "INVALID_CLEANUP_MODE" "Unsupported cleanup mode: $cleanup_mode" \
+        "Pass --mode success, declined, or failure."
+      ;;
+  esac
+
+  state_json=$(load_state "$state_file")
+  status=$(printf '%s' "$state_json" | jq -r '.status')
+  repo_path=$(printf '%s' "$state_json" | jq -r '.repo')
+  worktree=$(printf '%s' "$state_json" | jq -r '.worktree')
+  branch=$(printf '%s' "$state_json" | jq -r '.branch')
+  commit_sha=$(printf '%s' "$state_json" | jq -r '.commit_sha')
+
+  if [[ "$cleanup_mode" == failure ]]; then
+    jq -cn \
+      --arg state_file "$state_file" \
+      --arg status "$status" \
+      --arg worktree "$worktree" \
+      --arg branch "$branch" \
+      --arg commit_sha "$commit_sha" \
+      --argjson dry_run "$dry_run" \
+      '{ok:true,dry_run:$dry_run,status:$status,cleanup_mode:"failure",preserved:true,
+        state_file:$state_file,worktree:$worktree,branch:$branch,commit_sha:$commit_sha}'
+    return
+  fi
+
+  case "$cleanup_mode:$status" in
+    declined:prepared|declined:declined|success:published|success:success) ;;
+    *)
+      emit_error "INVALID_STATE_TRANSITION" \
+        "Cleanup mode $cleanup_mode is incompatible with state $status." \
+        "Reconcile publication first, then retry the matching cleanup mode."
+      ;;
+  esac
+
+  worktree_present=false
+  if [[ -d "$worktree" ]]; then
+    verify_prepared_checkout "$state_json"
+    worktree_present=true
+  elif git -C "$repo_path" worktree list --porcelain | awk -v wanted="$worktree" \
+    '$1 == "worktree" && substr($0, index($0, " ") + 1) == wanted {found=1} END {exit !found}'; then
+    emit_error "WORKTREE_REGISTRATION_STALE" "Prepared worktree is registered but missing: $worktree" \
+      "Restore or prune the exact worktree registration before retrying cleanup."
+  fi
+
+  branch_present=false
+  current_branch_commit=
+  if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch"; then
+    current_branch_commit=$(git -C "$repo_path" rev-parse "refs/heads/$branch")
+  fi
+  if [[ -n "$current_branch_commit" ]]; then
+    [[ "$current_branch_commit" == "$commit_sha" ]] || \
+      emit_error "PREPARED_BRANCH_CHANGED" "Prepared branch changed during cleanup: $branch" \
+        "The branch is preserved for inspection."
+    branch_present=true
+  elif [[ "$cleanup_mode" == declined ]]; then
+    emit_error "PREPARED_BRANCH_MISSING" "Declined release branch is missing: $branch" \
+      "Recover commit $commit_sha before retrying cleanup."
+  fi
+
+  if [[ "$dry_run" == true ]]; then
+    jq -cn \
+      --arg state_file "$state_file" \
+      --arg status "$cleanup_mode" \
+      --arg worktree "$worktree" \
+      --arg branch "$branch" \
+      --arg commit_sha "$commit_sha" \
+      '{ok:true,dry_run:true,status:$status,state_file:$state_file,worktree:$worktree,
+        branch:$branch,commit_sha:$commit_sha}'
+    return
+  fi
+
+  cleanup_log="$(printf '%s' "$state_json" | jq -r '.temp_root')/cleanup.log"
+  if [[ "$worktree_present" == true ]] && \
+    ! git -C "$repo_path" worktree remove "$worktree" >"$cleanup_log" 2>&1; then
+      emit_error "WORKTREE_REMOVE_FAILED" "Unable to remove prepared worktree: $worktree" \
+        "The worktree and branch are preserved. Inspect $cleanup_log."
+  fi
+
+  if [[ "$cleanup_mode" == success && "$branch_present" == true ]]; then
+    if ! git -C "$repo_path" update-ref -d "refs/heads/$branch" "$commit_sha" >"$cleanup_log" 2>&1; then
+      emit_error "BRANCH_REMOVE_FAILED" "Unable to remove published release branch: $branch" \
+        "The worktree was removed; remove local branch $branch after inspection."
+    fi
+  fi
+
+  cleaned_state=$(printf '%s' "$state_json" | jq -c \
+    --arg status "$cleanup_mode" \
+    --arg cleaned_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '.status=$status | .cleaned_at=$cleaned_at | .worktree_removed=true |
+      .branch_removed=($status == "success")')
+  if ! write_state "$state_file" "$cleaned_state"; then
+    emit_error "STATE_WRITE_FAILED" "Cleanup completed but durable state could not be updated." \
+      "Inspect $state_file. Commit $commit_sha remains recoverable."
+  fi
+
+  jq -cn \
+    --arg state_file "$state_file" \
+    --arg status "$cleanup_mode" \
+    --arg worktree "$worktree" \
+    --arg branch "$branch" \
+    --arg commit_sha "$commit_sha" \
+    --argjson branch_removed "$([[ "$cleanup_mode" == success ]] && printf true || printf false)" \
+    '{ok:true,dry_run:false,status:$status,state_file:$state_file,worktree:$worktree,
+      branch:$branch,commit_sha:$commit_sha,worktree_removed:true,branch_removed:$branch_removed,
+      reconciled:true}'
+}
+
+publish_release() {
+  state_file=
+  expected_commit=
+  approved=false
+  dry_run=false
+
+  while (($#)); do
+    case "$1" in
+      --state-file)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--state-file requires a value." "Pass --state-file PATH."
+        state_file=$2
+        shift 2
+        ;;
+      --expected-commit)
+        (($# >= 2)) || emit_error "INVALID_ARGUMENT" "--expected-commit requires a value." "Pass the commit_sha returned by prepare."
+        expected_commit=$2
+        shift 2
+        ;;
+      --approve)
+        approved=true
+        shift
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      *)
+        emit_error "INVALID_ARGUMENT" "Unknown publish argument: $1" \
+          "Use publish --state-file PATH --expected-commit SHA --approve [--dry-run]."
+        ;;
+    esac
+  done
+
+  [[ -n "$state_file" ]] || \
+    emit_error "STATE_REQUIRED" "Release state is required for publish." "Pass --state-file PATH."
+  [[ -n "$expected_commit" ]] || \
+    emit_error "EXPECTED_COMMIT_REQUIRED" "The expected prepared commit is required." \
+      "Pass --expected-commit with the commit_sha returned by prepare."
+  [[ "$approved" == true ]] || \
+    emit_error "APPROVAL_REQUIRED" "Direct push requires explicit approval." \
+      "Ask the user to approve pushing to origin/base, or run cleanup --mode declined."
+
+  state_json=$(load_state "$state_file")
+  status=$(printf '%s' "$state_json" | jq -r '.status')
+  case "$status" in
+    prepared|published) ;;
+    *)
+      emit_error "INVALID_STATE_TRANSITION" "Publish requires prepared or published state, found $status." \
+        "Inspect $state_file before retrying."
+      ;;
+  esac
+  repo_path=$(printf '%s' "$state_json" | jq -r '.repo')
+  worktree=$(printf '%s' "$state_json" | jq -r '.worktree')
+  branch=$(printf '%s' "$state_json" | jq -r '.branch')
+  base_branch=$(printf '%s' "$state_json" | jq -r '.base')
+  base_sha=$(printf '%s' "$state_json" | jq -r '.base_sha')
+  commit_sha=$(printf '%s' "$state_json" | jq -r '.commit_sha')
+  temp_root=$(printf '%s' "$state_json" | jq -r '.temp_root')
+  publish_log="$temp_root/publish.log"
+
+  [[ "$expected_commit" == "$commit_sha" ]] || \
+    emit_error "EXPECTED_COMMIT_MISMATCH" "Expected commit does not match prepared release state." \
+      "Use commit $commit_sha from $state_file."
+  verify_prepared_checkout "$state_json"
+
+  prepared_origin=$(printf '%s' "$state_json" | jq -r '.origin_url')
+  current_origin=$(git -C "$repo_path" remote get-url origin 2>/dev/null) || \
+    emit_error "ORIGIN_NOT_FOUND" "Remote origin is unavailable." \
+      "Restore origin and keep worktree $worktree and branch $branch for recovery."
+  [[ "$current_origin" == "$prepared_origin" ]] || \
+    emit_error "ORIGIN_CHANGED" "Remote origin changed after release preparation." \
+      "Restore the prepared origin or inspect $state_file before retrying."
+
+  if ! remote_line=$(git -C "$repo_path" ls-remote --exit-code origin "refs/heads/$base_branch" 2>&1); then
+    remote_error=$remote_line
+    case "$remote_error" in
+      *[Aa]uthentication*|*"could not read Username"*|*"Permission denied"*|*"HTTP 401"*|*"HTTP 403"*)
+        remote_code=REMOTE_AUTH_FAILED
+        ;;
+      *)
+        remote_code=REMOTE_QUERY_FAILED
+        ;;
+    esac
+    emit_error "$remote_code" "Unable to verify origin/$base_branch before publish." \
+      "The worktree and branch are preserved at $worktree and $branch. Verify remote access and retry."
+  fi
+  remote_sha=${remote_line%%[[:space:]]*}
+
+  if [[ "$remote_sha" == "$commit_sha" ]]; then
+    if [[ "$dry_run" == true ]]; then
+      jq -cn --arg state_file "$state_file" --arg base "$base_branch" \
+        --arg base_sha "$base_sha" --arg commit_sha "$commit_sha" \
+        --arg worktree "$worktree" --arg branch "$branch" \
+        '{ok:true,dry_run:true,status:"published",approved:true,reconciled:true,
+          state_file:$state_file,base:$base,base_sha:$base_sha,commit_sha:$commit_sha,
+          worktree:$worktree,branch:$branch}'
+      return
+    fi
+    published_state=$(printf '%s' "$state_json" | jq -c \
+      --arg published_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.status="published" | .published_at=(.published_at // $published_at) | .published_sha=.commit_sha')
+    if ! write_state "$state_file" "$published_state"; then
+      emit_error "STATE_WRITE_FAILED" "Remote release is published, but durable state could not be reconciled." \
+        "Commit $commit_sha is on origin/$base_branch; retry publish after restoring state-directory writes."
+    fi
+    jq -cn --arg state_file "$state_file" --arg base "$base_branch" \
+      --arg commit_sha "$commit_sha" --arg worktree "$worktree" --arg branch "$branch" \
+      '{ok:true,dry_run:false,status:"published",reconciled:true,state_file:$state_file,
+        base:$base,commit_sha:$commit_sha,worktree:$worktree,branch:$branch,automatic_pr:false}'
+    return
+  fi
+
+  [[ "$status" == prepared ]] || \
+    emit_error "PUBLISHED_REMOTE_CHANGED" "Published state no longer matches origin/$base_branch." \
+      "Preserve recovery artifacts and inspect the remote branch before continuing."
+  [[ "$remote_sha" == "$base_sha" ]] || \
+    emit_error "BASE_RACE" "origin/$base_branch changed after release preparation." \
+      "The worktree and branch are preserved at $worktree and $branch. Re-inspect the new base before preparing again."
+
+  if [[ "$dry_run" == true ]]; then
+    jq -cn \
+      --arg state_file "$state_file" \
+      --arg base "$base_branch" \
+      --arg base_sha "$base_sha" \
+      --arg commit_sha "$commit_sha" \
+      --arg worktree "$worktree" \
+      --arg branch "$branch" \
+      '{ok:true,dry_run:true,status:"prepared",approved:true,state_file:$state_file,
+        base:$base,base_sha:$base_sha,commit_sha:$commit_sha,worktree:$worktree,branch:$branch}'
+    return
+  fi
+
+  if ! git -C "$worktree" push origin "$commit_sha:refs/heads/$base_branch" >"$publish_log" 2>&1; then
+    push_error=$(cat "$publish_log" 2>/dev/null || true)
+    case "$push_error" in
+      *[Aa]uthentication*|*"could not read Username"*|*"Permission denied"*|*"HTTP 401"*|*"HTTP 403"*)
+        push_code=PUSH_AUTH_FAILED
+        ;;
+      *GH006*|*[Pp]rotected*branch*|*"remote rejected"*|*"hook declined"*)
+        push_code=PUSH_PROTECTED
+        ;;
+      *)
+        push_code=PUSH_FAILED
+        ;;
+    esac
+    emit_error "$push_code" "Direct push to origin/$base_branch failed." \
+      "No PR was created. The worktree and branch are preserved at $worktree and $branch. Inspect $publish_log."
+  fi
+
+  published_state=$(printf '%s' "$state_json" | jq -c \
+    --arg published_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '.status="published" | .published_at=$published_at | .published_sha=.commit_sha')
+  if ! write_state "$state_file" "$published_state"; then
+    emit_error "STATE_WRITE_FAILED" "Release was pushed, but durable state could not be updated." \
+      "Commit $commit_sha is on origin/$base_branch; preserve $worktree and $branch until state is repaired."
+  fi
+
+  jq -cn \
+    --arg state_file "$state_file" \
+    --arg base "$base_branch" \
+    --arg commit_sha "$commit_sha" \
+    --arg worktree "$worktree" \
+    --arg branch "$branch" \
+    '{ok:true,dry_run:false,status:"published",reconciled:false,state_file:$state_file,base:$base,
+      commit_sha:$commit_sha,worktree:$worktree,branch:$branch,automatic_pr:false}'
+}
+
+main() {
+  preflight
+  (($# > 0)) || emit_error "SUBCOMMAND_REQUIRED" "A subcommand is required." \
+    "Use inspect, prepare, publish, or cleanup."
+  subcommand=$1
+  shift
+
+  case "$subcommand" in
+    inspect)
+      inspect_release "$@"
+      ;;
+    prepare)
+      prepare_release "$@"
+      ;;
+    cleanup)
+      cleanup_release "$@"
+      ;;
+    publish)
+      publish_release "$@"
+      ;;
+    *)
+      emit_error "UNKNOWN_SUBCOMMAND" "Unknown subcommand: $subcommand" \
+        "Use inspect, prepare, publish, or cleanup."
+      ;;
+  esac
+}
+
+main "$@"

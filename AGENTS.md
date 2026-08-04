@@ -44,9 +44,9 @@ The current implementation serves as a proof of concept. Do not over-engineer fo
 
 ## Versioning
 
-The `bumping-version` skill (in `skill-set`) reads this section.
+The project-scoped `bumping-version` skill installed from [`release-workflow`](https://github.com/ether-moon/release-workflow) reads this section.
 
 - **Base branch**: main
 - **Commit message**: chore: bump version to {version}
-- **Extra version files**: (none — `plugins/knowledge-distillery/.claude-plugin/plugin.json` is auto-detected)
+- **Extra version files**: (none)
 - **Changelog categories**: Added, Improved, Fixed
