@@ -7,12 +7,12 @@ description: "Commits changes with an auto-generated message and attaches a stru
 
 Commit workflow that creates a normal git commit AND attaches a memento session summary as a git note on `refs/notes/commits`. The downstream pipeline (mark-evidence, collect-evidence, extract-candidates) reads these notes as evidence for knowledge distillation.
 
-Replaces the default commit workflow when the knowledge-distillery plugin is installed.
+Replaces the default commit workflow in Knowledge Distillery-enabled repositories.
 
 ## When to Use
 
 - Any time the user asks to commit, save changes, or invokes a commit action
-- In repositories with the knowledge-distillery plugin installed
+- In repositories configured through the Knowledge Distillery Agent Installation Guide
 
 ## Allowed Tools
 
@@ -201,7 +201,7 @@ The summary MUST follow this exact 7-section markdown structure. All seven secti
 - Do NOT include raw code blocks or sensitive information (API keys, credentials, PII)
 - Focus on decisions, constraints, problems — not step-by-step implementation details
 
-For the complete extraction specification with examples, see `/knowledge-distillery:memento-summary`.
+For the complete extraction specification with examples, use the installed `memento-summary` skill.
 
 ---
 

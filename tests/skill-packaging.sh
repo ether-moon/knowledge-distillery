@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE_SKILL="${ROOT}/plugins/knowledge-distillery/skills/knowledge-gate"
 GATE="${GATE_SKILL}/scripts/knowledge-gate"
-SETUP_SKILL="${ROOT}/plugins/knowledge-distillery/skills/setup"
+INSTALL_ROOT="${ROOT}/plugins/knowledge-distillery/install"
+README="${ROOT}/README.md"
+INSTALL_GUIDE="${ROOT}/docs/agent-installation.md"
 
 fail() {
   echo "FAIL: $1" >&2
@@ -36,11 +38,51 @@ assert_file_contains() {
   fi
 }
 
+assert_file_not_contains() {
+  local path="$1"
+  local needle="$2"
+  local message="$3"
+  if grep -Fq -- "$needle" "$path"; then
+    fail "${message}: unexpectedly found '${needle}' in ${path}"
+  fi
+}
+
 assert_file "${GATE}" "knowledge-gate CLI should be bundled with its skill"
 assert_file "${GATE_SKILL}/assets/schema/vault.sql" "knowledge-gate schema should be bundled as a skill asset"
 assert_not_exists "${ROOT}/plugins/knowledge-distillery/scripts/knowledge-gate" "plugin-root CLI should not be required"
 assert_not_exists "${ROOT}/plugins/knowledge-distillery/schema/vault.sql" "plugin-root schema should not be required"
-assert_not_exists "${ROOT}/plugins/knowledge-distillery/hooks/hooks.json" "plugin hooks should be installed by setup instead of auto-loaded"
+assert_not_exists "${ROOT}/plugins/knowledge-distillery/hooks/hooks.json" "plugin hooks should be installed from README assets instead of auto-loaded"
+assert_not_exists "${ROOT}/plugins/knowledge-distillery/skills/setup/SKILL.md" "README should replace the persistent setup skill"
+assert_not_exists "${ROOT}/plugins/knowledge-distillery/skills/setup/scripts/install-hooks" "README should replace the bootstrap installer"
+assert_file "${INSTALL_GUIDE}" "repository should publish the agent installation contract"
+
+for runtime_skill in knowledge-gate memento-commit memento-summary record-decision
+do
+  assert_file \
+    "${ROOT}/plugins/knowledge-distillery/skills/${runtime_skill}/SKILL.md" \
+    "installation-guide-selected runtime skill should be packaged: ${runtime_skill}"
+done
+
+assert_file_contains \
+  "${README}" \
+  'docs/agent-installation.md' \
+  "README should link the agent installation contract"
+assert_file_not_contains \
+  "${README}" \
+  'npx skills add' \
+  "README should not inline the installation procedure"
+assert_file_contains \
+  "${INSTALL_GUIDE}" \
+  '--skill knowledge-gate --skill memento-commit' \
+  "installation guide should install only the first pair of runtime skills"
+assert_file_contains \
+  "${INSTALL_GUIDE}" \
+  '--skill memento-summary --skill record-decision' \
+  "installation guide should install only the second pair of runtime skills"
+assert_file_contains \
+  "${INSTALL_GUIDE}" \
+  'Do not install `setup`' \
+  "installation guide should replace the setup skill"
 
 for workflow_name in \
   mark-evidence.yml \
@@ -48,12 +90,12 @@ for workflow_name in \
   curate-report.yml \
   apply-changeset.yml
 do
-  assert_file "${SETUP_SKILL}/assets/workflows/${workflow_name}" "setup should bundle ${workflow_name}"
+  assert_file "${INSTALL_ROOT}/workflows/${workflow_name}" "installation assets should include ${workflow_name}"
   if ! cmp -s \
     "${ROOT}/.github/workflows/${workflow_name}" \
-    "${SETUP_SKILL}/assets/workflows/${workflow_name}"
+    "${INSTALL_ROOT}/workflows/${workflow_name}"
   then
-    fail "setup workflow asset should match the dogfood workflow: ${workflow_name}"
+    fail "installation workflow asset should match the dogfood workflow: ${workflow_name}"
   fi
 done
 
@@ -76,10 +118,6 @@ assert_file_contains \
 
 if [ "$(wc -l < "${GATE_SKILL}/SKILL.md")" -gt 200 ]; then
   fail "knowledge-gate SKILL.md should stay within the progressive-disclosure target"
-fi
-
-if [ "$(wc -l < "${SETUP_SKILL}/SKILL.md")" -gt 200 ]; then
-  fail "setup SKILL.md should stay within the progressive-disclosure target"
 fi
 
 TMP_DIR="$(mktemp -d)"

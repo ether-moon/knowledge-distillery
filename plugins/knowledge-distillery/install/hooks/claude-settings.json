@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*/knowledge-gate:*)",
+      "Bash(sqlite3 .knowledge/vault.db:*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-prompt-knowledge-gate.sh\"",
+            "statusMessage": "Checking Knowledge Vault"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit-memento.sh\"",
+            "statusMessage": "Checking memento commit policy"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-commit-memento.sh\"",
+            "statusMessage": "Checking memento note"
+          }
+        ]
+      }
+    ]
+  }
+}

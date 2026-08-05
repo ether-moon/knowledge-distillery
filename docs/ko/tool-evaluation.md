@@ -202,8 +202,8 @@ Leiden 알고리즘 기반 커뮤니티 클러스터링 + LLM 요약으로 계�
 이 구조는 "설치/부트스트랩", "에이전트 런타임 조회", "운영 관리", "서버 진입점"을 분리한 명령 체계로 요약할 수 있다. Knowledge Distillery에도 이 분리 자체는 유효하지만, 각 계층의 책임은 에어갭 원칙에 맞게 다시 정의해야 한다.
 
 **차용할 부분 (개념만):**
-- **원샷 멀티클라이언트 부트스트랩:** Claude plugin을 설치한 뒤 `/knowledge-distillery:setup` 같은 단일 도입 단계로 이어지는 UX는 도입 가치가 높다. 우리 설계는 [설계 구현 §7.5](./design-implementation.md#75-컨텍스트-관문-knowledge-gate-skill--cli)의 "Claude-first(배포) / 벤더 중립(런타임)"을 지향하므로, 런타임 데이터 경로는 공통 `knowledge-gate`로 유지하고 설치 UX만 에이전트별로 조정하는 구성이 적절하다.
-- **설치 모드 분리:** 플러그인/런타임 설치와 프로젝트 도입 설정을 분리하는 패턴은 그대로 유용하다. 이 설계에서는 플러그인 설치가 번들된 `skills/`, `scripts/`, `schema/` (`plugins/knowledge-distillery/` 하위)를 제공하고, `/knowledge-distillery:setup`이 저장소 내부의 vault 생성과 workflow 설정 같은 도입 작업을 수행한다.
+- **원샷 멀티클라이언트 부트스트랩:** README가 전용 agent 설치 계약으로 연결하는 UX는 도입 가치가 높다. 우리 설계는 [설계 구현 §7.5](./design-implementation.md#75-컨텍스트-관문-knowledge-gate-skill--cli)의 "Claude-first(배포) / 벤더 중립(런타임)"을 지향하므로, 런타임 데이터 경로는 공통 `knowledge-gate`로 유지하고 연결된 guide가 현재 호스트에 맞춰 project-scope skill과 hook 설치를 조정한다.
+- **설치 모드 분리:** 상시 런타임 capability와 일회성 저장소 도입을 분리하는 패턴은 그대로 유용하다. 이 설계에서는 `npx skills`가 project-local 런타임 skill 네 개만 설치하고, 설치 LLM이 Agent Installation Guide를 따라 vault를 만들고 정식 workflow와 hook asset을 적용한다.
 - **CLI 계층 명확화:** 현재 `knowledge-gate`는 조회/도메인 관리/파이프라인 후처리가 한 문서에 공존한다. 장기적으로는 `agent runtime` (`query-paths`, `query-domain`, `search`, `get`), `pipeline/admin` (`_pipeline-insert`, `domain-*`, `migrate`), `diagnostics` (`domain-report`, 향후 `vault-health`, `vault-stats`)를 더 뚜렷하게 나누는 편이 사용성과 문서 탐색성이 좋다.
 - **진단 커맨드 강화:** 인간의 전략적 감독 역할([설계 철학 §6.3](./design-philosophy.md#63-인간의-역할-개별-항목의-승인자가-아니라-전략적-감독자))에 맞춰, 향후 `vault-health` 계열 커맨드를 추가하는 것은 타당하다. 후보 항목으로는 도메인 과밀/과소, 고아 도메인, archived 비율, 중복 가능 항목, 현재 `knowledge:pending` 백로그 현황 등이 있다.
 - **설정 가시성:** 현재도 CLI 스펙은 명확하지만, 실행 중인 금고 경로와 활성 설정을 빠르게 점검하는 `config` 류 커맨드는 운영 편의 측면에서 도움이 된다. 특히 "왜 이 에이전트가 knowledge-gate를 못 찾는가" 같은 설치 문제를 진단하는 계층이 있으면 플러그인 배포 품질이 올라간다.
@@ -217,7 +217,7 @@ Leiden 알고리즘 기반 커뮤니티 클러스터링 + LLM 요약으로 계�
 **우리 쪽 반영 방향:**
 - `knowledge-gate`는 계속 **유일한 런타임 접근 경로**로 유지한다 ([설계 구현 §7.5](./design-implementation.md#75-컨텍스트-관문-knowledge-gate-skill--cli)).
 - 차용 대상은 설치 UX와 운영 UX뿐이며, 지식 생성/승격 경로는 계속 [설계 구현 §3.1](./design-implementation.md#31-트리거-2단계-파이프라인)의 2단계 정제 파이프라인을 따른다.
-- 도입 검증은 `/knowledge-distillery:setup`이 설정과 검증을 함께 수행한다. 향후에는 `knowledge-gate vault-health` 같은 추가 진단 커맨드를 검토할 수 있지만, 이들도 모두 **금고 쓰기 권한을 부여하지 않는 보조 인터페이스**여야 한다.
+- 도입 검증은 root README에 연결된 Agent Installation Guide에 포함되며, 설치 LLM이 저장소 설정과 검증을 함께 수행한다. 향후에는 `knowledge-gate vault-health` 같은 추가 진단 커맨드를 검토할 수 있지만, 이들도 모두 **금고 쓰기 권한을 부여하지 않는 보조 인터페이스**여야 한다.
 
 **라이선스 주의:**
 [ICM 라이선스](https://github.com/rtk-ai/icm/blob/main/LICENSE)는 source-available이며 `NO COPYING OR REDISTRIBUTION`, `NO DERIVATIVE WORKS`를 명시한다. 따라서 이 프로젝트에서는 ICM의 코드, 문구, 설정 템플릿을 재사용하지 않고, 공개적으로 드러난 제품 아이디어와 UX 패턴만 개념 수준에서 참고한다.  

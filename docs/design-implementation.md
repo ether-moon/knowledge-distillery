@@ -335,9 +335,9 @@ What matters in this document is not command syntax. It is why `knowledge-gate` 
 
 **Design principles governing the CLI:**
 
-- **Vendor-neutral runtime / Claude-first delivery**: Agent runtime commands use only `sqlite3` (pre-installed) to maintain vendor neutrality. Pipeline, setup, and management commands additionally require `jq` for JSON processing. The Claude Code Plugin remains the primary distribution, while the same skill directories can be installed by portable skill installers such as `npx skills`.
-- **Skill-local packaging**: Each skill contains the scripts and assets required for its workflow. The `knowledge-gate` skill bundles its CLI and schema; the `setup` skill bundles hook scripts and workflow templates. No portable execution path depends on `${CLAUDE_PLUGIN_ROOT}`.
-- **Setup-installed hooks**: Portable skill installation does not register lifecycle hooks. The setup skill copies hook scripts into the adopting repository and merges the active host's `.codex/hooks.json` or `.claude/settings.json`.
+- **Vendor-neutral runtime / Claude-first delivery**: Agent runtime commands use only `sqlite3` (pre-installed) to maintain vendor neutrality. Pipeline, installation, and management commands additionally require `jq` for JSON processing. The Claude Code Plugin remains the primary distribution, while the same skill directories can be installed by portable skill installers such as `npx skills`.
+- **Portable runtime packaging**: Each persistent skill contains the scripts and assets required for its runtime workflow. The `knowledge-gate` skill bundles its CLI and schema; one-time hook scripts, configuration fragments, and workflow templates live under `plugins/knowledge-distillery/install/`. No portable execution path depends on `${CLAUDE_PLUGIN_ROOT}`.
+- **Guide-installed hooks**: Portable skill installation does not register lifecycle hooks. The installing LLM follows the Agent Installation Guide linked from the root README to apply canonical hook assets and merge the active host's `.codex/hooks.json` or `.claude/settings.json` without a persistent setup skill.
 - **Standardized DB manipulation**: The LLM decides, and the CLI manipulates the DB. Direct SQL execution is prohibited.
 
 ### 7.6 Agent Skill Package

@@ -29,12 +29,21 @@ The agent never touches raw data. It only sees what has survived distillation.
 - **Context Gate**: Domain-based selective filtering ensures agents receive only task-relevant knowledge, not the entire vault
 - **Append-only, two types only**: The vault contains only **Facts** and **Anti-Patterns** — no confidence scores, no hedging
 
+## Install with an AI Coding Agent
+
+Give the coding agent either this README or the dedicated [Agent Installation Guide](docs/agent-installation.md). The guide is self-contained, so its URL can be sent directly:
+
+> Install Knowledge Distillery in this repository by following https://github.com/ether-moon/knowledge-distillery/blob/main/docs/agent-installation.md. Preserve unrelated configuration and report the resulting diff and verification results.
+
+The agent installs only the four project-local runtime skills and performs the repository configuration itself. There is no persistent `setup` skill.
+
 ## Documentation
 
 Executable skills in `plugins/knowledge-distillery/skills/` are the source of truth for pipeline behavior.
 
 | Document | Description |
 |---|---|
+| [Agent Installation Guide](docs/agent-installation.md) | LLM-readable contract for project-scoped skill installation and repository configuration |
 | [Design Philosophy](docs/design-philosophy.md) | Why this architecture exists — the rationale behind information control for AI agents |
 | [Implementation Design](docs/design-implementation.md) | How it works — pipeline design, vault schema, runtime policies, deployment as a Claude Code Plugin |
 | [Adoption Guide](docs/adoption-guide.md) | How to install the plugin, initialize a repository, and start using the vault |
@@ -109,10 +118,10 @@ Run `knowledge-gate help` for full usage details.
 
 Knowledge Distillery supports two delivery paths:
 
-- **Portable agent skills**: `npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex`
+- **Portable agent skills**: follow [Install with an AI Coding Agent](#install-with-an-ai-coding-agent) to install the four repository runtime skills
 - **Claude Code Plugin**: install with `claude plugin install` to use the `/knowledge-distillery:*` namespace
 
-Each skill owns the scripts and assets it needs. The `knowledge-gate` CLI and schema live inside the `knowledge-gate` skill; hook templates and workflow assets live inside the `setup` skill. Running setup installs lifecycle hooks into the active host's repo-local configuration. The runtime remains vendor-neutral and uses `sqlite3`; pipeline and setup operations also use `jq`.
+Each persistent skill owns the scripts and assets it needs. The `knowledge-gate` CLI and schema live inside the `knowledge-gate` skill; one-time repository installation assets live under `plugins/knowledge-distillery/install/` and are applied by the LLM following the Agent Installation Guide. The runtime remains vendor-neutral and uses `sqlite3`; pipeline and installation operations also use `jq`.
 
 The repository doubles as a Claude plugin marketplace. `.claude-plugin/marketplace.json` points to `plugins/knowledge-distillery/`, whose `skills/` directory is also discoverable by portable skill installers.
 

@@ -29,12 +29,21 @@ Convention 기반 에어갭을 갖춘 3계층 아키텍처가 날것의 정보�
 - **컨텍스트 관문**: 도메인 기반 선별적 필터링으로 에이전트에게 현재 작업에 관련된 지식만 전달
 - **Append-only, 두 가지 유형만**: 금고에는 **Fact**와 **Anti-Pattern**만 존재 — 확신도 점수 없음, 애매함 없음
 
+## AI 코딩 에이전트로 설치하기
+
+코딩 에이전트에게 이 README 또는 전용 [Agent Installation Guide](../agent-installation.md)를 전달한다. 설치 문서 URL만 직접 전달해도 된다.
+
+> https://github.com/ether-moon/knowledge-distillery/blob/main/docs/agent-installation.md를 따라 이 저장소에 Knowledge Distillery를 설치해 줘. 무관한 기존 설정을 보존하고 변경 diff와 검증 결과를 보고해 줘.
+
+에이전트는 project-local 런타임 skill 네 개만 설치하고 저장소 구성을 직접 수행한다. 상시 `setup` skill은 없다.
+
 ## 문서
 
 파이프라인 동작의 source of truth는 `plugins/knowledge-distillery/skills/`에 있는 실행 가능한 Skill들이다.
 
 | 문서 | 설명 |
 |---|---|
+| [Agent Installation Guide](../agent-installation.md) | Project-scope skill 설치와 저장소 구성을 위한 LLM 실행 계약 |
 | [설계 철학](design-philosophy.md) | 이 아키텍처가 존재하는 이유 — AI 에이전트를 위한 정보 통제의 근거 |
 | [구현 설계서](design-implementation.md) | 어떻게 작동하는가 — 파이프라인 설계, 금고 스키마, 런타임 정책, Claude Code Plugin 배포 |
 | [도입 가이드](adoption-guide.md) | plugin 설치, 저장소 초기화, vault 사용 시작 절차 |
@@ -109,10 +118,10 @@ knowledge-gate search "callback"
 
 Knowledge Distillery는 두 가지 배포 경로를 지원한다.
 
-- **Portable agent skills**: `npx skills add https://github.com/ether-moon/knowledge-distillery/tree/main/plugins/knowledge-distillery --skill '*' -a codex`
+- **Portable agent skills**: [AI 코딩 에이전트로 설치하기](#ai-코딩-에이전트로-설치하기)에 따라 저장소 런타임 skill 네 개만 설치
 - **Claude Code Plugin**: `claude plugin install`로 설치해 `/knowledge-distillery:*` namespace 사용
 
-각 skill은 자신에게 필요한 script와 asset을 직접 소유한다. `knowledge-gate` CLI와 schema는 `knowledge-gate` skill에, hook template과 workflow asset은 `setup` skill에 들어 있다. setup을 실행하면 현재 호스트의 repo-local 설정에 lifecycle hook이 설치된다. 런타임은 `sqlite3` 기반으로 벤더 중립을 유지하며, pipeline과 setup 작업은 `jq`도 사용한다.
+각 상시 skill은 자신에게 필요한 script와 asset을 직접 소유한다. `knowledge-gate` CLI와 schema는 `knowledge-gate` skill에, 일회성 저장소 설치 asset은 `plugins/knowledge-distillery/install/`에 들어 있으며 LLM이 Agent Installation Guide를 따라 적용한다. 런타임은 `sqlite3` 기반으로 벤더 중립을 유지하며, pipeline과 설치 작업은 `jq`도 사용한다.
 
 레포지토리는 Claude plugin marketplace도 겸한다. `.claude-plugin/marketplace.json`은 `plugins/knowledge-distillery/`를 가리키며, 그 안의 `skills/` 디렉터리는 portable skill installer에서도 발견할 수 있다.
 
